@@ -26,7 +26,7 @@ import java.util.Locale;
 /**
  * Common part shared by both {@link FractionFormat} and {@link BigFractionFormat}.
  */
-public abstract class AbstractFormat extends NumberFormat implements Serializable {
+public abstract class AbstractFractionFormat extends NumberFormat implements Serializable {
 
     /** Serializable version identifier. */
     private static final long serialVersionUID = -6981118387974191891L;
