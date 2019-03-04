@@ -41,7 +41,7 @@ public abstract class AbstractFractionFormat extends NumberFormat implements Ser
      * Create an improper formatting instance with the default number format
      * for the numerator and denominator.
      */
-    protected AbstractFormat() {
+    protected AbstractFractionFormat() {
         this(getDefaultNumberFormat());
     }
 
@@ -50,7 +50,7 @@ public abstract class AbstractFractionFormat extends NumberFormat implements Ser
      * both the numerator and denominator.
      * @param format the custom format for both the numerator and denominator.
      */
-    protected AbstractFormat(final NumberFormat format) {
+    protected AbstractFractionFormat(final NumberFormat format) {
         this(format, (NumberFormat) format.clone());
     }
 
@@ -60,7 +60,7 @@ public abstract class AbstractFractionFormat extends NumberFormat implements Ser
      * @param numeratorFormat the custom format for the numerator.
      * @param denominatorFormat the custom format for the denominator.
      */
-    protected AbstractFormat(final NumberFormat numeratorFormat,
+    protected AbstractFractionFormat(final NumberFormat numeratorFormat,
                              final NumberFormat denominatorFormat) {
         this.numeratorFormat   = numeratorFormat;
         this.denominatorFormat = denominatorFormat;
