@@ -579,23 +579,14 @@ public class BigFractionTest {
 
     @Test
     public void testBigDecimalValue() {
-<<<<<<< HEAD
-<<<<<<< HEAD
-        Assert.assertEquals(new BigDecimal(0.5), new BigFraction(1, 2).bigDecimalValue());
-        Assert.assertEquals(new BigDecimal("0.0003"), new BigFraction(3, 10000).bigDecimalValue());
-        Assert.assertEquals(new BigDecimal("0"), new BigFraction(1, 3).bigDecimalValue(RoundingMode.DOWN));
-        Assert.assertEquals(new BigDecimal("0.333"), new BigFraction(1, 3).bigDecimalValue(3, RoundingMode.DOWN));
-=======
-=======
->>>>>>> 8de7ce20fb18291889d74d26349a9a777ca91ee6
         Assert.assertEquals(new BigDecimal(0.5), BigFraction.of(1, 2).bigDecimalValue());
         Assert.assertEquals(new BigDecimal("0.0003"), BigFraction.of(3, 10000).bigDecimalValue());
-        Assert.assertEquals(new BigDecimal("0"), BigFraction.of(1, 3).bigDecimalValue(BigDecimal.ROUND_DOWN));
-        Assert.assertEquals(new BigDecimal("0.333"), BigFraction.of(1, 3).bigDecimalValue(3, BigDecimal.ROUND_DOWN));
-<<<<<<< HEAD
->>>>>>> NUMBERS-91: Conforming Big Fraction related Test classes
-=======
->>>>>>> 8de7ce20fb18291889d74d26349a9a777ca91ee6
+        Assert.assertEquals(new BigDecimal("0"), BigFraction.of(1, 3).bigDecimalValue(RoundingMode.DOWN));
+        Assert.assertEquals(new BigDecimal("0.333"), BigFraction.of(1, 3).bigDecimalValue(3, RoundingMode.DOWN));
+        Assert.assertEquals(new BigDecimal(0.5), BigFraction.of(1, 2).bigDecimalValue());
+        Assert.assertEquals(new BigDecimal("0.0003"), BigFraction.of(3, 10000).bigDecimalValue());
+        Assert.assertEquals(new BigDecimal("0"), BigFraction.of(1, 3).bigDecimalValue(RoundingMode.DOWN));
+        Assert.assertEquals(new BigDecimal("0.333"), BigFraction.of(1, 3).bigDecimalValue(3, RoundingMode.DOWN));
     }
 
     @Test
