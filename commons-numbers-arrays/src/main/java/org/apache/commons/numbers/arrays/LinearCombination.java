@@ -74,14 +74,20 @@ public final class LinearCombination {
      * where p is the number of binary digits in the mantissa". Here p is 53
      * and the multiplier is {@code 2^27 + 1}.
      */
-    private static final double MULTIPLIER = (1 << 27) + 1.0;
+    private static final double MULTIPLIER = 1.34217729E8;
 
-    /** The upper limit above which a number may overflow during the split into a high part. */
-    private static final double SAFE_UPPER = Double.MAX_VALUE / 2 / MULTIPLIER;
+    /** The upper limit above which a number may overflow during the split into a high part.
+     * Assuming the multiplier is above 2^27 and the maximum exponent is 1023 then a safe
+     * limit is a value with an exponent of (1023 - 28) = 2^995. */
+    private static final double SAFE_UPPER = 0x1.0p995;
 
-    /** The scale to use when scaling during a split into a high part.
-     * 2^scale must be larger then the multiplier. */
-    private static final int SCALE = 30;
+    /** The scale to use when down-scaling during a split into a high part.
+     * This must be larger than the multiplier and a power of 2 for exact scaling. */
+    private static final double DOWN_SCALE = 0x1.0p-30;
+
+    /** The scale to use when re-scaling during a split into a high part.
+     * This is the inverse of {@link #DOWN_SCALE}. */
+    private static final double UP_SCALE = 0x1.0p30;
 
     /** Private constructor. */
     private LinearCombination() {
@@ -104,6 +110,9 @@ public final class LinearCombination {
 
         final int len = a.length;
 
+        if (len == 0) {
+            return 0;
+        }
         if (len == 1) {
             // Revert to scalar multiplication.
             return a[0] * b[0];
@@ -346,11 +355,11 @@ public final class LinearCombination {
      */
     private static double highPart(double value) {
         // Avoid overflow
-        if (value > SAFE_UPPER || value < -SAFE_UPPER) {
+        if (value >= SAFE_UPPER || value <= -SAFE_UPPER) {
             // Do scaling.
-            final double x = Math.scalb(value, -SCALE);
+            final double x = value * DOWN_SCALE;
             final double c = MULTIPLIER * x;
-            final double hi = Math.scalb(c - (c - x), SCALE);
+            final double hi = (c - (c - x)) * UP_SCALE;
             if (Double.isInfinite(hi)) {
                 // Number is too large.
                 // This occurs if value is infinite or close to Double.MAX_VALUE.
