@@ -17,6 +17,7 @@
 
 package org.apache.commons.numbers.examples.jmh.complex;
 
+import org.apache.commons.math3.util.FastMath;
 import org.apache.commons.numbers.complex.Complex;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -57,6 +58,10 @@ public class ComplexPerformance {
     private static final double[] EDGE_NUMBERS = {
         Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.MAX_VALUE,
         -Double.MAX_VALUE, Double.MIN_VALUE, -Double.MIN_VALUE, 0.0, -0.0, Double.NaN};
+    /** The range for the uniform random numbers. */
+    private static final double RANGE = 1e53;
+    /** The exponent for fixed exponent numbers. */
+    private static final long FIXED_EXPONENT = Double.doubleToRawLongBits(1.0);
 
     /**
      * Contains the size of numbers.
@@ -90,7 +95,7 @@ public class ComplexPerformance {
         /**
          * The type of the data.
          */
-        @Param({"cis", "random", "edge"})
+        @Param({"cis", "log-uniform", "uniform", "fixed-exponent", "edge"})
         private String type;
 
         /**
@@ -120,8 +125,12 @@ public class ComplexPerformance {
             Supplier<Complex> generator;
             if ("cis".equals(type)) {
                 generator = () -> Complex.ofCis(rng.nextDouble() * 2 * Math.PI);
-            } else if ("random".equals(type)) {
-                generator = () -> Complex.ofCartesian(createRandomNumber(rng), createRandomNumber(rng));
+            } else if ("log-uniform".equals(type)) {
+                generator = () -> Complex.ofCartesian(createLogUniformNumber(rng), createLogUniformNumber(rng));
+            } else if ("uniform".equals(type)) {
+                generator = () -> Complex.ofCartesian(createUniformNumber(rng), createUniformNumber(rng));
+            } else if ("fixed-exponent".equals(type)) {
+                generator = () -> Complex.ofCartesian(createFixedExponentNumber(rng), createFixedExponentNumber(rng));
             } else if ("edge".equals(type)) {
                 generator = () -> Complex.ofCartesian(createEdgeNumber(rng), createEdgeNumber(rng));
             } else {
@@ -207,12 +216,13 @@ public class ComplexPerformance {
 
     /**
      * Creates a random double number with a random sign and mantissa and a large range for
-     * the exponent. The numbers will not be uniform over the range.
+     * the exponent. The numbers will be uniform over the range of each mantissa and uniform
+     * over the range of exponents. The limiting distribution is the log-uniform distribution.
      *
      * @param rng Random number generator.
      * @return the random number
      */
-    private static double createRandomNumber(SplittableRandom rng) {
+    private static double createLogUniformNumber(SplittableRandom rng) {
         // Create random doubles using random bits in the sign bit and the mantissa.
         // Then create an exponent in the range -64 to 64. Thus the sum product
         // of 4 max or min values will not over or underflow.
@@ -221,6 +231,31 @@ public class ComplexPerformance {
         // The exponent must be unsigned so + 1023 to the signed exponent
         final long exp = rng.nextInt(129) - 64 + 1023;
         return Double.longBitsToDouble(bits | (exp << 52));
+    }
+
+    /**
+     * Creates a random double number with a random sign and a large range.
+     * The numbers will be uniform over the range.
+     *
+     * @param rng Random number generator.
+     * @return the random number
+     */
+    private static double createUniformNumber(SplittableRandom rng) {
+        // Create [-1, 1) then multiply by a range
+        return (rng.nextDouble() - rng.nextInt(1)) * RANGE;
+    }
+
+    /**
+     * Creates a random double number with a fixed exponent and a random 52-bit mantissa.
+     * The numbers will be uniform over the range.
+     *
+     * @param rng Random number generator.
+     * @return the random number
+     */
+    private static double createFixedExponentNumber(SplittableRandom rng) {
+        final long mask = ((1L << 52) - 1) | 1L << 63;
+        final long bits = rng.nextLong() & mask;
+        return bits | FIXED_EXPONENT;
     }
 
     /**
@@ -466,6 +501,27 @@ public class ComplexPerformance {
         return apply(numbers.getNumbers(), Complex::norm);
     }
 
+    /**
+     * This test demonstrates that the {@link Math#hypot(double, double)} method
+     * used in abs() is not as fast as using square root of the norm. Hypot is
+     * within 1 ULP of the correct answer. The simple {@code Math.sqrt(x * x + y * y)}
+     * may be much worse.
+     */
+    @Benchmark
+    public double[] sqrtNorm(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> Math.sqrt(z.norm()));
+    }
+
+    @Benchmark
+    public double[] absMathHypot(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> Math.hypot(z.real(), z.imag()));
+    }
+
+    @Benchmark
+    public double[] absFastMathHypot(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> FastMath.hypot(z.real(), z.imag()));
+    }
+
     // Unary operations that return a complex number
 
     @Benchmark
@@ -591,8 +647,8 @@ public class ComplexPerformance {
     }
 
     // Binary operations on a complex and a real number.
-    // These only benchmark methods on the real component as the 
-    // following are expected to be the same speed as the real-only operations 
+    // These only benchmark methods on the real component as the
+    // following are expected to be the same speed as the real-only operations
     // given the equivalent primitive operations:
     // - multiplyImaginary
     // - divideImaginary
