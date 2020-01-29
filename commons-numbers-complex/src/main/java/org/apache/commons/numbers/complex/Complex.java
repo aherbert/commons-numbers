@@ -185,8 +185,8 @@ public final class Complex implements Serializable  {
      */
     private static final double EXP_M = Math.exp(SAFE_EXP);
 
-    /** 60 shifted 20-bits to align with the exponent of the upper 32-bits of a double. */
-    private static final int EXP_60 = 0x3c_00000;
+    /** 54 shifted 20-bits to align with the exponent of the upper 32-bits of a double. */
+    private static final int EXP_54 = 0x36_00000;
     /** Represents an exponent of 500 in unbiased form shifted 20-bits to align with the upper 32-bits of a double. */
     private static final int EXP_500 = 0x5f3_00000;
     /** Represents an exponent of 1024 in unbiased form (infinite or nan)
@@ -3432,7 +3432,7 @@ public final class Complex implements Serializable  {
      *
      * <p>JDK9 ported the hypot function to Java for bug JDK-7130085 due to the slow performance
      * of the method as a native function. Benchmarks of the Complex class for functions that
-     * use hypot confirm this is slow pre-Java 9. This implementation outperforms
+     * use hypot confirm this is slow pre-Java 9. This implementation outperforms the new faster
      * {@code Math.hypot(double, double)} on JDK 9 and 11. See the Commons numbers examples JMH
      * module for benchmarks. Differences to Math.hypot have been observed at 1 ULP. Note
      * that the standard precision result {@code Math.sqrt(x * x + y * y)} is typically the
@@ -3484,17 +3484,16 @@ public final class Complex implements Serializable  {
         // Differences to the fdlibm reference:
         //
         // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This can incorrectly order small sub-normal numbers which differ
-        // only in the lower 32-bits for the x^2+y^2 sum which requires x to be
-        // greater than y. This version performs a second reorder
-        // if the upper parts are equal. This can be done after the test for large magnitude
-        // differences. Note: An alternative using the entire 63-bit unsigned raw bits for the
-        // magnitude comparison are marginally slower in performance tests. For alignment
-        // with the fdlibm reference this implementation uses the upper 32-bits.
+        // This incorrectly orders numbers which differ only in the lower 32-bits.
+        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
+        // of cases of normal numbers. This implementation forces the |x| >= |y| order
+        // to ensure the function is commutative.
+        // The current method of doing the comparison only when the upper 32-bits match
+        // is consistently fast in JMH performance tests with alternative implementations.
         //
         // 2. This stores the re-scaling factor for use in a multiplication.
         // The original computed scaling by directly writing to the exponent bits.
-        // The high part was maintained during scaling for use in the high
+        // and maintained the high part (ha) during scaling for use in the high
         // precision sum x^2 + y^2. This version has no requirement for that
         // as the high part is extracted using Dekker's method.
         //
@@ -3510,11 +3509,10 @@ public final class Complex implements Serializable  {
         // computed for an addition to the exponent bits. This is neglected in the fdlibm
         // version. The effect is the extended precision computation reverts to a
         // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation is not tied to
-        // manipulating bits to represent the magnitude of the high part of the split number.
-        // The split is computed dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases. In the event of worse performance
-        // the result is 1 ULP from the exact result.
+        // standard precision result x^2 + y^2. In contrast this implementation computes
+        // the split dynamically on the scaled number. The effect is increased
+        // precision for the majority of sub-normal cases where the implementations compute
+        // a different result. Only 1 ULP differences have been measured.
         //
         // Original comments from fdlibm are in c style: /* */
         // Extra comments added for reference.
@@ -3529,7 +3527,7 @@ public final class Complex implements Serializable  {
         // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
 
         /* High word of x & y */
-        // The mask is used to remove the sign.
+        // The mask is used to remove the sign bit.
         int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & UNSIGN_INT_MASK;
         int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & UNSIGN_INT_MASK;
 
@@ -3550,9 +3548,9 @@ public final class Complex implements Serializable  {
         // Check if the smaller part is significant.
         // Do not replace this with 27 since the product x^2 is computed in
         // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_60) {
-            /* x/y > 2**60 */
+        // replaced with 54 where y^2 will not overlap extended precision x^2 if using fma(x, x, y*y).
+        if ((ha - hb) > EXP_54) {
+            /* x/y > 2**54 */
             // No addition of a + b for sNaN.
             return Math.abs(a);
         }
@@ -3565,8 +3563,9 @@ public final class Complex implements Serializable  {
         b = Math.abs(b);
 
         // Second re-order in the rare event the upper 32-bits are the same.
-        // This could be moved into the sub-normals section where it is critical.
-        // It is left here to ensure a > b in all cases.
+        // This could be done in various locations including inside the function x2y2.
+        // It must be done for sub-normals and is placed here for clarity that x2y2 assumes x >= y.
+        // Note: Removing the ha == hb has slower performance.
         if (ha == hb && a < b) {
             final double tmp = a;
             a = b;
@@ -3594,6 +3593,11 @@ public final class Complex implements Serializable  {
                 if (b == 0.0) {
                     return a;
                 }
+//                if (ha == hb && a < b) {
+//                    final double tmp = a;
+//                    a = b;
+//                    b = tmp;
+//                }
                 /* scale a and b by 2^1022 */
                 a *= 0x1.0p+1022;
                 b *= 0x1.0p+1022;
@@ -3623,7 +3627,7 @@ public final class Complex implements Serializable  {
      * <p>Note that fdlibm conditioned {@code x > y} using only the upper 20 bits of the
      * mantissa and the 11-bit exponent and thus x could be slightly smaller than y
      * for cases where the upper 31-bits of the unsigned 64-bit representation are identical.
-     * There are cases for {@code 2x > y > x} where the result is less exact than if the
+     * There are cases for {@code 2x > y > x} where the result is different if the
      * arguments were reversed so the equality should be conditioned on the entire magnitude
      * of the two floating point values. This is especially relevant if the numbers are
      * sub-normal where the upper 20-bits of the mantissa are zero and the entire information
@@ -3653,18 +3657,56 @@ public final class Complex implements Serializable  {
         // implementation. Using simulated fused multiply addition (FMA)
         // with split precision summation is slower. A full high precision computation
         // is slower again and is a poor trade-off to gain 1 ULP accuracy.
-        final double w = x - y;
-        if (w > y) {
-            final double t1 = splitHigh(x);
-            final double t2 = x - t1;
-            return t1 * t1 - (y * (-y) - t2 * (x + t1));
-        }
-        // 2y > x > y
-        final double t = x + x;
-        final double y1 = splitHigh(y);
-        final double y2 = y - y1;
-        final double t1 = splitHigh(t);
-        final double t2 = t - t1;
-        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
+//        final double w = x - y;
+//        if (w > y) {
+//            final double t1 = splitHigh(x);
+//            final double t2 = x - t1;
+//            return t1 * t1 - (y * (-y) - t2 * (x + t1));
+//        }
+//        // 2y > x > y
+//        final double t = x + x;
+//        final double y1 = splitHigh(y);
+//        final double y2 = y - y1;
+//        final double t1 = splitHigh(t);
+//        final double t2 = t - t1;
+//        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
+
+        // Simulate a fused multiply add (FMA)
+        return Math.fma(x, x, y * y);
+//        final double yy = y * y;
+//        final double xx = x * x;
+//        final double xHigh = splitHigh(x);
+//        final double xLow  = x - xHigh;
+//        final double x2Low = squareLow(xLow, xHigh, xx);
+//        // Two sum y^2 into the expansion of x^2
+//        double e2 = yy + x2Low;
+//        final double e1 = sumLow(yy, x2Low, e2);
+//        final double e3 = e2 + xx;
+//        e2 = sumLow(e2, xx, e3);
+//        return e1 + e2 + e3;
+
+        // FMA does not require the use of abs since we have x^2 and y^2.
+        // FMA 2 as a Dekker sum with y round-off of zero.
+//        final double yy = y * y;
+//        final double xx = x * x;
+//        final double xHigh = splitHigh(x);
+//        final double xLow  = x - xHigh;
+//        final double x2Low = squareLow(xLow, xHigh, xx);
+//        // Two sum y^2 into the expansion of x^2
+//        final double r = xx + yy;
+//        return xx - r + yy + x2Low + r;
+
+        // Do a Dekker summation
+//        final double xx = x * x;
+//        final double yy = y * y;
+//        final double xHigh = splitHigh(x);
+//        final double xLow = x - xHigh;
+//        final double yHigh = splitHigh(y);
+//        final double yLow = y - yHigh;
+//        final double x2Low = squareLow(xLow, xHigh, xx);
+//        final double y2Low = squareLow(yLow, yHigh, yy);
+//
+//        final double r = xx + yy;
+//        return xx - r + yy + y2Low + x2Low + r;
     }
 }

@@ -579,11 +579,7 @@ public class CStandardTest {
 
     /**
      * Assert {@link Complex#abs()} functions as per {@link Math#hypot(double, double)}.
-     * The two numbers are generated from the two function and then sorted by magnitude.
-     * If {@code 2y > x} then a second assertion is made using {@code x * [1, 2)}. This
-     * increases samples where x and y are similar in magnitude. The values x and y are
-     * input to the complex number in random order to ensure that ordering is not
-     * required.
+     * The two numbers for {@code z = x + iy} are generated from the two function.
      *
      * <p>The functions should not generate numbers that are infinite or nan.
      *
@@ -599,29 +595,7 @@ public class CStandardTest {
         for (int i = 0; i < samples; i++) {
             double x = fx.applyAsDouble(rng);
             double y = fy.applyAsDouble(rng);
-            if (x < y) {
-                final double tmp = x;
-                x = y;
-                y = tmp;
-            }
-            if (x < 2 * y) {
-                // First test was 2y > x > y.
-                // Increase in size by up to 2 and repeat.
-                // This specifically targets the switch point in the implementation
-                // for the two cases: 2y > x > y and x > 2y.
-                final double x2 = x + x * rng.nextDouble();
-                // Random order
-                if (rng.nextBoolean()) {
-                    assertAbs(Complex.ofCartesian(x2, y), 1);
-                } else {
-                    assertAbs(Complex.ofCartesian(y, x2), 1);
-                }
-            }
-            if (rng.nextBoolean()) {
-                assertAbs(Complex.ofCartesian(x, y), 1);
-            } else {
-                assertAbs(Complex.ofCartesian(y, x), 1);
-            }
+            assertAbs(Complex.ofCartesian(x, y), 1);
         }
     }
 
@@ -923,7 +897,7 @@ public class CStandardTest {
     public void testAbs() {
         Assertions.assertEquals(inf, complex(inf, nan).abs());
         Assertions.assertEquals(inf, complex(negInf, nan).abs());
-        final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 1L);
+        final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP);
         for (int i = 0; i < 10; i++) {
             final double x = next(rng);
             final double y = next(rng);
@@ -945,8 +919,30 @@ public class CStandardTest {
             }
         }
 
+        // The reference implementation orders using the upper 32-bits of the double.
+        // Tests using random numbers that differ in only the lower 32-bits
+        // show a frequency of <1e-9 that the computation is not commutative.
+        // Test known cases where ordering is required on the lower 32-bits to ensure |z| == |iz|.
+        for (final double[] pair : new double[][] {
+                {1.3122561682406755, 1.3122565442732959},
+                {1.40905821964671, 1.4090583434236112},
+                {1.912164268932753, 1.9121638616231227}}) {
+            final Complex z = complex(pair[0], pair[1]);
+            Assertions.assertEquals(z.abs(), z.multiplyImaginary(1).abs(), "Expected |z| == |iz|");
+        }
+
         // Test with a range of numbers.
-        // Sub-normals require special handling so we use different variations of these.
+        // Sub-normals require special handling so we use different variations of these to
+        // ensure they are handled correctly.
+        // Note:
+        // 1 ULP differences with Math.hypot can be observed due to the different implementations.
+        // For normal numbers observable differences require billions of numbers to show a
+        // few hundred cases of lower ULPs and a magnitude smaller count of higher ULPs.
+        // For sub-normal numbers a few thousand examples can demonstrate
+        // a larger count of 1 ULP improvements than 1 ULP errors verses Math.hypot.
+        // A formal statistical test to demonstrate differences are significant is not implemented.
+        // This test simply asserts the answer is either the same as Math.hypot or else is within
+        // 1 ULP of a high precision computation.
         final int samples = 100;
         assertAbs(rng, CStandardTest::createSubNormalNumber52, CStandardTest::createSubNormalNumber52, samples);
         assertAbs(rng, CStandardTest::createSubNormalNumber52, CStandardTest::createSubNormalNumber32, samples);
@@ -955,7 +951,25 @@ public class CStandardTest {
         assertAbs(rng, CStandardTest::createFixedExponentNumber, CStandardTest::createFixedExponentNumber, samples);
         // Numbers on different scales
         assertAbs(rng, CStandardTest::createFixedExponentNumber,
-            r -> Math.scalb(createFixedExponentNumber(r), 1 + r.nextInt(10)), samples);
+            r -> createFixedExponentNumber(r) * 2, samples);
+        assertAbs(rng, CStandardTest::createFixedExponentNumber,
+            r -> Math.scalb(createFixedExponentNumber(r), 2 + r.nextInt(10)), samples);
+        // Complex cis numbers
+        final ToDoubleFunction<UniformRandomProvider> cisGenerator = new ToDoubleFunction<UniformRandomProvider>() {
+            private double tmp = Double.NaN;
+            @Override
+            public double applyAsDouble(UniformRandomProvider rng) {
+                if (Double.isNaN(tmp)) {
+                    double u = rng.nextDouble() * Math.PI;
+                    tmp = Math.cos(u);
+                    return Math.sin(u);
+                }
+                final double r = tmp;
+                tmp = Double.NaN;
+                return r;
+            }
+        };
+        assertAbs(rng, cisGenerator, cisGenerator, samples);
     }
 
     /**
