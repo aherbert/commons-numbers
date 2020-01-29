@@ -3657,22 +3657,22 @@ public final class Complex implements Serializable  {
         // implementation. Using simulated fused multiply addition (FMA)
         // with split precision summation is slower. A full high precision computation
         // is slower again and is a poor trade-off to gain 1 ULP accuracy.
-//        final double w = x - y;
-//        if (w > y) {
-//            final double t1 = splitHigh(x);
-//            final double t2 = x - t1;
-//            return t1 * t1 - (y * (-y) - t2 * (x + t1));
-//        }
-//        // 2y > x > y
-//        final double t = x + x;
-//        final double y1 = splitHigh(y);
-//        final double y2 = y - y1;
-//        final double t1 = splitHigh(t);
-//        final double t2 = t - t1;
-//        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
+        final double w = x - y;
+        if (w > y) {
+            final double t1 = splitHigh(x);
+            final double t2 = x - t1;
+            return t1 * t1 - (y * (-y) - t2 * (x + t1));
+        }
+        // 2y > x > y
+        final double t = x + x;
+        final double y1 = splitHigh(y);
+        final double y2 = y - y1;
+        final double t1 = splitHigh(t);
+        final double t2 = t - t1;
+        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
 
         // Simulate a fused multiply add (FMA)
-        return Math.fma(x, x, y * y);
+        //return Math.fma(x, x, y * y);
 //        final double yy = y * y;
 //        final double xx = x * x;
 //        final double xHigh = splitHigh(x);

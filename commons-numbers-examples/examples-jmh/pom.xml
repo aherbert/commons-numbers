@@ -84,6 +84,7 @@
     <project.mainClass>org.openjdk.jmh.Main</project.mainClass>
     <maven.compiler.source>9</maven.compiler.source>
     <maven.compiler.target>9</maven.compiler.target>
+    <animal.sniffer.skip>true</animal.sniffer.skip>
   </properties>
 
   <profiles>

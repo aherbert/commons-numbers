@@ -17,13 +17,24 @@
 
 package org.apache.commons.numbers.complex;
 
+import org.apache.commons.rng.JumpableUniformRandomProvider;
 import org.apache.commons.rng.UniformRandomProvider;
+import org.apache.commons.rng.sampling.distribution.ZigguratNormalizedGaussianSampler;
 import org.apache.commons.rng.simple.RandomSource;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.DoubleSupplier;
+import java.util.function.Function;
 import java.util.function.ToDoubleFunction;
 
 /**
@@ -169,6 +180,221 @@ public class CStandardTest2 {
                 z, exact, o, ulpo, e, ulpe));
     }
     // CHECKSTYLE: resume Regexp
+
+    private static class UlpChecker implements Callable<UlpChecker> {
+        final DoubleSupplier fx;
+        final DoubleSupplier fy;
+        final int samples;
+
+        long same;
+        long d1, d2, d3, d4;
+        long s1, s2, s3, s4;
+        BigDecimal m1 = BigDecimal.ZERO, m2 = BigDecimal.ZERO, m3 = BigDecimal.ZERO, m4 = BigDecimal.ZERO;
+        Complex z1 = Complex.ZERO, z2 = Complex.ZERO, z3 = Complex.ZERO, z4 = Complex.ZERO;
+
+        UlpChecker(DoubleSupplier fx,
+            DoubleSupplier fy, int samples) {
+            this.fx = fx;
+            this.fy = fy;
+            this.samples = samples;
+        }
+
+        UlpChecker add(UlpChecker c) {
+            if (c != null) {
+                same += c.same;
+                d1 += c.d1;
+                d2 += c.d2;
+                d3 += c.d3;
+                d4 += c.d4;
+                s1 += c.s1;
+                s2 += c.s2;
+                s3 += c.s3;
+                s4 += c.s4;
+                if (m1.compareTo(c.m1) < 0) {
+                    m1 = c.m1;
+                    z1 = c.z1;
+                }
+                if (m2.compareTo(c.m2) < 0) {
+                    m2 = c.m2;
+                    z2 = c.z2;
+                }
+                if (m3.compareTo(c.m3) < 0) {
+                    m3 = c.m3;
+                    z3 = c.z3;
+                }
+                if (m4.compareTo(c.m4) < 0) {
+                    m4 = c.m4;
+                    z4 = c.z4;
+                }
+            }
+            return this;
+        }
+
+        @Override
+        public UlpChecker call() {
+            for (int i = 0; i < samples; i++) {
+                check();
+            }
+            return this;
+        }
+
+        /**
+         * Check the difference between the computation of {@code x^2 + y^2} using
+         * {@link Math#fma(double, double, double)} and
+         * {@link Math#hypot(double, double)}. If the results differ the true result
+         * is computed using high precision.BigDecimal and the ULPs computed from the
+         * extended precision result.
+         *
+         * <p>This can be used to assert that the custom implementation of abs() is no worse than
+         * {@link Math#hypot(double, double)} which aims to be within 1 ULP of the exact result.
+         *
+         * <p>Note: This method will not handle an input complex that is infinite or nan.
+         *
+         * @param z the complex
+         * @param ulps the maximum allowed ULPs from the exact result
+         */
+        private void check() {
+            double x = fx.getAsDouble();
+            double y = fy.getAsDouble();
+            if (Math.abs(x) < Math.abs(y)) {
+                double tmp = x;
+                x = y;
+                y = tmp;
+            }
+
+            // high precision sum then standard sqrt. This is the best we could do?
+            final double o1 = Math.sqrt(value(x, y));
+
+            // Alternative using FMA
+            final double o2 = Math.sqrt(Math.fma(x, x, y * y));
+            // Reference
+            final double o3 = Math.hypot(x, y);
+
+            // Only interested in differences from realistic best result without BigDecimal or
+            // extended precision sqrt (although we could add this using Dekker's method)
+            if (o1 == o3 && o2 == o3) {
+                same++;
+                return;
+            }
+
+            // Exact
+            final BigDecimal bdexact = new BigDecimal(x).pow(2).add(
+                new BigDecimal(y).pow(2)).sqrt(MathContext.DECIMAL128);
+            final double exact = bdexact.doubleValue();
+
+            // current implementation in Complex. Use the variant of hypot to contrast with FMA.
+            final double o4 = Complex.ofCartesian(x, y).abs();
+
+            if (exact != o1) {
+                d1++;
+            }
+            if (exact != o2) {
+                d2++;
+            }
+            if (exact != o3) {
+                d3++;
+            }
+            if (exact != o4) {
+                d4++;
+            }
+
+            // Compute ULPs relative to the answer as a double
+            final BigDecimal exactUlp = new BigDecimal(Math.ulp(exact));
+
+            final BigDecimal ulpo1 = new BigDecimal(o1).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
+            BigDecimal ulpo2;
+            BigDecimal ulpo3;
+            BigDecimal ulpo4;
+            if (o2 == o1) {
+                ulpo2 = ulpo1;
+            } else {
+                ulpo2 = new BigDecimal(o2).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
+            }
+            if (o3 == o1) {
+                ulpo3 = ulpo1;
+            } else if (o3 == o2) {
+                ulpo3 = ulpo2;
+            } else {
+                ulpo3 = new BigDecimal(o3).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
+            }
+            if (o4 == o1) {
+                ulpo4 = ulpo1;
+            } else if (o4 == o2) {
+                ulpo4 = ulpo2;
+            } else if (o4 == o3) {
+                ulpo4 = ulpo3;
+            } else {
+                ulpo4 = new BigDecimal(o4).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
+            }
+            // CHECKSTYLE: stop Regexp
+            //System.out.printf("%s,%s = %s : dekker %s (%s) : fma %s (%s) : hypot %s (%s)%n", x, y, bdexact, e, ulpe, o1, ulpo1, o2, ulpo2);
+
+            // Accrue differences
+            s1 += ulpo1.scaleByPowerOfTen(5).longValue();
+            if (m1.compareTo(ulpo1) < 0) {
+                m1 = ulpo1;
+                z1 = Complex.ofCartesian(x, y);
+            }
+            s2 += ulpo2.scaleByPowerOfTen(5).longValue();
+            if (m2.compareTo(ulpo2) < 0) {
+                m2 = ulpo2;
+                z2 = Complex.ofCartesian(x, y);
+            }
+            s3 += ulpo3.scaleByPowerOfTen(5).longValue();
+            if (m3.compareTo(ulpo3) < 0) {
+                m3 = ulpo3;
+                z3 = Complex.ofCartesian(x, y);
+            }
+            s4 += ulpo4.scaleByPowerOfTen(5).longValue();
+            if (m4.compareTo(ulpo4) < 0) {
+                m4 = ulpo4;
+                z4 = Complex.ofCartesian(x, y);
+            }
+        }
+        // CHECKSTYLE: resume Regexp
+    }
+
+    private static class CisNumberGenerator implements DoubleSupplier {
+        final UniformRandomProvider rng;
+        double tmp = Double.NaN;
+
+        CisNumberGenerator(UniformRandomProvider rng) {
+            this.rng = rng;
+        }
+
+        @Override
+        public double getAsDouble() {
+            if (Double.isNaN(tmp)) {
+                // Random angle
+                double u = rng.nextDouble() * Math.PI;
+                tmp = Math.cos(u);
+                return Math.sin(u);
+            }
+            final double r = tmp;
+            tmp = Double.NaN;
+            return r;
+        }
+    }
+
+    private static class PolarNumberGenerator extends CisNumberGenerator {
+        PolarNumberGenerator(UniformRandomProvider rng) {
+            super(rng);
+        }
+
+        @Override
+        public double getAsDouble() {
+            if (Double.isNaN(tmp)) {
+                // Random angle and magnitude
+                double u = rng.nextDouble() * Math.PI;
+                double v = rng.nextDouble() * 2;
+                tmp = Math.cos(u) * v;
+                return Math.sin(u) * v;
+            }
+            final double r = tmp;
+            tmp = Double.NaN;
+            return r;
+        }
+    }
 
     private static String format(double x) {
         // Full length representation with no sign bit
@@ -593,6 +819,18 @@ public class CStandardTest2 {
     }
 
     /**
+     * Creates a number in the range {@code [1, 2)} with up to 52-bits in the mantissa.
+     * The modifies the exponent by the given amount.
+     *
+     * @param rng Source of randomness
+     * @param exponent Amount to change the exponent (in range [-1023, 1023])
+     * @return the number
+     */
+    private static double createFixedExponentNumber(UniformRandomProvider rng, int exponent) {
+        return Double.longBitsToDouble((rng.nextLong() >>> 12) | ((1023L + exponent) << 52));
+    }
+
+    /**
      * Utility to create a Complex.
      *
      * @param real the real
@@ -688,7 +926,7 @@ public class CStandardTest2 {
         assertAbs(rng, luGenerator, luGenerator, samples);
         report("log-uniform");
         // Complex cis numbers
-        final ToDoubleFunction<UniformRandomProvider> cisGenerator = new ToDoubleFunction<UniformRandomProvider>() {
+        final ToDoubleFunction<UniformRandomProvider> cisGenerator = new ToDoubleFunction<>() {
             private double tmp = Double.NaN;
             @Override
             public double applyAsDouble(UniformRandomProvider rng) {
@@ -720,6 +958,104 @@ public class CStandardTest2 {
                 );
         // CHECKSTYLE: resume all
         better = worse = total = same = correct = hp = hp1 = lp = 0;
+    }
+
+    @Test
+    public void testFma() throws InterruptedException, ExecutionException {
+        final JumpableUniformRandomProvider rng =
+            (JumpableUniformRandomProvider) RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 526735472636L);
+
+        // Can run max of approximately 1 billion per run.
+        int samples = 1 << 30;
+        int runs = 32;
+        ExecutorService es = Executors.newFixedThreadPool(
+            Math.min(Runtime.getRuntime().availableProcessors(), runs));
+        try {
+            // Cis and uniform are2 slower. Is this just because we have to use BigDecimal
+            // to check the answer more often. Or use sin/cos to create a cis number?
+            // These are cases where the branch prediction
+            // in hypot cannot learn which to choose.
+            checkFma("cis", rng, CisNumberGenerator::new, samples, runs, es);
+            checkFma("polar", rng, PolarNumberGenerator::new, samples, runs, es);
+            checkFma("uniform", rng, UniformRandomProvider::nextDouble, UniformRandomProvider::nextDouble, samples, runs, es);
+            checkFma("random", rng, r -> {
+                ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(r);
+                return s::sample;
+            }, samples, runs, es);
+
+            checkFma("range0", rng, CStandardTest2::createFixedExponentNumber, CStandardTest2::createFixedExponentNumber, samples, runs, es);
+            checkFma("range1", rng, CStandardTest2::createFixedExponentNumber, r -> createFixedExponentNumber(r) * 0x1.0p+1, samples, runs, es);
+            checkFma("range2", rng, CStandardTest2::createFixedExponentNumber, r -> createFixedExponentNumber(r) * 0x1.0p+2, samples, runs, es);
+            checkFma("range3", rng, CStandardTest2::createFixedExponentNumber, r -> createFixedExponentNumber(r) * 0x1.0p+3, samples, runs, es);
+            checkFma("range4", rng, CStandardTest2::createFixedExponentNumber, r -> createFixedExponentNumber(r) * 0x1.0p+4, samples, runs, es);
+
+            // Cannot check these due to scaling. Maybe add a scaled version for BigDecimal.
+            // Or just state that ULPs have less meaning for sub-normals.
+            //checkFma("sub-normal 52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, samples, runs, es);
+            //checkFma("sub-normal 52/32", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber32, samples, runs, es);
+            //checkFma("sub-normal 32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, samples, runs, es);
+
+            // The distribution of floating-point numbers has the log-uniform distribution as
+            // its limiting distribution. We do not use that to force a full 52-bit random mantissa
+            // which increase the likelihood for high precision.
+            // This generator is slow.
+            final ToDoubleFunction<UniformRandomProvider> luGenerator = new ToDoubleFunction<>() {
+                @Override
+                public double applyAsDouble(UniformRandomProvider rng) {
+                    // Do not use scalb. Directly write the exponent.
+                    return createFixedExponentNumber(rng, rng.nextInt(30));
+                }
+            };
+            checkFma("log-uniform", rng, luGenerator, luGenerator, samples, runs, es);
+        } finally {
+            es.shutdown();
+        }
+    }
+
+    private static void checkFma(String type, JumpableUniformRandomProvider rng,
+        ToDoubleFunction<UniformRandomProvider> fx,
+        ToDoubleFunction<UniformRandomProvider> fy, int samples, int runs, ExecutorService es) throws InterruptedException, ExecutionException {
+        ArrayList<Future<UlpChecker>> list = new ArrayList<>();
+        for (int i = 0; i < runs; i++) {
+            UniformRandomProvider r = rng.jump();
+            DoubleSupplier f1 = () -> fx.applyAsDouble(r);
+            DoubleSupplier f2 = () -> fy.applyAsDouble(r);
+            list.add(es.submit(new UlpChecker(f1, f2, samples)));
+        }
+        report(type, list);
+    }
+
+    private static void checkFma(String type, JumpableUniformRandomProvider rng,
+        Function<UniformRandomProvider, DoubleSupplier> f, int samples, int runs, ExecutorService es) throws InterruptedException, ExecutionException {
+        ArrayList<Future<UlpChecker>> list = new ArrayList<>();
+        for (int i = 0; i < runs; i++) {
+            DoubleSupplier fx = f.apply(rng.jump());
+            list.add(es.submit(new UlpChecker(fx, fx, samples)));
+        }
+        report(type, list);
+    }
+
+    private static void report(String type, ArrayList<Future<UlpChecker>> list) throws InterruptedException, ExecutionException {
+        UlpChecker r = null;
+        for (Future<UlpChecker> f : list) {
+            r = f.get().add(r);
+        }
+        if (r == null) {
+            return;
+        }
+
+        // CHECKSTYLE: stop all
+        long tot = (long) r.samples * list.size();
+        double t = tot * 100000.0;
+        System.out.printf("%-17s  same %d / %d (%.5f) : dekker %.5f (%.5f) %10d (%.5f) : fma %.5f (%.5f) %10d (%.5f) : hypot %.5f (%.5f) %10d (%.5f) : hypot2 %.5f (%.5f) %10d (%.5f) : %s : %s : %s : %s%n",
+                type,
+                r.same, tot, (double) r.same / tot,
+                r.s1 / t, r.m1, r.d1, (double) (tot - r.d1) / tot,
+                r.s2 / t, r.m2, r.d2, (double) (tot - r.d2) / tot,
+                r.s3 / t, r.m3, r.d3, (double) (tot - r.d3) / tot,
+                r.s4 / t, r.m4, r.d4, (double) (tot - r.d4) / tot,
+                r.z1, r.z2, r.z3, r.z4);
+        // CHECKSTYLE: resume all
     }
 
     @Test
@@ -873,10 +1209,10 @@ public class CStandardTest2 {
         final long total2 = 1L << 20;
         long diff = 0;
         for (long l = total2; l-- > 0;) {
-            double x = rng.nextDouble();
-            double y = rng.nextDouble();
-            x = Math.max(x, y);
-            y = Math.min(x, y);
+            double a = rng.nextDouble();
+            double b = rng.nextDouble();
+            double x = Math.max(a, b);
+            double y = Math.min(a, b);
             if (x < 2 * y) {
                 diff++;
                 // CHECKSTYLE: stop all

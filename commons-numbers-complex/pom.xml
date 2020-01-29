@@ -42,6 +42,7 @@
     <numbers.parent.dir>${basedir}/..</numbers.parent.dir>
     <maven.compiler.source>9</maven.compiler.source>
     <maven.compiler.target>9</maven.compiler.target>
+    <animal.sniffer.skip>true</animal.sniffer.skip>
   </properties>
 
   <dependencies>
@@ -60,6 +61,12 @@
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-rng-simple</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-rng-sampling</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
