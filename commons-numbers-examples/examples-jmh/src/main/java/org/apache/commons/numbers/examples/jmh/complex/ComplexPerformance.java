@@ -90,7 +90,7 @@ public class ComplexPerformance {
         /**
          * The size of the data.
          */
-        @Param({"1000"})
+        @Param({"10000"})
         private int size;
 
         /**
