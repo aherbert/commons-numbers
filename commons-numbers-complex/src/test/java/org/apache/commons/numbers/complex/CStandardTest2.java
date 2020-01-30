@@ -75,6 +75,10 @@ public class CStandardTest2 {
     private static long same;
     private static long correct;
 
+    private interface DoubleDoubleBiFunction {
+        double apply(double a, double b);
+    }
+
     /**
      * Assert {@link Complex#abs()} is functionally equivalent to using
      * {@link Math#hypot(double, double)}. If the results differ the true result
@@ -1503,5 +1507,69 @@ public class CStandardTest2 {
             }
         }
         System.out.printf("%d / %d  = %s%n", diff, total2, (double) diff / total2);
+    }
+
+    @Test
+    public void testSqrtLog() {
+        testSqrtLog("Dekker",  CStandardTest2::x2y2Dekker);
+        testSqrtLog("hypot2",  CStandardTest2::x2y2Hypot);
+        testSqrtLog("fmaSim",  CStandardTest2::fma);
+        //testSqrtLog("fma",  (x, y) -> Math.fma(x, x, y * y));
+        testSqrtLog("standard", (x, y) -> x * x + y * y);
+    }
+
+    private static void testSqrtLog(String name, DoubleDoubleBiFunction f) {
+        // Find cases where hypot is different and see if the sqrt/log computation is different
+        // at different scales.
+        final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 567464367L);
+        final long total2 = 1L << 30;
+        long diff = 0;
+        long diffSqrt = 0;
+        long diffLog1 = 0;
+        long diffLog2 = 0;
+        long diffLog3 = 0;
+        for (long l = total2; l-- > 0;) {
+            double x = createFixedExponentNumber(rng, 2);
+            double y = createFixedExponentNumber(rng, 2);
+            if (x < y) {
+                final double tmp = x;
+                x = y;
+                y = tmp;
+            }
+            double s = f.apply(x, y);
+            double s1 = Math.sqrt(s);
+            double s2 = Math.hypot(x, y);
+            if (s1 != s2) {
+                diff++;
+                // CHECKSTYLE: stop all
+                //System.out.printf("{%s, %s}%n", x, y);
+                double r1 = Math.sqrt(2 * (s1 + x));
+                double r2 = Math.sqrt(2 * (s2 + x));
+                if (r1 != r2) {
+                    diffSqrt++;
+                }
+                // Cannot use log when input is between 0.5 and 2.0
+                double l1 = 0.5 * Math.log(s);
+                double l2 = Math.log(s2);
+                // alternative
+                double l3 = Math.log(s1);
+                if (l1 != l2) {
+                    diffLog1++;
+                }
+                if (l1 != l3) {
+                    diffLog2++;
+                }
+                if (l2 != l3) {
+                    diffLog3++;
+                }
+            }
+        }
+        System.out.printf("%-10s  diff %10d / %d (%.5f) : sqrt %10d (%.5f) : log1 %10d (%.5f) : log2 %10d (%.5f) : log3 %10d (%.5f)%n",
+                name, diff, total2, (double) diff / total2,
+                diffSqrt, (double) diffSqrt / total2,
+                diffLog1, (double) diffLog1 / total2,
+                diffLog2, (double) diffLog2 / total2,
+                diffLog3, (double) diffLog3 / total2
+                );
     }
 }
