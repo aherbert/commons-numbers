@@ -19,6 +19,9 @@ package org.apache.commons.numbers.examples.jmh.complex;
 
 import org.apache.commons.math3.util.FastMath;
 import org.apache.commons.numbers.complex.Complex;
+import org.apache.commons.rng.UniformRandomProvider;
+import org.apache.commons.rng.sampling.distribution.ZigguratNormalizedGaussianSampler;
+import org.apache.commons.rng.simple.RandomSource;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -32,7 +35,6 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
 import java.util.Arrays;
-import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
@@ -112,7 +114,7 @@ public class ComplexPerformance {
         /**
          * The type of the data.
          */
-        @Param({"cis", "log-uniform", "uniform", "fixed-exponent", "edge"})
+        @Param({"cis", "gaussian", "log-uniform", "uniform", "fixed-exponent", "edge"})
         private String type;
 
         /**
@@ -129,7 +131,7 @@ public class ComplexPerformance {
          */
         @Setup
         public void setup() {
-            numbers = createNumbers(new SplittableRandom());
+            numbers = createNumbers(RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP));
         }
 
         /**
@@ -138,10 +140,13 @@ public class ComplexPerformance {
          * @param rng Random number generator.
          * @return the random complex number
          */
-        Complex[] createNumbers(SplittableRandom rng) {
+        Complex[] createNumbers(UniformRandomProvider rng) {
             Supplier<Complex> generator;
             if ("cis".equals(type)) {
                 generator = () -> Complex.ofCis(rng.nextDouble() * 2 * Math.PI);
+            } else if ("gaussian".equals(type)) {
+                final ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(rng);
+                generator = () -> Complex.ofCartesian(s.sample(), s.sample());
             } else if ("log-uniform".equals(type)) {
                 generator = () -> Complex.ofCartesian(createLogUniformNumber(rng), createLogUniformNumber(rng));
             } else if ("uniform".equals(type)) {
@@ -181,7 +186,7 @@ public class ComplexPerformance {
         @Setup
         public void setup() {
             // Do not call super.setup() so we recycle the RNG and avoid duplicates
-            final SplittableRandom rng = new SplittableRandom();
+            final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP);
             numbers = createNumbers(rng);
             numbers2 = createNumbers(rng);
         }
@@ -211,7 +216,7 @@ public class ComplexPerformance {
         @Setup
         public void setup() {
             // Do not call super.setup() so we recycle the RNG and avoid duplicates
-            final SplittableRandom rng = new SplittableRandom();
+            final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP);
             numbers = createNumbers(rng);
             numbers2 = Arrays.stream(createNumbers(rng)).mapToDouble(Complex::real).toArray();
         }
@@ -237,7 +242,7 @@ public class ComplexPerformance {
      * @param rng Random number generator.
      * @return the random number
      */
-    private static double createLogUniformNumber(SplittableRandom rng) {
+    private static double createLogUniformNumber(UniformRandomProvider rng) {
         // The log-uniform distribution has an upper and lower bound.
         // Here we use the lower bound of 1 which has a logarithm of zero.
         // It can thus be ignored from: e^(uniform(ln(upper) - ln(lower))
@@ -251,7 +256,7 @@ public class ComplexPerformance {
      * @param rng Random number generator.
      * @return the random number
      */
-    private static double createUniformNumber(SplittableRandom rng) {
+    private static double createUniformNumber(UniformRandomProvider rng) {
         // Create [-1, 1) then multiply by a range
         return (rng.nextDouble() - rng.nextInt(1)) * RANGE;
     }
@@ -263,7 +268,7 @@ public class ComplexPerformance {
      * @param rng Random number generator.
      * @return the random number
      */
-    private static double createFixedExponentNumber(SplittableRandom rng) {
+    private static double createFixedExponentNumber(UniformRandomProvider rng) {
         final long mask = ((1L << 52) - 1) | 1L << 63;
         final long bits = rng.nextLong() & mask;
         return bits | FIXED_EXPONENT;
@@ -276,7 +281,7 @@ public class ComplexPerformance {
      * @param rng Random number generator.
      * @return the random number
      */
-    private static double createEdgeNumber(SplittableRandom rng) {
+    private static double createEdgeNumber(UniformRandomProvider rng) {
         return EDGE_NUMBERS[rng.nextInt(EDGE_NUMBERS.length)];
     }
 
@@ -534,8 +539,13 @@ public class ComplexPerformance {
     }
 
     @Benchmark
-    public double[] abs1(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypot1(z.real(), z.imag()));
+    public double[] absNoop(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotNoop(z.real(), z.imag()));
+    }
+
+    @Benchmark
+    public double[] absReplica(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotReplica(z.real(), z.imag()));
     }
 
     @Benchmark
@@ -563,7 +573,7 @@ public class ComplexPerformance {
         return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotFma(z.real(), z.imag()));
     }
 
-    private static double hypot1(double x, double y) {
+    private static double hypotNoop(double x, double y) {
         // Differences to the fdlibm reference:
         //
         // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
@@ -687,7 +697,7 @@ public class ComplexPerformance {
             }
         }
 
-        return Math.sqrt(x2y2(a, b)) * rescale;
+        return Math.sqrt(x2y2Noop(a, b)) * rescale;
     }
 
     /**
@@ -698,7 +708,7 @@ public class ComplexPerformance {
      *
      * <p>Translated from "Freely Distributable Math Library" e_hypot.c
      * to minimize rounding errors. The code has been modified to use the split
-     * method from Dekker. See the method {@link #hypot1(double, double)} for the
+     * method from Dekker. See the method {@link #hypotNoop(double, double)} for the
      * original license.
      *
      * <p>Note that fdlibm conditioned {@code x > y} using only the upper 20 bits of the
@@ -714,7 +724,7 @@ public class ComplexPerformance {
      * @param y Value y
      * @return x^2 + y^2
      */
-    private static double x2y2(double x, double y) {
+    private static double x2y2Noop(double x, double y) {
         // Below we use a Dekker split to create two 26-bit numbers avoiding use of
         // conversion to raw bits. The original fdlibm version used a split of
         // the upper 32-bits and lower 32-bits. This results in the upper part
@@ -750,6 +760,192 @@ public class ComplexPerformance {
 //        final double t1 = splitHigh(t);
 //        final double t2 = t - t1;
 //        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
+    }
+
+    private static double hypotReplica(double x, double y) {
+        // Differences to the fdlibm reference:
+        //
+        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
+        // This incorrectly orders numbers which differ only in the lower 32-bits.
+        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
+        // of cases of normal numbers. This implementation forces the |x| >= |y| order
+        // to ensure the function is commutative.
+        // The current method of doing the comparison only when the upper 32-bits match
+        // is consistently fast in JMH performance tests with alternative implementations.
+        //
+        // 2. This stores the re-scaling factor for use in a multiplication.
+        // The original computed scaling by directly writing to the exponent bits.
+        // and maintained the high part (ha) during scaling for use in the high
+        // precision sum x^2 + y^2. This version has no requirement for that
+        // as the high part is extracted using Dekker's method.
+        //
+        // 3. An alteration is done here to add an 'else if' instead of a second
+        // 'if' statement. Since the exponent difference between a and b
+        // is below 60, if a's exponent is above 500 then b's cannot be below
+        // -500 even after scaling by -600 in the first conditional:
+        // ((>500 - 60) - 600) > -500
+        //
+        // 4. The original handling of sub-normal numbers does not scale the representation
+        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
+        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
+        // computed for an addition to the exponent bits. This is neglected in the fdlibm
+        // version. The effect is the extended precision computation reverts to a
+        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
+        // standard precision result x^2 + y^2. In contrast this implementation computes
+        // the split dynamically on the scaled number. The effect is increased
+        // precision for the majority of sub-normal cases where the implementations compute
+        // a different result. Only 1 ULP differences have been measured.
+        //
+        // Original comments from fdlibm are in c style: /* */
+        // Extra comments added for reference.
+        //
+        // Note that the high 32-bits are compared to constants.
+        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
+        // The next 11-bits are the biased exponent. The sign bit has been cleared.
+        // For clarity the values have been refactored to constants.
+        //
+        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
+        // where the number following the p is the exponent. These are only used with
+        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
+
+        /* High word of x & y */
+        // The mask is used to remove the sign bit.
+        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fffffff;
+        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fffffff;
+
+        // Order by approximate magnitude (lower bits excluded)
+        double a;
+        double b;
+        if (hb > ha) {
+            a = y;
+            b = x;
+            final int j = ha;
+            ha = hb;
+            hb = j;
+        } else {
+            a = x;
+            b = y;
+        }
+
+        // Check if the smaller part is significant.
+        // Do not replace this with 27 since the product x^2 is computed in
+        // extended precision for an effective mantissa of 105-bits. Potentially it could be
+        // replaced with 54 where y^2 will not overlap extended precision x^2.
+        if ((ha - hb) > EXP_54) {
+            /* x/y > 2**60 */
+            // No addition of a + b for sNaN.
+            return Math.abs(a);
+        }
+
+        /* a <- |a| */
+        /* b <- |b| */
+        // No equivalent to directly writing back the high bits.
+        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
+        a = Math.abs(a);
+        b = Math.abs(b);
+
+        // Second re-order in the rare event the upper 32-bits are the same.
+        // This could be done in various locations including inside the function x2y2.
+        // It must be done for sub-normals and is placed here for clarity that x2y2 assumes x >= y.
+        if (ha == hb && a < b) {
+            final double tmp = a;
+            a = b;
+            b = tmp;
+        }
+
+        double rescale = 1.0;
+        if (ha > EXP_500) {
+            /* a > 2^500 */
+            if (ha >= EXP_1024) {
+                /* Inf or NaN */
+                // Check b is infinite for the IEEE754 result.
+                // No addition of a + b for sNaN.
+                return b == Double.POSITIVE_INFINITY ? b : a;
+            }
+            /* scale a and b by 2^-600 */
+            a *= 0x1.0p-600;
+            b *= 0x1.0p-600;
+            rescale = 0x1.0p+600;
+        } else if (hb < EXP_NEG_500) {
+            /* b < 2^-500 */
+            if (hb < EXP_NEG_1022) {
+                /* sub-normal or 0 */
+                // Intentional comparison with zero.
+                if (b == 0.0) {
+                    return a;
+                }
+                /* scale a and b by 2^1022 */
+                a *= 0x1.0p+1022;
+                b *= 0x1.0p+1022;
+                rescale = 0x1.0p-1022;
+            } else {
+                /* scale a and b by 2^600 */
+                a *= 0x1.0p+600;
+                b *= 0x1.0p+600;
+                rescale = 0x1.0p-600;
+            }
+        }
+
+        return Math.sqrt(x2y2Replica(a, b)) * rescale;
+    }
+
+    /**
+     * Return {@code x^2 + y^2} with high accuracy.
+     *
+     * <p>It is assumed that {@code 2^500 > x >= y > 2^-500}. Thus there will be no
+     * overflow or underflow of the result.
+     *
+     * <p>Translated from "Freely Distributable Math Library" e_hypot.c
+     * to minimize rounding errors. The code has been modified to use the split
+     * method from Dekker. See the method {@link #hypotNoop(double, double)} for the
+     * original license.
+     *
+     * <p>Note that fdlibm conditioned {@code x > y} using only the upper 20 bits of the
+     * mantissa and the 11-bit exponent and thus x could be slightly smaller than y
+     * for cases where the upper 31-bits of the unsigned 64-bit representation are identical.
+     * There are cases for {@code 2x > y > x} where the result is different if the
+     * arguments were reversed so the equality should be conditioned on the entire magnitude
+     * of the two floating point values. This is especially relevant if the numbers are
+     * sub-normal where the upper 20-bits of the mantissa are zero and the entire information
+     * on the magnitude is in the lower 32-bits.
+     *
+     * @param x Value x.
+     * @param y Value y
+     * @return x^2 + y^2
+     */
+    private static double x2y2Replica(double x, double y) {
+        // Below we use a Dekker split to create two 26-bit numbers avoiding use of
+        // conversion to raw bits. The original fdlibm version used a split of
+        // the upper 32-bits and lower 32-bits. This results in the upper part
+        // being a 21-bit precision number (including assumed leading 1) and the
+        // The different split can create 1 ULP differences
+        // in the result of Math.sqrt(x2y2(x, y)) verses the JDK Math.hypot(x, y)
+        // implementation of the fdlibm function. Replacing the Dekker split with
+        // Double.longBitsToDouble(Double.doubleToRawLongBits(a) & 0xffffffff00000000L)
+        // computes the same result as Math.hypot(x, y).
+        // Testing with billions of numbers show that either split achieves the target of
+        // 1 ULP from the result of a high precision computation
+        // (e.g. see o.a.c.numbers.arrays.LinearCombination) and standard Math.sqrt().
+        // Performance comparisons show the Dekker split is faster.
+        //
+        // This could be replaced by Math.fma(x, x, y * y).
+        // Tests with FMA on JDK 9 show precision is not significantly changed from this
+        // implementation. Using simulated fused multiply addition (FMA)
+        // with split precision summation is slower. A full high precision computation
+        // is slower again and is a poor trade-off to gain 1 ULP accuracy.
+        final double w = x - y;
+        if (w > y) {
+            final double t1 = Double.longBitsToDouble(Double.doubleToLongBits(x) & 0xffff_ffff_0000_0000L);
+            final double t2 = x - t1;
+            return t1 * t1 - (y * (-y) - t2 * (x + t1));
+        }
+        // 2y > x > y
+        final double t = x + x;
+        final double y1 = Double.longBitsToDouble(Double.doubleToLongBits(y) & 0xffff_ffff_0000_0000L);
+        final double y2 = y - y1;
+        final double t1 = Double.longBitsToDouble(Double.doubleToLongBits(t) & 0xffff_ffff_0000_0000L);
+        final double t2 = t - t1;
+        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
     }
 
     private static double hypotFmaSim(double x, double y) {
@@ -886,7 +1082,7 @@ public class ComplexPerformance {
 //        // Two sum y^2 into the expansion of x^2
 //        final double r = xx + yy;
 //        return Math.sqrt(xx - r + yy + x2Low + r) * rescale;
-        return Math.sqrt(x2y2b(a, b)) * rescale;
+        return Math.sqrt(x2y2Fma(a, b)) * rescale;
     }
 
     private static double hypotFmaElseNoAbs(double x, double y) {
@@ -1005,7 +1201,7 @@ public class ComplexPerformance {
             }
         }
 
-        return Math.sqrt(x2y2b(a, b)) * rescale;
+        return Math.sqrt(x2y2Fma(a, b)) * rescale;
     }
 
     private static double hypotX2Y2(double x, double y) {
@@ -1133,7 +1329,7 @@ public class ComplexPerformance {
      *
      * <p>Translated from "Freely Distributable Math Library" e_hypot.c
      * to minimize rounding errors. The code has been modified to use the split
-     * method from Dekker. See the method {@link #hypot1(double, double)} for the
+     * method from Dekker. See the method {@link #hypotNoop(double, double)} for the
      * original license.
      *
      * <p>Note that fdlibm conditioned {@code x > y} using only the upper 20 bits of the
@@ -1149,7 +1345,7 @@ public class ComplexPerformance {
      * @param y Value y
      * @return x^2 + y^2
      */
-    private static double x2y2b(double x, double y) {
+    private static double x2y2Fma(double x, double y) {
         // Below we use a Dekker split to create two 26-bit numbers avoiding use of
         // conversion to raw bits. The original fdlibm version used a split of
         // the upper 32-bits and lower 32-bits. This results in the upper part
