@@ -540,40 +540,57 @@ public class ComplexPerformance {
 
     @Benchmark
     public double[] absNoop(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotNoop(z.real(), z.imag()));
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2Noop));
     }
 
     @Benchmark
-    public double[] absReplica(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotReplica(z.real(), z.imag()));
+    public double[] absHypot2(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2HypotSplit));
+    }
+
+    @Benchmark
+    public double[] absHypotReplica(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2HypotReplica));
     }
 
     @Benchmark
     public double[] absFmaSim(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotFmaSim(z.real(), z.imag()));
-    }
-
-    //@Benchmark
-    public double[] absFmaElseNoAbs(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotFmaElseNoAbs(z.real(), z.imag()));
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
     }
 
     @Benchmark
     public double[] absX2Y2(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotX2Y2(z.real(), z.imag()));
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(a * a + b * b)));
     }
 
     @Benchmark
     public double[] absDekker(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotDekker(z.real(), z.imag()));
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
+    }
+
+    @Benchmark
+    public double[] absDekkerSqrt(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2DekkerSqrt));
     }
 
     @Benchmark
     public double[] absFma(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> hypotFma(z.real(), z.imag()));
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(Math.fma(a, a, b * b))));
     }
 
-    private static double hypotNoop(double x, double y) {
+    private interface DoubleDoubleBiFunction {
+        double apply(double a, double b);
+    }
+
+    private static double hypot(double x, double y, DoubleDoubleBiFunction sqrt) {
         // Differences to the fdlibm reference:
         //
         // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
@@ -697,242 +714,20 @@ public class ComplexPerformance {
             }
         }
 
-        return Math.sqrt(x2y2Noop(a, b)) * rescale;
+        return sqrt.apply(a, b) * rescale;
     }
 
-    /**
-     * Return {@code x^2 + y^2} with high accuracy.
-     *
-     * <p>It is assumed that {@code 2^500 > x >= y > 2^-500}. Thus there will be no
-     * overflow or underflow of the result.
-     *
-     * <p>Translated from "Freely Distributable Math Library" e_hypot.c
-     * to minimize rounding errors. The code has been modified to use the split
-     * method from Dekker. See the method {@link #hypotNoop(double, double)} for the
-     * original license.
-     *
-     * <p>Note that fdlibm conditioned {@code x > y} using only the upper 20 bits of the
-     * mantissa and the 11-bit exponent and thus x could be slightly smaller than y
-     * for cases where the upper 31-bits of the unsigned 64-bit representation are identical.
-     * There are cases for {@code 2x > y > x} where the result is different if the
-     * arguments were reversed so the equality should be conditioned on the entire magnitude
-     * of the two floating point values. This is especially relevant if the numbers are
-     * sub-normal where the upper 20-bits of the mantissa are zero and the entire information
-     * on the magnitude is in the lower 32-bits.
-     *
-     * @param x Value x.
-     * @param y Value y
-     * @return x^2 + y^2
-     */
     private static double x2y2Noop(double x, double y) {
-        // Below we use a Dekker split to create two 26-bit numbers avoiding use of
-        // conversion to raw bits. The original fdlibm version used a split of
-        // the upper 32-bits and lower 32-bits. This results in the upper part
-        // being a 21-bit precision number (including assumed leading 1) and the
-        // The different split can create 1 ULP differences
-        // in the result of Math.sqrt(x2y2(x, y)) verses the JDK Math.hypot(x, y)
-        // implementation of the fdlibm function. Replacing the Dekker split with
-        // Double.longBitsToDouble(Double.doubleToRawLongBits(a) & 0xffffffff00000000L)
-        // computes the same result as Math.hypot(x, y).
-        // Testing with billions of numbers show that either split achieves the target of
-        // 1 ULP from the result of a high precision computation
-        // (e.g. see o.a.c.numbers.arrays.LinearCombination) and standard Math.sqrt().
-        // Performance comparisons show the Dekker split is faster.
-        //
-        // This could be replaced by Math.fma(x, x, y * y).
-        // Tests with FMA on JDK 9 show precision is not significantly changed from this
-        // implementation. Using simulated fused multiply addition (FMA)
-        // with split precision summation is slower. A full high precision computation
-        // is slower again and is a poor trade-off to gain 1 ULP accuracy.
+        // The purpose of this function is to test the effect of the branch
+        // decision based on w. So we must use w and return different results.
         final double w = x - y;
         if (w > y) {
-            return x;
-            //return x2y2b(x, y);
-//            final double t1 = splitHigh(x);
-//            final double t2 = x - t1;
-//            return t1 * t1 - (y * (-y) - t2 * (x + t1));
+            return Math.sqrt(x * y);
         }
-        // 2y > x > y
-        return x * x + y * y;
-//        final double t = x + x;
-//        final double y1 = splitHigh(y);
-//        final double y2 = y - y1;
-//        final double t1 = splitHigh(t);
-//        final double t2 = t - t1;
-//        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
+        return Math.sqrt(x * w);
     }
 
-    private static double hypotReplica(double x, double y) {
-        // Differences to the fdlibm reference:
-        //
-        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This incorrectly orders numbers which differ only in the lower 32-bits.
-        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
-        // of cases of normal numbers. This implementation forces the |x| >= |y| order
-        // to ensure the function is commutative.
-        // The current method of doing the comparison only when the upper 32-bits match
-        // is consistently fast in JMH performance tests with alternative implementations.
-        //
-        // 2. This stores the re-scaling factor for use in a multiplication.
-        // The original computed scaling by directly writing to the exponent bits.
-        // and maintained the high part (ha) during scaling for use in the high
-        // precision sum x^2 + y^2. This version has no requirement for that
-        // as the high part is extracted using Dekker's method.
-        //
-        // 3. An alteration is done here to add an 'else if' instead of a second
-        // 'if' statement. Since the exponent difference between a and b
-        // is below 60, if a's exponent is above 500 then b's cannot be below
-        // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500
-        //
-        // 4. The original handling of sub-normal numbers does not scale the representation
-        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
-        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
-        // computed for an addition to the exponent bits. This is neglected in the fdlibm
-        // version. The effect is the extended precision computation reverts to a
-        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation computes
-        // the split dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases where the implementations compute
-        // a different result. Only 1 ULP differences have been measured.
-        //
-        // Original comments from fdlibm are in c style: /* */
-        // Extra comments added for reference.
-        //
-        // Note that the high 32-bits are compared to constants.
-        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
-        // The next 11-bits are the biased exponent. The sign bit has been cleared.
-        // For clarity the values have been refactored to constants.
-        //
-        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
-        // where the number following the p is the exponent. These are only used with
-        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
-
-        /* High word of x & y */
-        // The mask is used to remove the sign bit.
-        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fffffff;
-        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fffffff;
-
-        // Order by approximate magnitude (lower bits excluded)
-        double a;
-        double b;
-        if (hb > ha) {
-            a = y;
-            b = x;
-            final int j = ha;
-            ha = hb;
-            hb = j;
-        } else {
-            a = x;
-            b = y;
-        }
-
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_54) {
-            /* x/y > 2**60 */
-            // No addition of a + b for sNaN.
-            return Math.abs(a);
-        }
-
-        /* a <- |a| */
-        /* b <- |b| */
-        // No equivalent to directly writing back the high bits.
-        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
-        a = Math.abs(a);
-        b = Math.abs(b);
-
-        // Second re-order in the rare event the upper 32-bits are the same.
-        // This could be done in various locations including inside the function x2y2.
-        // It must be done for sub-normals and is placed here for clarity that x2y2 assumes x >= y.
-        if (ha == hb && a < b) {
-            final double tmp = a;
-            a = b;
-            b = tmp;
-        }
-
-        double rescale = 1.0;
-        if (ha > EXP_500) {
-            /* a > 2^500 */
-            if (ha >= EXP_1024) {
-                /* Inf or NaN */
-                // Check b is infinite for the IEEE754 result.
-                // No addition of a + b for sNaN.
-                return b == Double.POSITIVE_INFINITY ? b : a;
-            }
-            /* scale a and b by 2^-600 */
-            a *= 0x1.0p-600;
-            b *= 0x1.0p-600;
-            rescale = 0x1.0p+600;
-        } else if (hb < EXP_NEG_500) {
-            /* b < 2^-500 */
-            if (hb < EXP_NEG_1022) {
-                /* sub-normal or 0 */
-                // Intentional comparison with zero.
-                if (b == 0.0) {
-                    return a;
-                }
-                /* scale a and b by 2^1022 */
-                a *= 0x1.0p+1022;
-                b *= 0x1.0p+1022;
-                rescale = 0x1.0p-1022;
-            } else {
-                /* scale a and b by 2^600 */
-                a *= 0x1.0p+600;
-                b *= 0x1.0p+600;
-                rescale = 0x1.0p-600;
-            }
-        }
-
-        return Math.sqrt(x2y2Replica(a, b)) * rescale;
-    }
-
-    /**
-     * Return {@code x^2 + y^2} with high accuracy.
-     *
-     * <p>It is assumed that {@code 2^500 > x >= y > 2^-500}. Thus there will be no
-     * overflow or underflow of the result.
-     *
-     * <p>Translated from "Freely Distributable Math Library" e_hypot.c
-     * to minimize rounding errors. The code has been modified to use the split
-     * method from Dekker. See the method {@link #hypotNoop(double, double)} for the
-     * original license.
-     *
-     * <p>Note that fdlibm conditioned {@code x > y} using only the upper 20 bits of the
-     * mantissa and the 11-bit exponent and thus x could be slightly smaller than y
-     * for cases where the upper 31-bits of the unsigned 64-bit representation are identical.
-     * There are cases for {@code 2x > y > x} where the result is different if the
-     * arguments were reversed so the equality should be conditioned on the entire magnitude
-     * of the two floating point values. This is especially relevant if the numbers are
-     * sub-normal where the upper 20-bits of the mantissa are zero and the entire information
-     * on the magnitude is in the lower 32-bits.
-     *
-     * @param x Value x.
-     * @param y Value y
-     * @return x^2 + y^2
-     */
-    private static double x2y2Replica(double x, double y) {
-        // Below we use a Dekker split to create two 26-bit numbers avoiding use of
-        // conversion to raw bits. The original fdlibm version used a split of
-        // the upper 32-bits and lower 32-bits. This results in the upper part
-        // being a 21-bit precision number (including assumed leading 1) and the
-        // The different split can create 1 ULP differences
-        // in the result of Math.sqrt(x2y2(x, y)) verses the JDK Math.hypot(x, y)
-        // implementation of the fdlibm function. Replacing the Dekker split with
-        // Double.longBitsToDouble(Double.doubleToRawLongBits(a) & 0xffffffff00000000L)
-        // computes the same result as Math.hypot(x, y).
-        // Testing with billions of numbers show that either split achieves the target of
-        // 1 ULP from the result of a high precision computation
-        // (e.g. see o.a.c.numbers.arrays.LinearCombination) and standard Math.sqrt().
-        // Performance comparisons show the Dekker split is faster.
-        //
-        // This could be replaced by Math.fma(x, x, y * y).
-        // Tests with FMA on JDK 9 show precision is not significantly changed from this
-        // implementation. Using simulated fused multiply addition (FMA)
-        // with split precision summation is slower. A full high precision computation
-        // is slower again and is a poor trade-off to gain 1 ULP accuracy.
+    private static double x2y2HypotReplica(double x, double y) {
         final double w = x - y;
         if (w > y) {
             final double t1 = Double.longBitsToDouble(Double.doubleToLongBits(x) & 0xffff_ffff_0000_0000L);
@@ -945,454 +740,26 @@ public class ComplexPerformance {
         final double y2 = y - y1;
         final double t1 = Double.longBitsToDouble(Double.doubleToLongBits(t) & 0xffff_ffff_0000_0000L);
         final double t2 = t - t1;
-        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
+        return Math.sqrt(t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y)));
     }
 
-    private static double hypotFmaSim(double x, double y) {
-        // Differences to the fdlibm reference:
-        //
-        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This incorrectly orders numbers which differ only in the lower 32-bits.
-        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
-        // of cases of normal numbers. This implementation forces the |x| >= |y| order
-        // to ensure the function is commutative.
-        // The current method of doing the comparison only when the upper 32-bits match
-        // is consistently fast in JMH performance tests with alternative implementations.
-        //
-        // 2. This stores the re-scaling factor for use in a multiplication.
-        // The original computed scaling by directly writing to the exponent bits.
-        // and maintained the high part (ha) during scaling for use in the high
-        // precision sum x^2 + y^2. This version has no requirement for that
-        // as the high part is extracted using Dekker's method.
-        //
-        // 3. An alteration is done here to add an 'else if' instead of a second
-        // 'if' statement. Since the exponent difference between a and b
-        // is below 60, if a's exponent is above 500 then b's cannot be below
-        // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500
-        //
-        // 4. The original handling of sub-normal numbers does not scale the representation
-        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
-        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
-        // computed for an addition to the exponent bits. This is neglected in the fdlibm
-        // version. The effect is the extended precision computation reverts to a
-        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation computes
-        // the split dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases where the implementations compute
-        // a different result. Only 1 ULP differences have been measured.
-        //
-        // Original comments from fdlibm are in c style: /* */
-        // Extra comments added for reference.
-        //
-        // Note that the high 32-bits are compared to constants.
-        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
-        // The next 11-bits are the biased exponent. The sign bit has been cleared.
-        // For clarity the values have been refactored to constants.
-        //
-        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
-        // where the number following the p is the exponent. These are only used with
-        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
-
-        /* High word of x & y */
-        // The mask is used to remove the sign bit.
-        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fff_ffff;
-        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fff_ffff;
-
-        // Order by approximate magnitude (lower bits excluded)
-        double a;
-        double b;
-        if (hb > ha) {
-            a = y;
-            b = x;
-            final int j = ha;
-            ha = hb;
-            hb = j;
-        } else {
-            a = x;
-            b = y;
+    private static double x2y2HypotSplit(double x, double y) {
+        final double w = x - y;
+        if (w > y) {
+            final double t1 = splitHigh(x);
+            final double t2 = x - t1;
+            return t1 * t1 - (y * (-y) - t2 * (x + t1));
         }
-
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_54) {
-            /* x/y > 2**60 */
-            // No addition of a + b for sNaN.
-            return Math.abs(a);
-        }
-
-        // No use of absolutes as the x^2 + y^2 sum removes the signs.
-        // No requirement for a second order unless sub-normal.
-        /* a <- |a| */
-        /* b <- |b| */
-        // No equivalent to directly writing back the high bits.
-        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
-        a = Math.abs(a);
-        b = Math.abs(b);
-
-        if (ha == hb && a < b) {
-            final double tmp = a;
-            a = b;
-            b = tmp;
-        }
-
-        double rescale = 1.0;
-        if (ha > EXP_500) {
-            /* a > 2^500 */
-            if (ha >= EXP_1024) {
-                /* Inf or NaN */
-                // Check b is infinite for the IEEE754 result.
-                // No addition of a + b for sNaN.
-                return b == Double.POSITIVE_INFINITY ? Double.POSITIVE_INFINITY : a;
-            }
-            /* scale a and b by 2^-600 */
-            a *= 0x1.0p-600;
-            b *= 0x1.0p-600;
-            rescale = 0x1.0p+600;
-            // Disallow parallel condition evaluation.
-        } else if (hb < EXP_NEG_500) {
-            /* b < 2^-500 */
-            if (hb < EXP_NEG_1022) {
-                /* sub-normal or 0 */
-                // Intentional comparison with zero.
-                if (b == 0.0) {
-                    return a;
-                }
-                /* scale a and b by 2^1022 */
-                a *= 0x1.0p+1022;
-                b *= 0x1.0p+1022;
-                rescale = 0x1.0p-1022;
-            } else {
-                /* scale a and b by 2^600 */
-                a *= 0x1.0p+600;
-                b *= 0x1.0p+600;
-                rescale = 0x1.0p-600;
-            }
-        //} else {
-        //    return Math.sqrt(x2y2b(a, b));
-        }
-
-//        final double yy = b * b;
-//        final double xx = a * a;
-//        final double xHigh = splitHigh(a);
-//        final double xLow  = a - xHigh;
-//        final double x2Low = squareLow(xLow, xHigh, xx);
-//        // Two sum y^2 into the expansion of x^2
-//        final double r = xx + yy;
-//        return Math.sqrt(xx - r + yy + x2Low + r) * rescale;
-        return Math.sqrt(x2y2Fma(a, b)) * rescale;
+        // 2y > x > y
+        final double t = x + x;
+        final double y1 = splitHigh(y);
+        final double y2 = y - y1;
+        final double t1 = splitHigh(t);
+        final double t2 = t - t1;
+        return Math.sqrt(t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y)));
     }
 
-    private static double hypotFmaElseNoAbs(double x, double y) {
-        // Differences to the fdlibm reference:
-        //
-        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This incorrectly orders numbers which differ only in the lower 32-bits.
-        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
-        // of cases of normal numbers. This implementation forces the |x| >= |y| order
-        // to ensure the function is commutative.
-        // The current method of doing the comparison only when the upper 32-bits match
-        // is consistently fast in JMH performance tests with alternative implementations.
-        //
-        // 2. This stores the re-scaling factor for use in a multiplication.
-        // The original computed scaling by directly writing to the exponent bits.
-        // and maintained the high part (ha) during scaling for use in the high
-        // precision sum x^2 + y^2. This version has no requirement for that
-        // as the high part is extracted using Dekker's method.
-        //
-        // 3. An alteration is done here to add an 'else if' instead of a second
-        // 'if' statement. Since the exponent difference between a and b
-        // is below 60, if a's exponent is above 500 then b's cannot be below
-        // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500
-        //
-        // 4. The original handling of sub-normal numbers does not scale the representation
-        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
-        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
-        // computed for an addition to the exponent bits. This is neglected in the fdlibm
-        // version. The effect is the extended precision computation reverts to a
-        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation computes
-        // the split dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases where the implementations compute
-        // a different result. Only 1 ULP differences have been measured.
-        //
-        // Original comments from fdlibm are in c style: /* */
-        // Extra comments added for reference.
-        //
-        // Note that the high 32-bits are compared to constants.
-        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
-        // The next 11-bits are the biased exponent. The sign bit has been cleared.
-        // For clarity the values have been refactored to constants.
-        //
-        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
-        // where the number following the p is the exponent. These are only used with
-        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
-
-        /* High word of x & y */
-        // The mask is used to remove the sign bit.
-        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fff_ffff;
-        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fff_ffff;
-
-        // Order by approximate magnitude (lower bits excluded)
-        double a;
-        double b;
-        if (hb > ha) {
-            a = y;
-            b = x;
-            final int j = ha;
-            ha = hb;
-            hb = j;
-        } else {
-            a = x;
-            b = y;
-        }
-
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_54) {
-            /* x/y > 2**60 */
-            // No addition of a + b for sNaN.
-            return Math.abs(a);
-        }
-
-        // No use of absolutes as the x^2 + y^2 sum removes the signs.
-        if (ha == hb && Math.abs(a) < Math.abs(b)) {
-            final double tmp = a;
-            a = b;
-            b = tmp;
-        }
-
-        double rescale = 1.0;
-        if (ha > EXP_500) {
-            /* a > 2^500 */
-            if (ha >= EXP_1024) {
-                /* Inf or NaN */
-                // Check b is infinite for the IEEE754 result.
-                // No addition of a + b for sNaN.
-                return Math.abs(b) == Double.POSITIVE_INFINITY ? Double.POSITIVE_INFINITY : Math.abs(a);
-            }
-            /* scale a and b by 2^-600 */
-            a *= 0x1.0p-600;
-            b *= 0x1.0p-600;
-            rescale = 0x1.0p+600;
-            // Disallow parallel condition evaluation.
-        } else if (hb < EXP_NEG_500) {
-            /* b < 2^-500 */
-            if (hb < EXP_NEG_1022) {
-                /* sub-normal or 0 */
-                // Intentional comparison with zero.
-                if (b == 0.0) {
-                    return Math.abs(a);
-                }
-                /* scale a and b by 2^1022 */
-                a *= 0x1.0p+1022;
-                b *= 0x1.0p+1022;
-                rescale = 0x1.0p-1022;
-            } else {
-                /* scale a and b by 2^600 */
-                a *= 0x1.0p+600;
-                b *= 0x1.0p+600;
-                rescale = 0x1.0p-600;
-            }
-        }
-
-        return Math.sqrt(x2y2Fma(a, b)) * rescale;
-    }
-
-    private static double hypotX2Y2(double x, double y) {
-        // Differences to the fdlibm reference:
-        //
-        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This incorrectly orders numbers which differ only in the lower 32-bits.
-        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
-        // of cases of normal numbers. This implementation forces the |x| >= |y| order
-        // to ensure the function is commutative.
-        // The current method of doing the comparison only when the upper 32-bits match
-        // is consistently fast in JMH performance tests with alternative implementations.
-        //
-        // 2. This stores the re-scaling factor for use in a multiplication.
-        // The original computed scaling by directly writing to the exponent bits.
-        // and maintained the high part (ha) during scaling for use in the high
-        // precision sum x^2 + y^2. This version has no requirement for that
-        // as the high part is extracted using Dekker's method.
-        //
-        // 3. An alteration is done here to add an 'else if' instead of a second
-        // 'if' statement. Since the exponent difference between a and b
-        // is below 60, if a's exponent is above 500 then b's cannot be below
-        // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500
-        //
-        // 4. The original handling of sub-normal numbers does not scale the representation
-        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
-        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
-        // computed for an addition to the exponent bits. This is neglected in the fdlibm
-        // version. The effect is the extended precision computation reverts to a
-        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation computes
-        // the split dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases where the implementations compute
-        // a different result. Only 1 ULP differences have been measured.
-        //
-        // Original comments from fdlibm are in c style: /* */
-        // Extra comments added for reference.
-        //
-        // Note that the high 32-bits are compared to constants.
-        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
-        // The next 11-bits are the biased exponent. The sign bit has been cleared.
-        // For clarity the values have been refactored to constants.
-        //
-        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
-        // where the number following the p is the exponent. These are only used with
-        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
-
-        /* High word of x & y */
-        // The mask is used to remove the sign bit.
-        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fff_ffff;
-        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fff_ffff;
-
-        // Order by approximate magnitude (lower bits excluded)
-        double a;
-        double b;
-        if (hb > ha) {
-            a = y;
-            b = x;
-            final int j = ha;
-            ha = hb;
-            hb = j;
-        } else {
-            a = x;
-            b = y;
-        }
-
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_54) {
-            /* x/y > 2**60 */
-            // No addition of a + b for sNaN.
-            return Math.abs(a);
-        }
-
-        // No use of absolutes as the x^2 + y^2 sum removes the signs.
-
-        double rescale = 1.0;
-        if (ha > EXP_500) {
-            /* a > 2^500 */
-            if (ha >= EXP_1024) {
-                /* Inf or NaN */
-                // Check b is infinite for the IEEE754 result.
-                // No addition of a + b for sNaN.
-                return Math.abs(b) == Double.POSITIVE_INFINITY ? Double.POSITIVE_INFINITY : Math.abs(a);
-            }
-            /* scale a and b by 2^-600 */
-            a *= 0x1.0p-600;
-            b *= 0x1.0p-600;
-            rescale = 0x1.0p+600;
-            // Disallow parallel condition evaluation.
-        } else if (hb < EXP_NEG_500) {
-            /* b < 2^-500 */
-            if (hb < EXP_NEG_1022) {
-                /* sub-normal or 0 */
-                // Intentional comparison with zero.
-                if (b == 0.0) {
-                    return Math.abs(a);
-                }
-                if (ha == 0 && a == 0.0) {
-                    return Math.abs(b);
-                }
-                /* scale a and b by 2^1022 */
-                a *= 0x1.0p+1022;
-                b *= 0x1.0p+1022;
-                rescale = 0x1.0p-1022;
-            } else {
-                /* scale a and b by 2^600 */
-                a *= 0x1.0p+600;
-                b *= 0x1.0p+600;
-                rescale = 0x1.0p-600;
-            }
-        }
-
-        return Math.sqrt(x * x + y * y) * rescale;
-    }
-
-    /**
-     * Return {@code x^2 + y^2} with high accuracy.
-     *
-     * <p>It is assumed that {@code 2^500 > x >= y > 2^-500}. Thus there will be no
-     * overflow or underflow of the result.
-     *
-     * <p>Translated from "Freely Distributable Math Library" e_hypot.c
-     * to minimize rounding errors. The code has been modified to use the split
-     * method from Dekker. See the method {@link #hypotNoop(double, double)} for the
-     * original license.
-     *
-     * <p>Note that fdlibm conditioned {@code x > y} using only the upper 20 bits of the
-     * mantissa and the 11-bit exponent and thus x could be slightly smaller than y
-     * for cases where the upper 31-bits of the unsigned 64-bit representation are identical.
-     * There are cases for {@code 2x > y > x} where the result is different if the
-     * arguments were reversed so the equality should be conditioned on the entire magnitude
-     * of the two floating point values. This is especially relevant if the numbers are
-     * sub-normal where the upper 20-bits of the mantissa are zero and the entire information
-     * on the magnitude is in the lower 32-bits.
-     *
-     * @param x Value x.
-     * @param y Value y
-     * @return x^2 + y^2
-     */
     private static double x2y2Fma(double x, double y) {
-        // Below we use a Dekker split to create two 26-bit numbers avoiding use of
-        // conversion to raw bits. The original fdlibm version used a split of
-        // the upper 32-bits and lower 32-bits. This results in the upper part
-        // being a 21-bit precision number (including assumed leading 1) and the
-        // The different split can create 1 ULP differences
-        // in the result of Math.sqrt(x2y2(x, y)) verses the JDK Math.hypot(x, y)
-        // implementation of the fdlibm function. Replacing the Dekker split with
-        // Double.longBitsToDouble(Double.doubleToRawLongBits(a) & 0xffffffff00000000L)
-        // computes the same result as Math.hypot(x, y).
-        // Testing with billions of numbers show that either split achieves the target of
-        // 1 ULP from the result of a high precision computation
-        // (e.g. see o.a.c.numbers.arrays.LinearCombination) and standard Math.sqrt().
-        // Performance comparisons show the Dekker split is faster.
-        //
-        // This could be replaced by Math.fma(x, x, y * y).
-        // Tests with FMA on JDK 9 show precision is not significantly changed from this
-        // implementation. Using simulated fused multiply addition (FMA)
-        // with split precision summation is slower. A full high precision computation
-        // is slower again and is a poor trade-off to gain 1 ULP accuracy.
-//        final double w = x - y;
-//        if (w > y) {
-//            final double t1 = splitHigh(x);
-//            final double t2 = x - t1;
-//            return t1 * t1 - (y * (-y) - t2 * (x + t1));
-//        }
-//        // 2y > x > y
-//        final double t = x + x;
-//        final double y1 = splitHigh(y);
-//        final double y2 = y - y1;
-//        final double t1 = splitHigh(t);
-//        final double t2 = t - t1;
-//        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
-
-        // Simulate a fused multiply add (FMA)
-        //return Math.fma(x, x, y * y);
-//        final double yy = y * y;
-//        final double xx = x * x;
-//        final double xHigh = splitHigh(x);
-//        final double xLow  = x - xHigh;
-//        final double x2Low = squareLow(xLow, xHigh, xx);
-//        // Two sum y^2 into the expansion of x^2
-//        double e2 = yy + x2Low;
-//        final double e1 = sumLow(yy, x2Low, e2);
-//        final double e3 = e2 + xx;
-//        e2 = sumLow(e2, xx, e3);
-//        return e1 + e2 + e3;
-
         // FMA does not require the use of abs since we have x^2 and y^2.
         // FMA 2 as a Dekker sum with y round-off of zero.
         final double yy = y * y;
@@ -1402,208 +769,10 @@ public class ComplexPerformance {
         final double x2Low = squareLow(xLow, xHigh, xx);
         // Two sum y^2 into the expansion of x^2
         final double r = xx + yy;
-        return xx - r + yy + x2Low + r;
-
-//        // Do a Dekker summation
-//        final double xx = x * x;
-//        final double yy = y * y;
-//        final double xHigh = splitHigh(x);
-//        final double xLow = x - xHigh;
-//        final double yHigh = splitHigh(y);
-//        final double yLow = y - yHigh;
-//        final double x2Low = squareLow(xLow, xHigh, xx);
-//        final double y2Low = squareLow(yLow, yHigh, yy);
-//
-//        final double r = xx + yy;
-//        return xx - r + yy + y2Low + x2Low + r;
-    }
-
-    private static double hypotDekker(double x, double y) {
-        // Differences to the fdlibm reference:
-        //
-        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This incorrectly orders numbers which differ only in the lower 32-bits.
-        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
-        // of cases of normal numbers. This implementation forces the |x| >= |y| order
-        // to ensure the function is commutative.
-        // The current method of doing the comparison only when the upper 32-bits match
-        // is consistently fast in JMH performance tests with alternative implementations.
-        //
-        // 2. This stores the re-scaling factor for use in a multiplication.
-        // The original computed scaling by directly writing to the exponent bits.
-        // and maintained the high part (ha) during scaling for use in the high
-        // precision sum x^2 + y^2. This version has no requirement for that
-        // as the high part is extracted using Dekker's method.
-        //
-        // 3. An alteration is done here to add an 'else if' instead of a second
-        // 'if' statement. Since the exponent difference between a and b
-        // is below 60, if a's exponent is above 500 then b's cannot be below
-        // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500
-        //
-        // 4. The original handling of sub-normal numbers does not scale the representation
-        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
-        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
-        // computed for an addition to the exponent bits. This is neglected in the fdlibm
-        // version. The effect is the extended precision computation reverts to a
-        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation computes
-        // the split dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases where the implementations compute
-        // a different result. Only 1 ULP differences have been measured.
-        //
-        // Original comments from fdlibm are in c style: /* */
-        // Extra comments added for reference.
-        //
-        // Note that the high 32-bits are compared to constants.
-        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
-        // The next 11-bits are the biased exponent. The sign bit has been cleared.
-        // For clarity the values have been refactored to constants.
-        //
-        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
-        // where the number following the p is the exponent. These are only used with
-        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
-
-        /* High word of x & y */
-        // The mask is used to remove the sign bit.
-        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fffffff;
-        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fffffff;
-
-        // Order by approximate magnitude (lower bits excluded)
-        double a;
-        double b;
-        if (hb > ha) {
-            a = y;
-            b = x;
-            final int j = ha;
-            ha = hb;
-            hb = j;
-        } else {
-            a = x;
-            b = y;
-        }
-
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_54) {
-            /* x/y > 2**60 */
-            // No addition of a + b for sNaN.
-            return Math.abs(a);
-        }
-
-        /* a <- |a| */
-        /* b <- |b| */
-        // No equivalent to directly writing back the high bits.
-        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
-        a = Math.abs(a);
-        b = Math.abs(b);
-
-        // Second re-order in the rare event the upper 32-bits are the same.
-        // This could be done in various locations including inside the function x2y2.
-        // It must be done for sub-normals and is placed here for clarity that x2y2 assumes x >= y.
-        if (ha == hb && a < b) {
-            final double tmp = a;
-            a = b;
-            b = tmp;
-        }
-
-        double rescale = 1.0;
-        if (ha > EXP_500) {
-            /* a > 2^500 */
-            if (ha >= EXP_1024) {
-                /* Inf or NaN */
-                // Check b is infinite for the IEEE754 result.
-                // No addition of a + b for sNaN.
-                return b == Double.POSITIVE_INFINITY ? b : a;
-            }
-            /* scale a and b by 2^-600 */
-            a *= 0x1.0p-600;
-            b *= 0x1.0p-600;
-            rescale = 0x1.0p+600;
-        } else if (hb < EXP_NEG_500) {
-            /* b < 2^-500 */
-            if (hb < EXP_NEG_1022) {
-                /* sub-normal or 0 */
-                // Intentional comparison with zero.
-                if (b == 0.0) {
-                    return a;
-                }
-                /* scale a and b by 2^1022 */
-                a *= 0x1.0p+1022;
-                b *= 0x1.0p+1022;
-                rescale = 0x1.0p-1022;
-            } else {
-                /* scale a and b by 2^600 */
-                a *= 0x1.0p+600;
-                b *= 0x1.0p+600;
-                rescale = 0x1.0p-600;
-            }
-        }
-
-        return Math.sqrt(x2y2Dekker(a, b)) * rescale;
+        return Math.sqrt(xx - r + yy + x2Low + r);
     }
 
     private static double x2y2Dekker(double x, double y) {
-        // Below we use a Dekker split to create two 26-bit numbers avoiding use of
-        // conversion to raw bits. The original fdlibm version used a split of
-        // the upper 32-bits and lower 32-bits. This results in the upper part
-        // being a 21-bit precision number (including assumed leading 1) and the
-        // The different split can create 1 ULP differences
-        // in the result of Math.sqrt(x2y2(x, y)) verses the JDK Math.hypot(x, y)
-        // implementation of the fdlibm function. Replacing the Dekker split with
-        // Double.longBitsToDouble(Double.doubleToRawLongBits(a) & 0xffffffff00000000L)
-        // computes the same result as Math.hypot(x, y).
-        // Testing with billions of numbers show that either split achieves the target of
-        // 1 ULP from the result of a high precision computation
-        // (e.g. see o.a.c.numbers.arrays.LinearCombination) and standard Math.sqrt().
-        // Performance comparisons show the Dekker split is faster.
-        //
-        // This could be replaced by Math.fma(x, x, y * y).
-        // Tests with FMA on JDK 9 show precision is not significantly changed from this
-        // implementation. Using simulated fused multiply addition (FMA)
-        // with split precision summation is slower. A full high precision computation
-        // is slower again and is a poor trade-off to gain 1 ULP accuracy.
-//        final double w = x - y;
-//        if (w > y) {
-//            final double t1 = splitHigh(x);
-//            final double t2 = x - t1;
-//            return t1 * t1 - (y * (-y) - t2 * (x + t1));
-//        }
-//        // 2y > x > y
-//        final double t = x + x;
-//        final double y1 = splitHigh(y);
-//        final double y2 = y - y1;
-//        final double t1 = splitHigh(t);
-//        final double t2 = t - t1;
-//        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
-
-        // Simulate a fused multiply add (FMA)
-        //return Math.fma(x, x, y * y);
-//        final double yy = y * y;
-//        final double xx = x * x;
-//        final double xHigh = splitHigh(x);
-//        final double xLow  = x - xHigh;
-//        final double x2Low = squareLow(xLow, xHigh, xx);
-//        // Two sum y^2 into the expansion of x^2
-//        double e2 = yy + x2Low;
-//        final double e1 = sumLow(yy, x2Low, e2);
-//        final double e3 = e2 + xx;
-//        e2 = sumLow(e2, xx, e3);
-//        return e1 + e2 + e3;
-
-//        // FMA does not require the use of abs since we have x^2 and y^2.
-//        // FMA 2 as a Dekker sum with y round-off of zero.
-//        final double yy = y * y;
-//        final double xx = x * x;
-//        final double xHigh = splitHigh(x);
-//        final double xLow  = x - xHigh;
-//        final double x2Low = squareLow(xLow, xHigh, xx);
-//        // Two sum y^2 into the expansion of x^2
-//        final double r = xx + yy;
-//        return xx - r + yy + x2Low + r;
-
         // Do a Dekker summation
         final double xx = x * x;
         final double yy = y * y;
@@ -1615,134 +784,39 @@ public class ComplexPerformance {
         final double y2Low = squareLow(yLow, yHigh, yy);
 
         final double r = xx + yy;
-        return xx - r + yy + y2Low + x2Low + r;
+        return Math.sqrt(xx - r + yy + y2Low + x2Low + r);
     }
+    /**
+     * High accuracy {@code sqrt(x^2 + y^2)}.
+     *
+     * @param x the x
+     * @param y the y
+     * @return {@code x^2 + y^2}
+     */
+    private static double x2y2DekkerSqrt(double x, double y) {
+        final double xx = x * x;
+        final double yy = y * y;
+        final double xHigh = splitHigh(x);
+        final double xLow = x - xHigh;
+        final double yHigh = splitHigh(y);
+        final double yLow = y - yHigh;
+        final double x2Low = squareLow(xLow, xHigh, xx);
+        final double y2Low = squareLow(yLow, yHigh, yy);
 
-    private static double hypotFma(double x, double y) {
-        // Differences to the fdlibm reference:
-        //
-        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This incorrectly orders numbers which differ only in the lower 32-bits.
-        // This invalidates the x^2+y^2 sum for small sub-normal numbers and a minority
-        // of cases of normal numbers. This implementation forces the |x| >= |y| order
-        // to ensure the function is commutative.
-        // The current method of doing the comparison only when the upper 32-bits match
-        // is consistently fast in JMH performance tests with alternative implementations.
-        //
-        // 2. This stores the re-scaling factor for use in a multiplication.
-        // The original computed scaling by directly writing to the exponent bits.
-        // and maintained the high part (ha) during scaling for use in the high
-        // precision sum x^2 + y^2. This version has no requirement for that
-        // as the high part is extracted using Dekker's method.
-        //
-        // 3. An alteration is done here to add an 'else if' instead of a second
-        // 'if' statement. Since the exponent difference between a and b
-        // is below 60, if a's exponent is above 500 then b's cannot be below
-        // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500
-        //
-        // 4. The original handling of sub-normal numbers does not scale the representation
-        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
-        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
-        // computed for an addition to the exponent bits. This is neglected in the fdlibm
-        // version. The effect is the extended precision computation reverts to a
-        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation computes
-        // the split dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases where the implementations compute
-        // a different result. Only 1 ULP differences have been measured.
-        //
-        // Original comments from fdlibm are in c style: /* */
-        // Extra comments added for reference.
-        //
-        // Note that the high 32-bits are compared to constants.
-        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
-        // The next 11-bits are the biased exponent. The sign bit has been cleared.
-        // For clarity the values have been refactored to constants.
-        //
-        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
-        // where the number following the p is the exponent. These are only used with
-        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p+600 is 2^600.
+        double r = xx + yy;
+        double s = xx - r + yy + y2Low + x2Low;
+        double z = r + s;
+        double zz = r - z + s;
 
-        /* High word of x & y */
-        // The mask is used to remove the sign bit.
-        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fffffff;
-        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fffffff;
-
-        // Order by approximate magnitude (lower bits excluded)
-        double a;
-        double b;
-        if (hb > ha) {
-            a = y;
-            b = x;
-            final int j = ha;
-            ha = hb;
-            hb = j;
-        } else {
-            a = x;
-            b = y;
-        }
-
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_54) {
-            /* x/y > 2**60 */
-            // No addition of a + b for sNaN.
-            return Math.abs(a);
-        }
-
-        /* a <- |a| */
-        /* b <- |b| */
-        // No equivalent to directly writing back the high bits.
-        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
-        a = Math.abs(a);
-        b = Math.abs(b);
-
-        // Second re-order in the rare event the upper 32-bits are the same.
-        // This could be done in various locations including inside the function x2y2.
-        // It must be done for sub-normals and is placed here for clarity that x2y2 assumes x >= y.
-        if (ha == hb && a < b) {
-            final double tmp = a;
-            a = b;
-            b = tmp;
-        }
-
-        double rescale = 1.0;
-        if (ha > EXP_500) {
-            /* a > 2^500 */
-            if (ha >= EXP_1024) {
-                /* Inf or NaN */
-                // Check b is infinite for the IEEE754 result.
-                // No addition of a + b for sNaN.
-                return b == Double.POSITIVE_INFINITY ? b : a;
-            }
-            /* scale a and b by 2^-600 */
-            a *= 0x1.0p-600;
-            b *= 0x1.0p-600;
-            rescale = 0x1.0p+600;
-        } else if (hb < EXP_NEG_500) {
-            /* b < 2^-500 */
-            if (hb < EXP_NEG_1022) {
-                /* sub-normal or 0 */
-                // Intentional comparison with zero.
-                if (b == 0.0) {
-                    return a;
-                }
-                /* scale a and b by 2^1022 */
-                a *= 0x1.0p+1022;
-                b *= 0x1.0p+1022;
-                rescale = 0x1.0p-1022;
-            } else {
-                /* scale a and b by 2^600 */
-                a *= 0x1.0p+600;
-                b *= 0x1.0p+600;
-                rescale = 0x1.0p-600;
-            }
-        }
-
-        return Math.sqrt(Math.fma(a, a, b * b)) * rescale;
+        // High precision sqrt
+        final double c = Math.sqrt(z);
+        final double cHigh = splitHigh(c);
+        final double cLow = c - cHigh;
+        final double u = c * c;
+        final double uu = squareLow(cLow, cHigh, u);
+        final double cc = (z - u - uu + zz) * 0.5 / c;
+        r = c + cc;
+        return c - r + cc + r;
     }
 
     private static double splitHigh(double a) {
