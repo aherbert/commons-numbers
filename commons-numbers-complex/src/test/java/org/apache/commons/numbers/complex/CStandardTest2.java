@@ -1644,16 +1644,20 @@ public class CStandardTest2 {
                 );
     }
 
-    //@Test
+    @Test
     public void testMultiplyDistribution() throws IOException {
         // at different scales.
         final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 567464367L);
         final long total2 = 1L << 16;
         try (BufferedWriter out = Files.newBufferedWriter(Paths.get("/tmp/1.dat"));
             Formatter f = new Formatter(out)) {
+            ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(rng);
             for (long l = total2; l-- > 0;) {
-                Complex c1 = Complex.ofPolar(rng.nextDouble() * 10, rng.nextDouble() * Math.PI);
-                Complex c2 = Complex.ofPolar(rng.nextDouble() * 10, rng.nextDouble() * Math.PI);
+                //Complex c1 = Complex.ofPolar(rng.nextDouble() * 10, rng.nextDouble() * Math.PI);
+                //Complex c2 = Complex.ofPolar(rng.nextDouble() * 10, rng.nextDouble() * Math.PI);
+                Complex c1 = Complex.ofCartesian(s.sample(), s.sample());
+                Complex c2 = Complex.ofCartesian(s.sample(), s.sample());
+                //Complex z = Complex.ofCartesian(s.sample(), s.sample());
                 Complex z = c1.multiply(c2);
                 double x = Math.abs(z.real());
                 double y = Math.abs(z.imag());
