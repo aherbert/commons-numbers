@@ -1525,9 +1525,14 @@ public class CStandardTest2 {
         final long total2 = 1L << 30;
         long diff = 0;
         long diffSqrt = 0;
+        long maxSqrt = 0;
         long diffLog1 = 0;
         long diffLog2 = 0;
         long diffLog3 = 0;
+        long maxLog1 = 0;
+        long maxLog2 = 0;
+        long maxLog3 = 0;
+        long d;
         for (long l = total2; l-- > 0;) {
             double x = createFixedExponentNumber(rng, 2);
             double y = createFixedExponentNumber(rng, 2);
@@ -1547,6 +1552,10 @@ public class CStandardTest2 {
                 double r2 = Math.sqrt(2 * (s2 + x));
                 if (r1 != r2) {
                     diffSqrt++;
+                    d = Math.abs(Double.doubleToRawLongBits(r1) - Double.doubleToRawLongBits(r2));
+                    if (maxSqrt < d) {
+                        maxSqrt = d;
+                    }
                 }
                 // Cannot use log when input is between 0.5 and 2.0
                 double l1 = 0.5 * Math.log(s);
@@ -1555,21 +1564,33 @@ public class CStandardTest2 {
                 double l3 = Math.log(s1);
                 if (l1 != l2) {
                     diffLog1++;
+                    d = Math.abs(Double.doubleToRawLongBits(l1) - Double.doubleToRawLongBits(l2));
+                    if (maxLog1 < d) {
+                        maxLog1 = d;
+                    }
                 }
                 if (l1 != l3) {
                     diffLog2++;
+                    d = Math.abs(Double.doubleToRawLongBits(l1) - Double.doubleToRawLongBits(l3));
+                    if (maxLog2 < d) {
+                        maxLog2 = d;
+                    }
                 }
                 if (l2 != l3) {
                     diffLog3++;
+                    d = Math.abs(Double.doubleToRawLongBits(l1) - Double.doubleToRawLongBits(l3));
+                    if (maxLog3 < d) {
+                        maxLog3 = d;
+                    }
                 }
             }
         }
-        System.out.printf("%-10s  diff %10d / %d (%.5f) : sqrt %10d (%.5f) : log1 %10d (%.5f) : log2 %10d (%.5f) : log3 %10d (%.5f)%n",
+        System.out.printf("%-10s  diff %10d / %d (%.5f) : sqrt %10d (%.5f) (%3d) : log1 %10d (%.5f) (%3d) : log2 %10d (%.5f) (%3d) : log3 %10d (%.5f) (%3d)%n",
                 name, diff, total2, (double) diff / total2,
-                diffSqrt, (double) diffSqrt / total2,
-                diffLog1, (double) diffLog1 / total2,
-                diffLog2, (double) diffLog2 / total2,
-                diffLog3, (double) diffLog3 / total2
+                diffSqrt, (double) diffSqrt / total2, maxSqrt,
+                diffLog1, (double) diffLog1 / total2, maxLog1,
+                diffLog2, (double) diffLog2 / total2, maxLog2,
+                diffLog3, (double) diffLog3 / total2, maxLog3
                 );
     }
 }
