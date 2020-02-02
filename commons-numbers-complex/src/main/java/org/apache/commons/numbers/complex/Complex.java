@@ -185,8 +185,8 @@ public final class Complex implements Serializable  {
      */
     private static final double EXP_M = Math.exp(SAFE_EXP);
 
-    /** 54 shifted 20-bits to align with the exponent of the upper 32-bits of a double. */
-    private static final int EXP_54 = 0x36_00000;
+    /** 60 shifted 20-bits to align with the exponent of the upper 32-bits of a double. */
+    private static final int EXP_60 = 0x3c_00000;
     /** Represents an exponent of 500 in unbiased form shifted 20-bits to align with the upper 32-bits of a double. */
     private static final int EXP_500 = 0x5f3_00000;
     /** Represents an exponent of 1024 in unbiased form (infinite or nan)
@@ -197,6 +197,8 @@ public final class Complex implements Serializable  {
     /** Represents an exponent of -1022 in unbiased form (sub-normal number)
      * shifted 20-bits to align with the upper 32-bits of a double. */
     private static final int EXP_NEG_1022 = 0x001_00000;
+    /** 600 shifted 20-bits to align with the exponent from the upper 32-bits of a double. */
+    private static final int SHIFTED_600 = 0x25800000;
 
     /** Serializable version identifier. */
     private static final long serialVersionUID = 20180201L;
@@ -3545,16 +3547,6 @@ public final class Complex implements Serializable  {
             b = y;
         }
 
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2 if using fma(x, x, y*y).
-        if ((ha - hb) > EXP_54) {
-            /* x/y > 2**54 */
-            // No addition of a + b for sNaN.
-            return Math.abs(a);
-        }
-
         /* a <- |a| */
         /* b <- |b| */
         // No equivalent to directly writing back the high bits.
@@ -3562,10 +3554,20 @@ public final class Complex implements Serializable  {
         a = Math.abs(a);
         b = Math.abs(b);
 
+        // Check if the smaller part is significant.
+        // Do not replace this with 27 since the product x^2 is computed in
+        // extended precision for an effective mantissa of 105-bits. Potentially it could be
+        // replaced with 54 where y^2 will not overlap extended precision x^2 if using fma(x, x, y*y).
+        if ((ha - hb) > EXP_60) {
+            /* x/y > 2**60 */
+            // Do not propagate sNaN using a+b.
+            return a;
+        }
+
         // Second re-order in the rare event the upper 32-bits are the same.
-        // This could be done in various locations including inside the function x2y2.
-        // It must be done for sub-normals and is placed here for clarity that x2y2 assumes x >= y.
-        // Note: Removing the ha == hb has slower performance.
+        // There are cases where numbers differing in only the lower bits changes the result.
+        // Note: Removing the ha == hb has slower performance. A match of the upper bits
+        // 20 bits of the mantissa only occurs approximately 1 in a million (2^-20).
         if (ha == hb && a < b) {
             final double tmp = a;
             a = b;
@@ -3582,6 +3584,8 @@ public final class Complex implements Serializable  {
                 return b == Double.POSITIVE_INFINITY ? b : a;
             }
             /* scale a and b by 2^-600 */
+            ha -= SHIFTED_600;
+            hb -= SHIFTED_600;
             a *= 0x1.0p-600;
             b *= 0x1.0p-600;
             rescale = 0x1.0p+600;
@@ -3593,24 +3597,43 @@ public final class Complex implements Serializable  {
                 if (b == 0.0) {
                     return a;
                 }
-//                if (ha == hb && a < b) {
-//                    final double tmp = a;
-//                    a = b;
-//                    b = tmp;
-//                }
                 /* scale a and b by 2^1022 */
+                // Note no shift of ha and hb. A sub-normal number has a variable exponent
+                // that is not represented, all information is in the mantissa.
                 a *= 0x1.0p+1022;
                 b *= 0x1.0p+1022;
                 rescale = 0x1.0p-1022;
             } else {
                 /* scale a and b by 2^600 */
+                ha += SHIFTED_600;
+                hb += SHIFTED_600;
                 a *= 0x1.0p+600;
                 b *= 0x1.0p+600;
                 rescale = 0x1.0p-600;
             }
         }
 
-        return Math.sqrt(x2y2(a, b)) * rescale;
+        double w = a - b;
+        if (w > b) {
+            // |x| > |2y|
+            // Note: In this case the use of Math.fma(x, x, y * y) would
+            // be faster and perform within the same error bound.
+            // Simulating a FMA using split multiplication is slower.
+            final double t1 = Double.longBitsToDouble(((long) ha) << 32);
+            final double t2 = a - t1;
+            w = Math.sqrt(t1 * t1 - (b * (-b) - t2 * (a + t1)));
+        } else {
+            // |2y| > |x| > |y|
+            final double t = a + a;
+            final double y1 = Double.longBitsToDouble(((long) hb) << 32);
+            final double y2 = b - y1;
+            // The exponent must be increased by 1 as t = 2a.
+            final double t1 = Double.longBitsToDouble(((long) (ha + EXP_NEG_1022)) << 32);
+            final double t2 = t - t1;
+            w = Math.sqrt(t1 * y1 - (w * (-w) - (t1 * y2 + t2 * b)));
+        }
+
+        return w * rescale;
     }
 
     /**

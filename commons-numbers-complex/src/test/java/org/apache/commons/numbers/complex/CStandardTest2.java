@@ -17,6 +17,7 @@
 
 package org.apache.commons.numbers.complex;
 
+import org.apache.commons.numbers.arrays.SafeNorm;
 import org.apache.commons.rng.JumpableUniformRandomProvider;
 import org.apache.commons.rng.UniformRandomProvider;
 import org.apache.commons.rng.sampling.distribution.ZigguratNormalizedGaussianSampler;
@@ -197,12 +198,12 @@ public class CStandardTest2 {
         final int samples;
 
         long same;
-        long d1, d2, d3, d4;
-        long s1, s2, s3, s4;
+        long d0, d1, d2, d3, d4;
+        long s0, s1, s2, s3, s4;
         // Special counter to compare hypot implementations.
         long better, worse;
-        BigDecimal m1 = BigDecimal.ZERO, m2 = BigDecimal.ZERO, m3 = BigDecimal.ZERO, m4 = BigDecimal.ZERO;
-        Complex z1 = Complex.ZERO, z2 = Complex.ZERO, z3 = Complex.ZERO, z4 = Complex.ZERO;
+        BigDecimal m0 = BigDecimal.ZERO, m1 = BigDecimal.ZERO, m2 = BigDecimal.ZERO, m3 = BigDecimal.ZERO, m4 = BigDecimal.ZERO;
+        Complex z0 = Complex.ZERO, z1 = Complex.ZERO, z2 = Complex.ZERO, z3 = Complex.ZERO, z4 = Complex.ZERO;
 
         UlpChecker(DoubleSupplier fx,
             DoubleSupplier fy, int samples) {
@@ -214,16 +215,22 @@ public class CStandardTest2 {
         UlpChecker add(UlpChecker c) {
             if (c != null) {
                 same += c.same;
+                d0 += c.d0;
                 d1 += c.d1;
                 d2 += c.d2;
                 d3 += c.d3;
                 d4 += c.d4;
+                s0 += c.s0;
                 s1 += c.s1;
                 s2 += c.s2;
                 s3 += c.s3;
                 s4 += c.s4;
                 better += c.better;
                 worse += c.worse;
+                if (m0.compareTo(c.m0) < 0) {
+                    m0 = c.m0;
+                    z0 = c.z0;
+                }
                 if (m1.compareTo(c.m1) < 0) {
                     m1 = c.m1;
                     z1 = c.z1;
@@ -277,11 +284,14 @@ public class CStandardTest2 {
             // High precision dekker method as reference
             double e = x2y2DekkerSqrt(x, y);
 
+            double o0 = Math.sqrt(x * x + y * y);
             // high precision sum then standard sqrt
             double o1 = Math.sqrt(x2y2Dekker(x, y));
             //double o1 = Math.sqrt(Math.fma(x, x, y * y));
             // Alternative using FMA
             double o2 = Math.sqrt(Math.fma(x, x, y * y));
+            //double o2 = SafeNorm.value(new double[] {x, y});
+            //double o2 = Math.sqrt(x * x + y * y);
             //double o2 = hypot3(x, y);
             // Reference
             double o3 = Math.hypot(x, y);
@@ -291,7 +301,7 @@ public class CStandardTest2 {
 
             // Only interested in differences from realistic best result without BigDecimal or
             // extended precision sqrt (although we could add this using Dekker's method)
-            if (e == o1 && e == o2 && e == o3 && e == o4) {
+            if (e == o0 && e == o1 && e == o2 && e == o3 && e == o4) {
                 same++;
                 return;
             }
@@ -299,12 +309,15 @@ public class CStandardTest2 {
             // Verify the exact result
             BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
 
-            score(x, y, o1, o2, o3, o4, bdexact);
+            score(x, y, o0, o1, o2, o3, o4, bdexact);
         }
         // CHECKSTYLE: resume Regexp
 
-        void score(double x, double y, double o1, double o2, double o3, double o4, BigDecimal bdexact) {
+        void score(double x, double y, double o0, double o1, double o2, double o3, double o4, BigDecimal bdexact) {
             final double exact = bdexact.doubleValue();
+            if (exact != o0) {
+                d0++;
+            }
             if (exact != o1) {
                 d1++;
             }
@@ -347,23 +360,35 @@ public class CStandardTest2 {
                 exactUlp = new BigDecimal(Math.ulp(exact));
             }
 
-            final BigDecimal ulpo1 = new BigDecimal(o1).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
+            final BigDecimal ulpo0 = new BigDecimal(o0).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
+            BigDecimal ulpo1;
             BigDecimal ulpo2;
             BigDecimal ulpo3;
             BigDecimal ulpo4;
-            if (o2 == o1) {
+            if (o1 == o0) {
+                ulpo1 = ulpo0;
+            } else {
+                ulpo1 = new BigDecimal(o1).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
+            }
+            if (o2 == o0) {
+                ulpo2 = ulpo0;
+            } else if (o2 == o1) {
                 ulpo2 = ulpo1;
             } else {
                 ulpo2 = new BigDecimal(o2).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
             }
-            if (o3 == o1) {
+            if (o3 == o0) {
+                ulpo3 = ulpo0;
+            } else if (o3 == o1) {
                 ulpo3 = ulpo1;
             } else if (o3 == o2) {
                 ulpo3 = ulpo2;
             } else {
                 ulpo3 = new BigDecimal(o3).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
             }
-            if (o4 == o1) {
+            if (o4 == o0) {
+                ulpo4 = ulpo0;
+            } else if (o4 == o1) {
                 ulpo4 = ulpo1;
             } else if (o4 == o2) {
                 ulpo4 = ulpo2;
@@ -381,6 +406,11 @@ public class CStandardTest2 {
 //                    o2, ulpo2, o3, ulpo3, o4, ulpo4);
 
             // Accrue differences
+            s0 += ulpo0.scaleByPowerOfTen(5).longValue();
+            if (m0.compareTo(ulpo0) < 0) {
+                m0 = ulpo0;
+                z0 = Complex.ofCartesian(x, y);
+            }
             s1 += ulpo1.scaleByPowerOfTen(5).longValue();
             if (m1.compareTo(ulpo1) < 0) {
                 m1 = ulpo1;
@@ -446,6 +476,7 @@ public class CStandardTest2 {
             // High precision dekker method as reference
             double e = x2y2DekkerSqrt(x, y) * rescale;
 
+            double o0 = Math.sqrt(x * x + y * y) * rescale;
             // high precision sum then standard sqrt
             double o1 = Math.sqrt(x2y2Dekker(x, y)) * rescale;
             //double o1 = Math.sqrt(Math.fma(x, x, y * y)) * rescale;
@@ -473,7 +504,7 @@ public class CStandardTest2 {
             BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
 
             //score(x, y, o1, o2, o3, o4, bdexact);
-            score(x, y, o3, o3, o3, o4, bdexact);
+            score(x, y, o3, o3, o3, o3, o4, bdexact);
         }
     }
 
@@ -516,7 +547,7 @@ public class CStandardTest2 {
             BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
 
             //score(x, y, o1, o2, o3, o4, bdexact);
-            score(x, y, o3, o3, o3, o4, bdexact);
+            score(x, y, o3, o3, o3, o3, o4, bdexact);
         }
     }
 
@@ -1312,15 +1343,16 @@ public class CStandardTest2 {
         // CHECKSTYLE: stop all
         long tot = (long) r.samples * list.size();
         double t = tot * 100000.0;
-        System.out.printf("%-17s  same %d / %d (%.5f) : dekker %.5f (%.5f) %10d (%.5f) : fma %.5f (%.5f) %10d (%.5f) : hypot %.5f (%.5f) %10d (%.5f) : hypot2 %.5f (%.5f) %10d (%.5f) : better %d, worse %d : %s : %s : %s : %s%n",
+        System.out.printf("%-17s  same %d / %d (%.5f) : xx+yy  %.5f (%.5f) %10d (%.5f) : dekker %.5f (%.5f) %10d (%.5f) : fma %.5f (%.5f) %10d (%.5f) : hypot %.5f (%.5f) %10d (%.5f) : hypot2 %.5f (%.5f) %10d (%.5f) : better %d, worse %d : %s : %s : %s : %s : %s%n",
                 type,
                 r.same, tot, (double) r.same / tot,
+                r.s0 / t, r.m0, r.d0, (double) (tot - r.d0) / tot,
                 r.s1 / t, r.m1, r.d1, (double) (tot - r.d1) / tot,
                 r.s2 / t, r.m2, r.d2, (double) (tot - r.d2) / tot,
                 r.s3 / t, r.m3, r.d3, (double) (tot - r.d3) / tot,
                 r.s4 / t, r.m4, r.d4, (double) (tot - r.d4) / tot,
                 r.better, r.worse,
-                r.z1, r.z2, r.z3, r.z4);
+                r.z0, r.z1, r.z2, r.z3, r.z4);
         // CHECKSTYLE: resume all
     }
 
