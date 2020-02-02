@@ -17,7 +17,6 @@
 
 package org.apache.commons.numbers.complex;
 
-import org.apache.commons.numbers.arrays.SafeNorm;
 import org.apache.commons.rng.JumpableUniformRandomProvider;
 import org.apache.commons.rng.UniformRandomProvider;
 import org.apache.commons.rng.sampling.distribution.ZigguratNormalizedGaussianSampler;
@@ -31,7 +30,6 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.nio.file.Files;
-import java.nio.file.OpenOption;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Formatter;
