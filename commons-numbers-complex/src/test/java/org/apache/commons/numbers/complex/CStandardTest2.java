@@ -1219,8 +1219,8 @@ public class CStandardTest2 {
             (JumpableUniformRandomProvider) RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 526735472636L);
 
         // Can run max of approximately 1 billion per run.
-        int samples = 1 << 16;
-        int runs = 8;
+        int samples = 1 << 30;
+        int runs = 32;
 
         // Sub-normals are slow to compute the correct answer
         int subNormalSamples = samples >>> 0;
@@ -1240,6 +1240,15 @@ public class CStandardTest2 {
                 ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(r);
                 return s::sample;
             }, samples, runs, es);
+
+
+            checkFmaScaled("m1010 sub-52", rng, r -> createFixedExponentNumber(r, -1010), CStandardTest2::createSubNormalNumber52, samples, runs, es);
+            checkFmaScaled("m1021 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            checkFmaScaled("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            checkFmaScaled("sub-52 sub-32", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
+            // This is not hard so omit
+            checkFmaScaled("sub-normal 32/32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
 
             checkFma("range_p0_p0", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 0), samples, runs, es);
             checkFma("range_p0_p1", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 1), samples, runs, es);
@@ -1264,17 +1273,6 @@ public class CStandardTest2 {
             checkFma("range_m128_m130", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -130), samples, runs, es);
             checkFma("range_m128_m131", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -131), samples, runs, es);
             checkFma("range_m128_m132", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -132), samples, runs, es);
-
-            // Cannot check these due to scaling. Maybe add a scaled version for BigDecimal.
-            // Or just state that ULPs have less meaning for sub-normals.
-
-            checkFmaScaled("m1010 sub-52", rng, r -> createFixedExponentNumber(r, -1010), CStandardTest2::createSubNormalNumber52, samples, runs, es);
-            checkFmaScaled("m1021 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("sub-52 sub-32", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
-            // This is not hard so omit
-            checkFmaScaled("sub-normal 32/32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
 
             // The distribution of floating-point numbers has the log-uniform distribution as
             // its limiting distribution. We do not use that to force a full 52-bit random mantissa
