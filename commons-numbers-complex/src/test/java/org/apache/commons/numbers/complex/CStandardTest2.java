@@ -274,36 +274,37 @@ public class CStandardTest2 {
                 y = tmp;
             }
 
+            // High precision dekker method as reference
+            double e = x2y2DekkerSqrt(x, y);
+
             // high precision sum then standard sqrt
-            //double o1 = Math.sqrt(x2y2Dekker(x, y));
-
-            double o1 = x2y2DekkerSqrt(x, y);
-
+            double o1 = Math.sqrt(x2y2Dekker(x, y));
+            //double o1 = Math.sqrt(Math.fma(x, x, y * y));
             // Alternative using FMA
             double o2 = Math.sqrt(Math.fma(x, x, y * y));
+            //double o2 = hypot3(x, y);
             // Reference
             double o3 = Math.hypot(x, y);
-
             // Use the variant of hypot to contrast with FMA.
             double o4 = Math.sqrt(x2y2Hypot(x, y));
+            //double o4 = Complex.ofCartesian(x, y).abs();
 
             // Only interested in differences from realistic best result without BigDecimal or
             // extended precision sqrt (although we could add this using Dekker's method)
-            if (o1 == o3 && o2 == o3 && o4 == o3) {
+            if (e == o1 && e == o2 && e == o3 && e == o4) {
                 same++;
                 return;
             }
 
-            // Exact
+            // Verify the exact result
             BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
-            final double exact = bdexact.doubleValue();
 
-            score(x, y, o1, o2, o3, o4, bdexact, exact);
+            score(x, y, o1, o2, o3, o4, bdexact);
         }
         // CHECKSTYLE: resume Regexp
 
-        void score(double x, double y, double o1, double o2, double o3, double o4, BigDecimal bdexact,
-            final double exact) {
+        void score(double x, double y, double o1, double o2, double o3, double o4, BigDecimal bdexact) {
+            final double exact = bdexact.doubleValue();
             if (exact != o1) {
                 d1++;
             }
@@ -326,8 +327,25 @@ public class CStandardTest2 {
                 }
             }
 
-            // Compute ULPs relative to the answer as a double
-            final BigDecimal exactUlp = new BigDecimal(Math.ulp(exact));
+            // Compute ULPs relative to the answer as a double.
+            // Kahan (eecs.berkeley.edu/~wkahan/LOG10HAF.TXT) defines ulp(x) as
+            // "the gap between the two floating-point numbers nearest x".
+            // This specifies ulp(1) as epsilon/2 not epsilon, i.e. the ulp distance
+            // of a power of 2 is the dsitance to the next lower number:
+            // ---|------|------------|------------|
+            //  1-eps/2  1          1+eps       1+2eps
+            // If we use this definition a computation of the next float above 1 would be
+            // 2 ulps. Do this and see the effect on the results.
+
+            // Determine if the BigDecimal was rounded up and use the next down.
+            // This will have two-fold effect on ulps when testing cis numbers where the radius
+            // is computed above one.
+            BigDecimal exactUlp;
+            if (new BigDecimal(exact).compareTo(bdexact) >= 0) {
+                exactUlp = new BigDecimal(Math.ulp(Math.nextDown(exact)));
+            } else {
+                exactUlp = new BigDecimal(Math.ulp(exact));
+            }
 
             final BigDecimal ulpo1 = new BigDecimal(o1).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
             BigDecimal ulpo2;
@@ -355,7 +373,12 @@ public class CStandardTest2 {
                 ulpo4 = new BigDecimal(o4).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP);
             }
             // CHECKSTYLE: stop Regexp
-            //System.out.printf("%s,%s = %s : dekker %s (%s) : fma %s (%s) : hypot %s (%s)%n", x, y, bdexact, e, ulpe, o1, ulpo1, o2, ulpo2);
+//            System.out.printf("%s,%s = %s : dekker %s (%s) %s %s %s : fma %s (%s) : hypot %s (%s) : hypot2 %s (%s)%n", 
+//                    x, y, bdexact, o1, ulpo1, 
+//                    new BigDecimal(o1).subtract(bdexact).abs(),
+//                    new BigDecimal(o1).subtract(bdexact).abs().divide(exactUlp, 5, RoundingMode.HALF_UP),
+//                    new BigDecimal(o1).subtract(bdexact).abs().divide(exactUlp, 10, RoundingMode.HALF_UP),
+//                    o2, ulpo2, o3, ulpo3, o4, ulpo4);
 
             // Accrue differences
             s1 += ulpo1.scaleByPowerOfTen(5).longValue();
@@ -402,9 +425,6 @@ public class CStandardTest2 {
                 y = tmp;
             }
 
-            // Reference
-            double o3 = Math.hypot(x, y);
-
             // Do scaling once
             double rescale = 1.0;
             if (Math.min(x, y) < 0x1.0p-500) {
@@ -423,18 +443,24 @@ public class CStandardTest2 {
                 rescale = 0x1.0p+600;
             }
 
-            // high precision sum then standard sqrt. This is the best we could do?
-            double o1 = Math.sqrt(x2y2Dekker(x, y)) * rescale;
+            // High precision dekker method as reference
+            double e = x2y2DekkerSqrt(x, y) * rescale;
 
+            // high precision sum then standard sqrt
+            double o1 = Math.sqrt(x2y2Dekker(x, y)) * rescale;
+            //double o1 = Math.sqrt(Math.fma(x, x, y * y)) * rescale;
             // Alternative using FMA
             double o2 = Math.sqrt(Math.fma(x, x, y * y)) * rescale;
-
+            //double o2 = hypot3(x, y) * rescale;
+            // Reference
+            double o3 = Math.hypot(x, y) * rescale;
             // Use the variant of hypot to contrast with FMA.
             double o4 = Math.sqrt(x2y2Hypot(x, y)) * rescale;
+            //double o4 = Complex.ofCartesian(x, y).abs() * rescale;
 
             // Only interested in differences from realistic best result without BigDecimal or
             // extended precision sqrt (although we could add this using Dekker's method)
-            if (o1 == o3 && o2 == o3 && o4 == o3) {
+            if (e == o1 && e == o2 && e == o3 && e == o4) {
                 same++;
                 return;
             }
@@ -445,9 +471,52 @@ public class CStandardTest2 {
 
             // Exact
             BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
-            final double exact = bdexact.doubleValue();
 
-            score(x, y, o1, o2, o3, o4, bdexact, exact);
+            //score(x, y, o1, o2, o3, o4, bdexact);
+            score(x, y, o3, o3, o3, o4, bdexact);
+        }
+    }
+
+    private static class HypotChecker extends UlpChecker {
+        HypotChecker(DoubleSupplier fx,
+            DoubleSupplier fy, int samples) {
+            super(fx, fy, samples);
+        }
+
+        /**
+         * Check the difference between the computation of {@code x^2 + y^2} using
+         * {@link Math#fma(double, double, double)} and
+         * {@link Math#hypot(double, double)}. If the results differ the true result
+         * is computed using high precision.BigDecimal and the ULPs computed from the
+         * extended precision result.
+         *
+         * <p>This can be used to assert that the custom implementation of abs() is no worse than
+         * {@link Math#hypot(double, double)} which aims to be within 1 ULP of the exact result.
+         *
+         * <p>Note: This method will not handle an input complex that is infinite or nan.
+         */
+        void check() {
+            double x = Math.abs(fx.getAsDouble());
+            double y = Math.abs(fy.getAsDouble());
+
+            // Reference
+            double o3 = Math.hypot(x, y);
+            // Use the variant of hypot to contrast with FMA.
+            double o4 = Complex.ofCartesian(x, y).abs();
+
+            // Only interested in differences from realistic best result without BigDecimal or
+            // extended precision sqrt (although we could add this using Dekker's method)
+            //if (e == o1 && e == o2 && e == o3 && e == o4) {
+            if (o3 == o4) {
+                same++;
+                return;
+            }
+
+            // Verify the exact result
+            BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
+
+            //score(x, y, o1, o2, o3, o4, bdexact);
+            score(x, y, o3, o3, o3, o4, bdexact);
         }
     }
 
@@ -510,9 +579,10 @@ public class CStandardTest2 {
                 do {
                     x = sampler.sample();
                     y = sampler.sample();
-                    norm = x * x + y * y;
+                    //norm = x * x + y * y;
+                    // Do this as well as we can
+                    norm = x2y2DekkerSqrt(x, y);
                 } while (norm == 0);
-                norm = Math.sqrt(norm);
                 tmp = x / norm;
                 return y / norm;
             }
@@ -821,6 +891,50 @@ public class CStandardTest2 {
         //return Math.sqrt(x2y2Hypot(a, b)) * rescale;
     }
 
+    private static double hypot3(double x, double y) {
+        // The mask is used to remove the sign.
+        long bitsx = Double.doubleToRawLongBits(x) & 0x7fff_ffff_ffff_ffffL;
+        long bitsy = Double.doubleToRawLongBits(y) & 0x7fff_ffff_ffff_ffffL;
+
+        // Order by magnitude
+        double a;
+        double b;
+        if (bitsx < bitsy) {
+            a = y;
+            b = x;
+            final long tmp = bitsx;
+            bitsx = bitsy;
+            bitsy = tmp;
+        } else {
+            a = x;
+            b = y;
+        }
+
+        // Compute absolutes
+        a = Math.abs(a);
+        b = Math.abs(b);
+
+        // inf/nan handling
+        if (bitsx >= 0x7ff0_0000_0000_0000L) {
+            // a is inf/nan. Return inf is b is infinite
+            return bitsy == 0x7ff0_0000_0000_0000L ? b : a;
+        }
+
+        // Finite numbers
+        // Do scaling towards 1 but avoid x^2+y^2 being too close to 1.
+        // This forces the result of sqrt to be a different order of magnitude.
+        // Dropping the last 3 bits limits the exponent to [-1023, -1016], [+8, +1017] (unbiased)
+        long exponent = bitsx & 0x7f80_0000_0000_0000L;
+        double scale = Double.longBitsToDouble(0x7fc0_0000_0000_0000L - exponent);
+        double rescale = Double.longBitsToDouble(0x0020_0000_0000_0000L + exponent);
+
+        a *= scale;
+        b *= scale;
+
+        // a and b in [2^-52, 2^6)
+        return rescale * Math.sqrt(fma(a, b));
+    }
+
     private static double x2y2Hypot(double x, double y) {
         // Below we use a Dekker split to create two 26-bit numbers avoiding use of
         // conversion to raw bits. The original fdlibm version used a split of
@@ -843,18 +957,18 @@ public class CStandardTest2 {
         // is slower again and is a poor trade-off to gain 1 ULP accuracy.
         final double w = x - y;
         if (w > y) {
-            //final double t1 = Double.longBitsToDouble(Double.doubleToRawLongBits(x) & 0xffffffff00000000L);
-            final double t1 = splitHigh(x);
+            final double t1 = Double.longBitsToDouble(Double.doubleToRawLongBits(x) & 0xffffffff00000000L);
+            //final double t1 = splitHigh(x);
             final double t2 = x - t1;
             return t1 * t1 - (y * (-y) - t2 * (x + t1));
         }
         // 2y > x > y
         final double t = x + x;
-        //final double y1 = Double.longBitsToDouble(Double.doubleToRawLongBits(y) & 0xffffffff00000000L);
-        final double y1 = splitHigh(y);
+        final double y1 = Double.longBitsToDouble(Double.doubleToRawLongBits(y) & 0xffffffff00000000L);
+        //final double y1 = splitHigh(y);
         final double y2 = y - y1;
-        //final double t1 = Double.longBitsToDouble(Double.doubleToRawLongBits(t) & 0xffffffff00000000L);
-        final double t1 = splitHigh(t);
+        final double t1 = Double.longBitsToDouble(Double.doubleToRawLongBits(t) & 0xffffffff00000000L);
+        //final double t1 = splitHigh(t);
         final double t2 = t - t1;
         return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
     }
@@ -1076,11 +1190,11 @@ public class CStandardTest2 {
             (JumpableUniformRandomProvider) RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 526735472636L);
 
         // Can run max of approximately 1 billion per run.
-        int samples = 1 << 24;
-        int runs = 16;
+        int samples = 1 << 16;
+        int runs = 8;
 
         // Sub-normals are slow to compute the correct answer
-        int subNormalSamples = samples >>> 8;
+        int subNormalSamples = samples >>> 0;
 
         ExecutorService es = Executors.newFixedThreadPool(
             Math.min(Runtime.getRuntime().availableProcessors(), runs));
@@ -1089,60 +1203,62 @@ public class CStandardTest2 {
             // to check the answer more often. Or use sin/cos to create a cis number?
             // These are cases where the branch prediction
             // in hypot cannot learn which to choose.
-//            checkFma("cis", rng, CisNumberGenerator::new, samples, runs, es);
-//            checkFma("cis2", rng, CisNumberGenerator2::new, samples, runs, es);
-//            checkFma("polar", rng, PolarNumberGenerator::new, samples, runs, es);
-//            checkFma("uniform", rng, UniformRandomProvider::nextDouble, UniformRandomProvider::nextDouble, samples, runs, es);
-//            checkFma("random", rng, r -> {
-//                ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(r);
-//                return s::sample;
-//            }, samples, runs, es);
-//
-//            checkFma("range_p0_p0", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 0), samples, runs, es);
-//            checkFma("range_p0_p1", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 1), samples, runs, es);
-//            checkFma("range_p0_p2", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 2), samples, runs, es);
-//            checkFma("range_p0_p3", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 3), samples, runs, es);
-//            checkFma("range_p0_p4", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 4), samples, runs, es);
-//
-//            checkFma("range_m1_m1", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -1), samples, runs, es);
-//            checkFma("range_m1_m2", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -2), samples, runs, es);
-//            checkFma("range_m1_m3", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -3), samples, runs, es);
-//            checkFma("range_m1_m4", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -4), samples, runs, es);
-//            checkFma("range_m1_m5", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -5), samples, runs, es);
-//
-//            checkFma("range_p128_p128", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 128), samples, runs, es);
-//            checkFma("range_p128_p129", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 129), samples, runs, es);
-//            checkFma("range_p128_p130", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 130), samples, runs, es);
-//            checkFma("range_p128_p131", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 131), samples, runs, es);
-//            checkFma("range_p128_p132", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 132), samples, runs, es);
-//
-//            checkFma("range_m128_m128", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -128), samples, runs, es);
-//            checkFma("range_m128_m129", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -129), samples, runs, es);
-//            checkFma("range_m128_m130", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -130), samples, runs, es);
-//            checkFma("range_m128_m131", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -131), samples, runs, es);
-//            checkFma("range_m128_m132", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -132), samples, runs, es);
+            checkFma("cis", rng, CisNumberGenerator::new, samples, runs, es);
+            checkFma("cis2", rng, CisNumberGenerator2::new, samples, runs, es);
+            checkFma("polar", rng, PolarNumberGenerator::new, samples, runs, es);
+            checkFma("uniform", rng, UniformRandomProvider::nextDouble, UniformRandomProvider::nextDouble, samples, runs, es);
+            checkFma("random", rng, r -> {
+                ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(r);
+                return s::sample;
+            }, samples, runs, es);
+
+            checkFma("range_p0_p0", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 0), samples, runs, es);
+            checkFma("range_p0_p1", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 1), samples, runs, es);
+            checkFma("range_p0_p2", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 2), samples, runs, es);
+            checkFma("range_p0_p3", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 3), samples, runs, es);
+            checkFma("range_p0_p4", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 4), samples, runs, es);
+
+            checkFma("range_m1_m1", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -1), samples, runs, es);
+            checkFma("range_m1_m2", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -2), samples, runs, es);
+            checkFma("range_m1_m3", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -3), samples, runs, es);
+            checkFma("range_m1_m4", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -4), samples, runs, es);
+            checkFma("range_m1_m5", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -5), samples, runs, es);
+
+            checkFma("range_p128_p128", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 128), samples, runs, es);
+            checkFma("range_p128_p129", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 129), samples, runs, es);
+            checkFma("range_p128_p130", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 130), samples, runs, es);
+            checkFma("range_p128_p131", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 131), samples, runs, es);
+            checkFma("range_p128_p132", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 132), samples, runs, es);
+
+            checkFma("range_m128_m128", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -128), samples, runs, es);
+            checkFma("range_m128_m129", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -129), samples, runs, es);
+            checkFma("range_m128_m130", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -130), samples, runs, es);
+            checkFma("range_m128_m131", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -131), samples, runs, es);
+            checkFma("range_m128_m132", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -132), samples, runs, es);
 
             // Cannot check these due to scaling. Maybe add a scaled version for BigDecimal.
             // Or just state that ULPs have less meaning for sub-normals.
 
-            checkFmaScaled("sub-normal 53/52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("sub-normal 52/52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("sub-normal 52/32", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
+            checkFmaScaled("m1010 sub-52", rng, r -> createFixedExponentNumber(r, -1010), CStandardTest2::createSubNormalNumber52, samples, runs, es);
+            checkFmaScaled("m1021 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            checkFmaScaled("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            checkFmaScaled("sub-52 sub-32", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
             // This is not hard so omit
             checkFmaScaled("sub-normal 32/32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
 
             // The distribution of floating-point numbers has the log-uniform distribution as
             // its limiting distribution. We do not use that to force a full 52-bit random mantissa
             // which increases the likelihood for high precision.
-//            // This pointless as a big difference in magnitude is easy.
-//            final ToDoubleFunction<UniformRandomProvider> luGenerator = new ToDoubleFunction<>() {
-//                @Override
-//                public double applyAsDouble(UniformRandomProvider rng) {
-//                    // Do not use scalb. Directly write the exponent.
-//                    return createFixedExponentNumber(rng, rng.nextInt(30));
-//                }
-//            };
-//            checkFma("log-uniform", rng, luGenerator, luGenerator, samples, runs, es);
+            // This pointless as a big difference in magnitude is easy.
+            final ToDoubleFunction<UniformRandomProvider> luGenerator = new ToDoubleFunction<>() {
+                @Override
+                public double applyAsDouble(UniformRandomProvider rng) {
+                    // Do not use scalb. Directly write the exponent.
+                    return createFixedExponentNumber(rng, rng.nextInt(30));
+                }
+            };
+            checkFma("log-uniform", rng, luGenerator, luGenerator, samples, runs, es);
         } finally {
             es.shutdown();
         }
@@ -1206,6 +1322,106 @@ public class CStandardTest2 {
                 r.better, r.worse,
                 r.z1, r.z2, r.z3, r.z4);
         // CHECKSTYLE: resume all
+    }
+
+    @Test
+    public void testHypot() throws InterruptedException, ExecutionException {
+        final JumpableUniformRandomProvider rng =
+            (JumpableUniformRandomProvider) RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 526735472636L);
+
+        // Can run max of approximately 1 billion per run.
+        int samples = 1 << 16;
+        int runs = 8;
+
+        ExecutorService es = Executors.newFixedThreadPool(
+            Math.min(Runtime.getRuntime().availableProcessors(), runs));
+        try {
+            // Cis and uniform are2 slower. Is this just because we have to use BigDecimal
+            // to check the answer more often. Or use sin/cos to create a cis number?
+            // These are cases where the branch prediction
+            // in hypot cannot learn which to choose.
+            checkHypot("cis", rng, CisNumberGenerator::new, samples, runs, es);
+            checkHypot("cis2", rng, CisNumberGenerator2::new, samples, runs, es);
+            checkHypot("polar", rng, PolarNumberGenerator::new, samples, runs, es);
+            checkHypot("uniform", rng, UniformRandomProvider::nextDouble, UniformRandomProvider::nextDouble, samples, runs, es);
+            checkHypot("random", rng, r -> {
+                ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(r);
+                return s::sample;
+            }, samples, runs, es);
+
+            checkHypot("range_p0_p0", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 0), samples, runs, es);
+            checkHypot("range_p0_p1", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 1), samples, runs, es);
+            checkHypot("range_p0_p2", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 2), samples, runs, es);
+            checkHypot("range_p0_p3", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 3), samples, runs, es);
+            checkHypot("range_p0_p4", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 4), samples, runs, es);
+
+            checkHypot("range_m1_m1", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -1), samples, runs, es);
+            checkHypot("range_m1_m2", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -2), samples, runs, es);
+            checkHypot("range_m1_m3", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -3), samples, runs, es);
+            checkHypot("range_m1_m4", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -4), samples, runs, es);
+            checkHypot("range_m1_m5", rng, r -> createFixedExponentNumber(r, -1), r -> createFixedExponentNumber(r, -5), samples, runs, es);
+
+            checkHypot("range_p128_p128", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 128), samples, runs, es);
+            checkHypot("range_p128_p129", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 129), samples, runs, es);
+            checkHypot("range_p128_p130", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 130), samples, runs, es);
+            checkHypot("range_p128_p131", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 131), samples, runs, es);
+            checkHypot("range_p128_p132", rng, r -> createFixedExponentNumber(r, 128), r -> createFixedExponentNumber(r, 132), samples, runs, es);
+
+            checkHypot("range_m128_m128", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -128), samples, runs, es);
+            checkHypot("range_m128_m129", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -129), samples, runs, es);
+            checkHypot("range_m128_m130", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -130), samples, runs, es);
+            checkHypot("range_m128_m131", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -131), samples, runs, es);
+            checkHypot("range_m128_m132", rng, r -> createFixedExponentNumber(r, -128), r -> createFixedExponentNumber(r, -132), samples, runs, es);
+
+            // Cannot check these due to scaling. Maybe add a scaled version for BigDecimal.
+            // Or just state that ULPs have less meaning for sub-normals.
+
+            checkHypot("m1010 sub-52", rng, r -> createFixedExponentNumber(r, -1010), CStandardTest2::createSubNormalNumber52, samples, runs, es);
+            checkHypot("m1021 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, samples, runs, es);
+            checkHypot("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, samples, runs, es);
+            checkHypot("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, samples, runs, es);
+            checkHypot("sub-52 sub-32", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber32, samples, runs, es);
+            // This is not hard so omit
+            checkHypot("sub-normal 32/32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, samples, runs, es);
+
+            // The distribution of floating-point numbers has the log-uniform distribution as
+            // its limiting distribution. We do not use that to force a full 52-bit random mantissa
+            // which increases the likelihood for high precision.
+            // This pointless as a big difference in magnitude is easy.
+            final ToDoubleFunction<UniformRandomProvider> luGenerator = new ToDoubleFunction<>() {
+                @Override
+                public double applyAsDouble(UniformRandomProvider rng) {
+                    // Do not use scalb. Directly write the exponent.
+                    return createFixedExponentNumber(rng, rng.nextInt(30));
+                }
+            };
+            checkHypot("log-uniform", rng, luGenerator, luGenerator, samples, runs, es);
+        } finally {
+            es.shutdown();
+        }
+    }
+
+    private static void checkHypot(String type, JumpableUniformRandomProvider rng,
+        ToDoubleFunction<UniformRandomProvider> fx,
+        ToDoubleFunction<UniformRandomProvider> fy, int samples, int runs, ExecutorService es) throws InterruptedException, ExecutionException {
+        ArrayList<Future<UlpChecker>> list = new ArrayList<>();
+        for (int i = 0; i < runs; i++) {
+            UniformRandomProvider r = rng.jump();
+            DoubleSupplier f1 = () -> fx.applyAsDouble(r);
+            DoubleSupplier f2 = () -> fy.applyAsDouble(r);
+            list.add(es.submit(new HypotChecker(f1, f2, samples)));
+        }
+        report(type, list);
+    }
+
+    private static void checkHypot(String type, JumpableUniformRandomProvider rng,
+        Function<UniformRandomProvider, DoubleSupplier> f, int samples, int runs, ExecutorService es) throws InterruptedException, ExecutionException {
+        ArrayList<Future<UlpChecker>> list = new ArrayList<>();
+        for (int i = 0; i < runs; i++) {
+            DoubleSupplier fx = f.apply(rng.jump());
+            list.add(es.submit(new HypotChecker(fx, fx, samples)));
+        }
+        report(type, list);
     }
 
     @Test
@@ -1488,13 +1704,18 @@ public class CStandardTest2 {
 
     @Test
     public void testBadHighPrecision() {
-        testBadHighPrecision(-0.8272978928538699, 0.561763470225278);
+        testBadHighPrecision(0.7600300504761309, 0.6498879306259271);
+        //testBadHighPrecision(-0.8272978928538699, 0.561763470225278);
         // sub-normal numbers
         //testBadHighPrecision(Double.longBitsToDouble(0x0000_0856_3784_6824_3842L),
         //                     Double.longBitsToDouble(0x0000_0863_7846_8243_6842L));
     }
 
     private static void testBadHighPrecision(double x, double y) {
+        final double xx = x;
+        final double yy = y;
+        new UlpChecker(() -> xx, () -> yy, 1).call();
+
         x = Math.abs(x);
         y = Math.abs(y);
         if (x < y) {
