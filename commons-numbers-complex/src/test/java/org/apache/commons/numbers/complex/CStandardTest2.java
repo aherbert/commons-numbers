@@ -501,8 +501,7 @@ public class CStandardTest2 {
             // Exact
             BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
 
-            //score(x, y, o1, o2, o3, o4, bdexact);
-            score(x, y, o3, o3, o3, o3, o4, bdexact);
+            score(x, y, o0, o1, o2, o3, o4, bdexact);
         }
     }
 
@@ -1220,7 +1219,7 @@ public class CStandardTest2 {
 
         // Can run max of approximately 1 billion per run.
         int samples = 1 << 30;
-        int runs = 32;
+        int runs = 16;
 
         // Sub-normals are slow to compute the correct answer
         int subNormalSamples = samples >>> 0;
