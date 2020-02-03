@@ -1222,7 +1222,7 @@ public class CStandardTest2 {
         int runs = 16;
 
         // Sub-normals are slow to compute the correct answer
-        int subNormalSamples = samples >>> 0;
+        int subNormalSamples = samples >>> 8;
 
         ExecutorService es = Executors.newFixedThreadPool(
             Math.min(Runtime.getRuntime().availableProcessors(), runs));
