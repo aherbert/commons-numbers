@@ -467,14 +467,15 @@ public class CStandardTest2 {
             // Do scaling once
             double rescale = 1.0;
             //double rescale2 = 1.0;
-            if (Math.min(x, y) < 0x1.0p-500) {
-                if (Math.min(x, y) < Double.MIN_NORMAL) {
-                    x = (x * 0x1.0p+1022);
-                    y = (y * 0x1.0p+1022);
-                    rescale = 0x1.0p-1022;
+            if (min < 0x1.0p-500) {
+                if (min < Double.MIN_NORMAL) {
                     // Require BigDecimal for exact sub-normal
                     BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
                     e = bdexact.doubleValue();
+
+                    x = (x * 0x1.0p+1022);
+                    y = (y * 0x1.0p+1022);
+                    rescale = 0x1.0p-1022;
 
 //                    x = (x * 0x1.0p+1022) * 0x1.0p+100;
 //                    y = (y * 0x1.0p+1022) * 0x1.0p+100;
