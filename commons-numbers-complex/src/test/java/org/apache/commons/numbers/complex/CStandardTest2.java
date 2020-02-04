@@ -457,11 +457,12 @@ public class CStandardTest2 {
                 y = tmp;
             }
 
+            double min = Double.min(x, y);
+
             //double o2 = hypot3(x, y);
 
-            // Exact
-            //BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
-            //double e = bdexact.doubleValue();
+            // Require BigDecimal for exact sub-normal
+            double e = -1;
 
             // Do scaling once
             double rescale = 1.0;
@@ -471,6 +472,10 @@ public class CStandardTest2 {
                     x = (x * 0x1.0p+1022);
                     y = (y * 0x1.0p+1022);
                     rescale = 0x1.0p-1022;
+                    // Require BigDecimal for exact sub-normal
+                    BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
+                    e = bdexact.doubleValue();
+
 //                    x = (x * 0x1.0p+1022) * 0x1.0p+100;
 //                    y = (y * 0x1.0p+1022) * 0x1.0p+100;
 //                    rescale = 0x1.0p-100;
@@ -487,7 +492,9 @@ public class CStandardTest2 {
             }
 
             // High precision dekker method as reference
-            double e = x2y2DekkerSqrt(x, y) * rescale; // * rescale2;
+            if (e < 0) {
+                e = x2y2DekkerSqrt(x, y) * rescale; // * rescale2;
+            }
 
             double o0 = Math.sqrt(x * x + y * y) * rescale; // * rescale2;
             // high precision sum then standard sqrt
@@ -1300,13 +1307,13 @@ public class CStandardTest2 {
 //            checkFmaScaled("m1021 m1022", rng, r -> createFixedExponentNumber(r, -1021), r -> createFixedExponentNumber(r, -1022), subNormalSamples, runs, es);
 //            checkFmaScaled("m1021 sub-52", rng, r -> createFixedExponentNumber(r, -1021), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
 //            checkFmaScaled("m1021 sub-51", rng, r -> createFixedExponentNumber(r, -1021), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
-            checkFmaScaled("m1022 m1022", rng, r -> createFixedExponentNumber(r, -1022), r -> createFixedExponentNumber(r, -1022), subNormalSamples, runs, es);
-            checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("m1022 sub-51", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
+            //checkFmaScaled("m1022 m1022", rng, r -> createFixedExponentNumber(r, -1022), r -> createFixedExponentNumber(r, -1022), subNormalSamples, runs, es);
+            //checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            //checkFmaScaled("m1022 sub-51", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
             checkFmaScaled("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
             checkFmaScaled("sub-52 sub-51", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
             checkFmaScaled("sub-52 sub-50", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber50, subNormalSamples, runs, es);
-            //checkFmaScaled("sub-normal 32/32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
+            checkFmaScaled("sub-32 sub-32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
 
 //            checkFma("range_p0_p0", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 0), samples, runs, es);
 //            checkFma("range_p0_p1", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 1), samples, runs, es);
