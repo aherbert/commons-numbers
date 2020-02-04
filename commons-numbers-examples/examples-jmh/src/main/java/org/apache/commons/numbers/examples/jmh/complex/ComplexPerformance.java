@@ -33,6 +33,7 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
@@ -370,6 +371,18 @@ public class ComplexPerformance {
     }
 
     /**
+     * Apply the function to all the numbers.
+     *
+     * @param numbers Numbers.
+     * @param fun Function.
+     */
+    private static void apply(Complex[] numbers, Blackhole bh, ToDoubleFunction<Complex> fun) {
+        for (int i = 0; i < numbers.length; i++) {
+            bh.consume(fun.applyAsDouble(numbers[i]));
+        }
+    }
+
+    /**
      * Identity function. This can be used to measure overhead of object array creation.
      *
      * @param z Complex number.
@@ -613,6 +626,36 @@ public class ComplexPerformance {
     public double[] abs2FmaSim3(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
                 (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
+    }
+
+    @Benchmark
+    public void abs3MathHypot(ComplexNumbers numbers, Blackhole bh) {
+        apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> Math.hypot(z.real(), z.imag()));
+    }
+    @Benchmark
+    public void abs3HypotSplit(ComplexNumbers numbers, Blackhole bh) {
+        apply(numbers.getNumbers(), bh,
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2HypotSplit));
+    }
+    @Benchmark
+    public void abs3FmaSim(ComplexNumbers numbers, Blackhole bh) {
+        apply(numbers.getNumbers(), bh,
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
+    }
+    @Benchmark
+    public void abs3Fma(ComplexNumbers numbers, Blackhole bh) {
+        apply(numbers.getNumbers(), bh,
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(Math.fma(a, a, b * b))));
+    }
+    @Benchmark
+    public void abs3X2Y2(ComplexNumbers numbers, Blackhole bh) {
+        apply(numbers.getNumbers(), bh,
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(a * a + b * b)));
+    }
+    @Benchmark
+    public void abs3Dekker(ComplexNumbers numbers, Blackhole bh) {
+        apply(numbers.getNumbers(), bh,
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
     }
 
     private interface DoubleDoubleBiFunction {
