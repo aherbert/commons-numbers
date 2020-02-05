@@ -661,7 +661,55 @@ public class ComplexPerformance {
     public double[] abs2DekkerSqrt(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
             (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2DekkerSqrt));
-    }    
+    }
+
+    @Benchmark
+    public double[] abs2bNoop(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2Noop));
+    }
+
+    @Benchmark
+    public double[] abs2bHypotSplit(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2HypotSplit));
+    }
+
+    @Benchmark
+    public double[] abs2bHypotReplica(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2HypotReplica));
+    }
+
+    @Benchmark
+    public double[] abs2bFma(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), (a, b) -> Math.sqrt(Math.fma(a, a, b * b))));
+    }
+
+    @Benchmark
+    public double[] abs2bFmaSim(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
+    }
+
+    @Benchmark
+    public double[] abs2bX2Y2(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), (a, b) -> Math.sqrt(a * a + b * b)));
+    }
+
+    @Benchmark
+    public double[] abs2bDekker(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
+    }
+
+    @Benchmark
+    public double[] abs2bDekkerSqrt(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2DekkerSqrt));
+    }
 
     // Testing alternative implementation
 
@@ -1132,6 +1180,72 @@ public class ComplexPerformance {
             // Intentional comparison with zero.
             if (b == 0.0) {
                 return a;
+            }
+
+            /* scale a and b by 2^600 */
+            a *= 0x1.0p+600;
+            b *= 0x1.0p+600;
+            rescale = 0x1.0p-600;
+        }
+
+        return sqrt.apply(a, b) * rescale;
+    }
+
+    private static double hypot2b(double x, double y, DoubleDoubleBiFunction sqrt) {
+        // The mask is used to remove the sign bit.
+        final long xbits = Double.doubleToRawLongBits(x) & 0x7fff_ffff_ffff_ffffL;
+        final long ybits = Double.doubleToRawLongBits(y) & 0x7fff_ffff_ffff_ffffL;
+
+        // Order by magnitude
+        double a;
+        double b;
+        /* High word of x & y */
+        int ha;
+        int hb;
+        if (ybits > xbits) {
+            a = y;
+            b = x;
+            ha = (int) (ybits >>> 32);
+            hb = (int) (xbits >>> 32);
+        } else {
+            a = x;
+            b = y;
+            ha = (int) (xbits >>> 32);
+            hb = (int) (ybits >>> 32);
+        }
+
+        // Check if the smaller part is significant.
+        // Do not replace this with 27 since the product x^2 is computed in
+        // extended precision for an effective mantissa of 105-bits. Potentially it could be
+        // replaced with 54 where y^2 will not overlap extended precision x^2.
+        if ((ha - hb) > EXP_60) {
+            /* x/y > 2**60 */
+            // No addition of a + b for sNaN.
+            return Math.abs(a);
+        }
+
+        double rescale = 1.0;
+        if (ha > EXP_500) {
+            /* a > 2^500 */
+            if (ha >= EXP_1024) {
+                /* Inf or NaN */
+                // Check b is infinite for the IEEE754 result.
+                // No addition of a + b for sNaN.
+                return Math.abs(b) == Double.POSITIVE_INFINITY ?
+                    Double.POSITIVE_INFINITY : Math.abs(a);
+            }
+            /* scale a and b by 2^-600 */
+            a *= 0x1.0p-600;
+            b *= 0x1.0p-600;
+            rescale = 0x1.0p+600;
+        } else if (hb < EXP_NEG_500) {
+            // No special handling of sub-normals.
+            // These do not matter when we do not manipulate the exponent bits for scaling
+            // the split representation.
+
+            // Intentional comparison with zero.
+            if (b == 0.0) {
+                return Math.abs(a);
             }
 
             /* scale a and b by 2^600 */

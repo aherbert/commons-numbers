@@ -271,9 +271,13 @@ public class CStandardTest2 {
          * <p>Note: This method will not handle an input complex that is infinite or nan.
          */
         void check() {
-            double x = Math.abs(fx.getAsDouble());
-            double y = Math.abs(fy.getAsDouble());
+            double x = fx.getAsDouble();
+            double y = fy.getAsDouble();
 
+            double o1 = hypot2b(x, y, (a, b) -> Math.sqrt(x2y2Dekker(a, b)));
+
+            x = Math.abs(x);
+            y = Math.abs(y);
             if (x < y) {
                 double tmp = x;
                 x = y;
@@ -285,8 +289,7 @@ public class CStandardTest2 {
 
             double o0 = Math.sqrt(x * x + y * y);
             // high precision sum then standard sqrt
-            double o1 = Math.sqrt(x2y2Dekker(x, y));
-            //double o1 = Math.sqrt(Math.fma(x, x, y * y));
+            //double o1 = Math.sqrt(x2y2Dekker(x, y));
             // Alternative using FMA
             double o2 = Math.sqrt(Math.fma(x, x, y * y));
             //double o2 = SafeNorm.value(new double[] {x, y});
@@ -997,6 +1000,72 @@ public class CStandardTest2 {
         return rescale * Math.sqrt(fma(a, b));
     }
 
+    private static double hypot2b(double x, double y, DoubleDoubleBiFunction sqrt) {
+        // The mask is used to remove the sign bit.
+        final long xbits = Double.doubleToRawLongBits(x) & 0x7fff_ffff_ffff_ffffL;
+        final long ybits = Double.doubleToRawLongBits(y) & 0x7fff_ffff_ffff_ffffL;
+
+        // Order by magnitude
+        double a;
+        double b;
+        /* High word of x & y */
+        int ha;
+        int hb;
+        if (ybits > xbits) {
+            a = y;
+            b = x;
+            ha = (int) (ybits >>> 32);
+            hb = (int) (xbits >>> 32);
+        } else {
+            a = x;
+            b = y;
+            ha = (int) (xbits >>> 32);
+            hb = (int) (ybits >>> 32);
+        }
+
+        // Check if the smaller part is significant.
+        // Do not replace this with 27 since the product x^2 is computed in
+        // extended precision for an effective mantissa of 105-bits. Potentially it could be
+        // replaced with 54 where y^2 will not overlap extended precision x^2.
+        if ((ha - hb) > EXP_60) {
+            /* x/y > 2**60 */
+            // No addition of a + b for sNaN.
+            return Math.abs(a);
+        }
+
+        double rescale = 1.0;
+        if (ha > EXP_500) {
+            /* a > 2^500 */
+            if (ha >= EXP_1024) {
+                /* Inf or NaN */
+                // Check b is infinite for the IEEE754 result.
+                // No addition of a + b for sNaN.
+                return Math.abs(b) == Double.POSITIVE_INFINITY ?
+                    Double.POSITIVE_INFINITY : Math.abs(a);
+            }
+            /* scale a and b by 2^-600 */
+            a *= 0x1.0p-600;
+            b *= 0x1.0p-600;
+            rescale = 0x1.0p+600;
+        } else if (hb < EXP_NEG_500) {
+            // No special handling of sub-normals.
+            // These do not matter when we do not manipulate the exponent bits for scaling
+            // the split representation.
+
+            // Intentional comparison with zero.
+            if (b == 0.0) {
+                return Math.abs(a);
+            }
+
+            /* scale a and b by 2^600 */
+            a *= 0x1.0p+600;
+            b *= 0x1.0p+600;
+            rescale = 0x1.0p-600;
+        }
+
+        return sqrt.apply(a, b) * rescale;
+    }
+
     private static double x2y2Hypot(double x, double y) {
         // Below we use a Dekker split to create two 26-bit numbers avoiding use of
         // conversion to raw bits. The original fdlibm version used a split of
@@ -1272,7 +1341,7 @@ public class CStandardTest2 {
             (JumpableUniformRandomProvider) RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 526735472636L);
 
         // Can run max of approximately 1 billion per run.
-        int samples = 1 << 30;
+        int samples = 1 << 20;
         int runs = 16;
 
         // Sub-normals are slow to compute the correct answer
@@ -1300,7 +1369,7 @@ public class CStandardTest2 {
             // in hypot cannot learn which to choose.
 //            checkFma("cis", rng, CisNumberGenerator::new, samples, runs, es);
 //            checkFma("cis2", rng, CisNumberGenerator2::new, samples, runs, es);
-//            checkFma("polar", rng, PolarNumberGenerator::new, samples, runs, es);
+            checkFma("polar", rng, PolarNumberGenerator::new, samples, runs, es);
 //            checkFma("uniform", rng, UniformRandomProvider::nextDouble, UniformRandomProvider::nextDouble, samples, runs, es);
 //            checkFma("random", rng, r -> {
 //                ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(r);
@@ -1320,12 +1389,12 @@ public class CStandardTest2 {
 //            checkFmaScaled("m1021 sub-52", rng, r -> createFixedExponentNumber(r, -1021), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
 //            checkFmaScaled("m1021 sub-51", rng, r -> createFixedExponentNumber(r, -1021), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
             //checkFmaScaled("m1022 m1022", rng, r -> createFixedExponentNumber(r, -1022), r -> createFixedExponentNumber(r, -1022), subNormalSamples, runs, es);
-            checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("m1022 sub-51", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
-            checkFmaScaled("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            checkFmaScaled("sub-52 sub-51", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
-            checkFmaScaled("sub-52 sub-50", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber50, subNormalSamples, runs, es);
-            checkFmaScaled("sub-32 sub-32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
+//            checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+//            checkFmaScaled("m1022 sub-51", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
+//            checkFmaScaled("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+//            checkFmaScaled("sub-52 sub-51", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
+//            checkFmaScaled("sub-52 sub-50", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber50, subNormalSamples, runs, es);
+//            checkFmaScaled("sub-32 sub-32", rng, CStandardTest2::createSubNormalNumber32, CStandardTest2::createSubNormalNumber32, subNormalSamples, runs, es);
 
 //            checkFma("range_p0_p0", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 0), samples, runs, es);
 //            checkFma("range_p0_p1", rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 1), samples, runs, es);
