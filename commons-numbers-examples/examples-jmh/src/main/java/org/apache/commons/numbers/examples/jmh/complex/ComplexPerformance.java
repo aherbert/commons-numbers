@@ -556,6 +556,13 @@ public class ComplexPerformance {
         return apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> FastMath.hypot(z.real(), z.imag()));
     }
 
+    // Explicit coding inline without the lambda function
+    //@Benchmark
+    public double[] absHypot(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag()));
+    }
+
     @Benchmark
     public double[] absNoop(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
@@ -575,9 +582,9 @@ public class ComplexPerformance {
     }
 
     @Benchmark
-    public double[] absHypot(ComplexNumbers numbers) {
+    public double[] absFma(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
-            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag()));
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(Math.fma(a, a, b * b))));
     }
 
     @Benchmark
@@ -604,16 +611,14 @@ public class ComplexPerformance {
             (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2DekkerSqrt));
     }
 
-    @Benchmark
-    public double[] absFma(ComplexNumbers numbers) {
-        return apply(numbers.getNumbers(),
-            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(Math.fma(a, a, b * b))));
-    }
+    // Without sub-normal handling
+    // In most cases of zero as the second argument this will be done in the large exponent
+    // gap edge case.
 
     @Benchmark
-    public double[] abs2Dekker(ComplexNumbers numbers) {
+    public double[] abs2Noop(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
-            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2Noop));
     }
 
     @Benchmark
@@ -623,37 +628,89 @@ public class ComplexPerformance {
     }
 
     @Benchmark
-    public double[] abs2FmaSim3(ComplexNumbers numbers) {
+    public double[] abs2HypotReplica(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
-                (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2HypotReplica));
     }
 
     @Benchmark
-    public void abs3MathHypot(ComplexNumbers numbers, Blackhole bh) {
+    public double[] abs2Fma(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), (a, b) -> Math.sqrt(Math.fma(a, a, b * b))));
+    }
+
+    @Benchmark
+    public double[] abs2FmaSim(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
+    }
+
+    @Benchmark
+    public double[] abs2X2Y2(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), (a, b) -> Math.sqrt(a * a + b * b)));
+    }
+
+    @Benchmark
+    public double[] abs2Dekker(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
+    }
+
+    @Benchmark
+    public double[] abs2DekkerSqrt(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2DekkerSqrt));
+    }    
+
+    // Testing alternative implementation
+
+    @Benchmark
+    public double[] abs3Dekker(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot3(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
+    }
+
+    @Benchmark
+    public double[] abs3HypotSplit(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot3(z.real(), z.imag(), ComplexPerformance::x2y2HypotSplit));
+    }
+
+    @Benchmark
+    public double[] abs3FmaSim3(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+                (ToDoubleFunction<Complex>) z -> hypot3(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
+    }
+
+    // Testing with black hole
+
+    @Benchmark
+    public void absBhMathHypot(ComplexNumbers numbers, Blackhole bh) {
         apply(numbers.getNumbers(), (ToDoubleFunction<Complex>) z -> Math.hypot(z.real(), z.imag()));
     }
     @Benchmark
-    public void abs3HypotSplit(ComplexNumbers numbers, Blackhole bh) {
+    public void absBhHypotSplit(ComplexNumbers numbers, Blackhole bh) {
         apply(numbers.getNumbers(), bh,
             (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2HypotSplit));
     }
     @Benchmark
-    public void abs3FmaSim(ComplexNumbers numbers, Blackhole bh) {
+    public void absBhFmaSim(ComplexNumbers numbers, Blackhole bh) {
         apply(numbers.getNumbers(), bh,
             (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2Fma));
     }
     @Benchmark
-    public void abs3Fma(ComplexNumbers numbers, Blackhole bh) {
+    public void absBhFma(ComplexNumbers numbers, Blackhole bh) {
         apply(numbers.getNumbers(), bh,
             (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(Math.fma(a, a, b * b))));
     }
     @Benchmark
-    public void abs3X2Y2(ComplexNumbers numbers, Blackhole bh) {
+    public void absBhX2Y2(ComplexNumbers numbers, Blackhole bh) {
         apply(numbers.getNumbers(), bh,
             (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), (a, b) -> Math.sqrt(a * a + b * b)));
     }
     @Benchmark
-    public void abs3Dekker(ComplexNumbers numbers, Blackhole bh) {
+    public void absBhDekker(ComplexNumbers numbers, Blackhole bh) {
         apply(numbers.getNumbers(), bh,
             (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
     }
@@ -831,7 +888,8 @@ public class ComplexPerformance {
         return w * rescale;
     }
 
-    private static double hypot2(double x, double y, DoubleDoubleBiFunction sqrt) {
+    // Adapted from https://stackoverflow.com/questions/3764978/why-hypot-function-is-so-slow
+    private static double hypot3(double x, double y, DoubleDoubleBiFunction sqrt) {
         // The mask is used to remove the sign.
         long bitsx = Double.doubleToRawLongBits(x) & 0x7fff_ffff_ffff_ffffL;
         long bitsy = Double.doubleToRawLongBits(y) & 0x7fff_ffff_ffff_ffffL;
@@ -850,20 +908,25 @@ public class ComplexPerformance {
             b = y;
         }
 
-        // Compute absolutes
-        a = Math.abs(a);
-        b = Math.abs(b);
+        // No requirement for absolutes since the square removes the sign
+        //a = Math.abs(a);
+        //b = Math.abs(b);
 
         // inf/nan handling
         if (bitsx >= 0x7ff0_0000_0000_0000L) {
             // a is inf/nan. Return inf is b is infinite
-            return bitsy == 0x7ff0_0000_0000_0000L ? b : a;
+            return bitsy == 0x7ff0_0000_0000_0000L ? Double.POSITIVE_INFINITY : Math.abs(a);
         }
 
         // Finite numbers
-        // Do scaling towards 1 but avoid x^2+y^2 being too close to 1.
-        // This forces the result of sqrt to be a different order of magnitude.
-        // Dropping the last 3 bits limits the exponent to [-1023, -1016], [+8, +1017] (unbiased)
+        // Do scaling towards 1.
+        // Dropping the last 3 bits limits the exponent to [0, 2040] biased or
+        // [-1023, +1017] (unbiased)
+        // This can be subtracted from 2044 without creating a sub-normal scale down
+        // for max exponent of 2040 or added to 2 to prevent sub-normal rescale for
+        // min exponent of 0:
+        // +1023 ==> +1017 -> 2^(2044-2040 - 1023) = 2^-1019 : 2^(2+2040 - 1023) = 2^1019
+        // -1023 ==> -1023 -> 2^(2044-0 - 1023) = 2^1021 : 2^(2+0 - 1023) = 2^-1021
         long exponent = bitsx & 0x7f80_0000_0000_0000L;
         double scale = Double.longBitsToDouble(0x7fc0_0000_0000_0000L - exponent);
         double rescale = Double.longBitsToDouble(0x0020_0000_0000_0000L + exponent);
@@ -997,6 +1060,84 @@ public class ComplexPerformance {
                 b *= 0x1.0p+600;
                 rescale = 0x1.0p-600;
             }
+        }
+
+        return sqrt.apply(a, b) * rescale;
+    }
+
+    private static double hypot2(double x, double y, DoubleDoubleBiFunction sqrt) {
+        /* High word of x & y */
+        // The mask is used to remove the sign bit.
+        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fffffff;
+        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fffffff;
+
+        // Order by approximate magnitude (lower bits excluded)
+        double a;
+        double b;
+        if (hb > ha) {
+            a = y;
+            b = x;
+            final int j = ha;
+            ha = hb;
+            hb = j;
+        } else {
+            a = x;
+            b = y;
+        }
+
+        // Check if the smaller part is significant.
+        // Do not replace this with 27 since the product x^2 is computed in
+        // extended precision for an effective mantissa of 105-bits. Potentially it could be
+        // replaced with 54 where y^2 will not overlap extended precision x^2.
+        if ((ha - hb) > EXP_60) {
+            /* x/y > 2**60 */
+            // No addition of a + b for sNaN.
+            return Math.abs(a);
+        }
+
+        /* a <- |a| */
+        /* b <- |b| */
+        // No equivalent to directly writing back the high bits.
+        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
+        a = Math.abs(a);
+        b = Math.abs(b);
+
+        // Second re-order in the rare event the upper 32-bits are the same.
+        // This could be done in various locations including inside the function x2y2.
+        // It must be done for sub-normals and is placed here for clarity that x2y2 assumes x >= y.
+        if (ha == hb && a < b) {
+            final double tmp = a;
+            a = b;
+            b = tmp;
+        }
+
+        double rescale = 1.0;
+        if (ha > EXP_500) {
+            /* a > 2^500 */
+            if (ha >= EXP_1024) {
+                /* Inf or NaN */
+                // Check b is infinite for the IEEE754 result.
+                // No addition of a + b for sNaN.
+                return b == Double.POSITIVE_INFINITY ? b : a;
+            }
+            /* scale a and b by 2^-600 */
+            a *= 0x1.0p-600;
+            b *= 0x1.0p-600;
+            rescale = 0x1.0p+600;
+        } else if (hb < EXP_NEG_500) {
+            // No special handling of sub-normals.
+            // These do not matter when we do not manipulate the exponent bits for scaling
+            // the split representation.
+
+            // Intentional comparison with zero.
+            if (b == 0.0) {
+                return a;
+            }
+
+            /* scale a and b by 2^600 */
+            a *= 0x1.0p+600;
+            b *= 0x1.0p+600;
+            rescale = 0x1.0p-600;
         }
 
         return sqrt.apply(a, b) * rescale;
