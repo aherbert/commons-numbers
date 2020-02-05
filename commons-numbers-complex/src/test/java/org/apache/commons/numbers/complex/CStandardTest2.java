@@ -461,6 +461,9 @@ public class CStandardTest2 {
 
             //double o2 = hypot3(x, y);
 
+            // Reference
+            double o3 = Math.hypot(x, y);
+
             // Require BigDecimal for exact sub-normal
             double e = -1;
 
@@ -473,9 +476,13 @@ public class CStandardTest2 {
                     BigDecimal bdexact = x2y2BigDecimal(x, y).sqrt(MathContext.DECIMAL128);
                     e = bdexact.doubleValue();
 
-                    x = (x * 0x1.0p+1022);
-                    y = (y * 0x1.0p+1022);
-                    rescale = 0x1.0p-1022;
+//                    x = (x * 0x1.0p+1022);
+//                    y = (y * 0x1.0p+1022);
+//                    rescale = 0x1.0p-1022;
+                    // Testing scaling does not matter
+                    x = x * 0x1.0p+600;
+                    y = y * 0x1.0p+600;
+                    rescale = 0x1.0p-600;
 
 //                    x = (x * 0x1.0p+1022) * 0x1.0p+100;
 //                    y = (y * 0x1.0p+1022) * 0x1.0p+100;
@@ -504,8 +511,6 @@ public class CStandardTest2 {
             // Alternative using FMA
             double o2 = Math.sqrt(Math.fma(x, x, y * y)) * rescale; // * rescale2;
             //double o2 = hypot3(x, y) * rescale; // * rescale2;
-            // Reference
-            double o3 = Math.hypot(x, y) * rescale; // * rescale2;
             // Use the variant of hypot to contrast with FMA.
             double o4 = Math.sqrt(x2y2Hypot(x, y)) * rescale; // * rescale2;
             //double o4 = Complex.ofCartesian(x, y).abs() * rescale; // * rescale2;
@@ -942,6 +947,7 @@ public class CStandardTest2 {
         //return Math.sqrt(x2y2Hypot(a, b)) * rescale;
     }
 
+    // Adapted from https://stackoverflow.com/questions/3764978/why-hypot-function-is-so-slow
     private static double hypot3(double x, double y) {
         // The mask is used to remove the sign.
         long bitsx = Double.doubleToRawLongBits(x) & 0x7fff_ffff_ffff_ffffL;
@@ -962,19 +968,24 @@ public class CStandardTest2 {
         }
 
         // Compute absolutes
-        a = Math.abs(a);
-        b = Math.abs(b);
+        //a = Math.abs(a);
+        //b = Math.abs(b);
 
         // inf/nan handling
         if (bitsx >= 0x7ff0_0000_0000_0000L) {
             // a is inf/nan. Return inf is b is infinite
-            return bitsy == 0x7ff0_0000_0000_0000L ? b : a;
+            return bitsy == 0x7ff0_0000_0000_0000L ? Double.POSITIVE_INFINITY : Math.abs(a);
         }
 
         // Finite numbers
-        // Do scaling towards 1 but avoid x^2+y^2 being too close to 1.
-        // This forces the result of sqrt to be a different order of magnitude.
-        // Dropping the last 3 bits limits the exponent to [-1023, -1016], [+8, +1017] (unbiased)
+        // Do scaling towards 1.
+        // Dropping the last 3 bits limits the exponent to [0, 2040] biased or
+        // [-1023, +1017] (unbiased)
+        // This can be subtracted from 2044 without creating a sub-normal scale down
+        // for max exponent of 2040 or added to 2 to prevent sub-normal rescale for
+        // min exponent of 0:
+        // +1023 ==> +1017 -> 2^(2044-2040 - 1023) = 2^-1019 : 2^(2+2040 - 1023) = 2^1019
+        // -1023 ==> -1023 -> 2^(2044-0 - 1023) = 2^1021 : 2^(2+0 - 1023) = 2^-1021
         long exponent = bitsx & 0x7f80_0000_0000_0000L;
         double scale = Double.longBitsToDouble(0x7fc0_0000_0000_0000L - exponent);
         double rescale = Double.longBitsToDouble(0x0020_0000_0000_0000L + exponent);
@@ -1309,8 +1320,8 @@ public class CStandardTest2 {
 //            checkFmaScaled("m1021 sub-52", rng, r -> createFixedExponentNumber(r, -1021), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
 //            checkFmaScaled("m1021 sub-51", rng, r -> createFixedExponentNumber(r, -1021), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
             //checkFmaScaled("m1022 m1022", rng, r -> createFixedExponentNumber(r, -1022), r -> createFixedExponentNumber(r, -1022), subNormalSamples, runs, es);
-            //checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
-            //checkFmaScaled("m1022 sub-51", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
+            checkFmaScaled("m1022 sub-52", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
+            checkFmaScaled("m1022 sub-51", rng, r -> createFixedExponentNumber(r, -1022), CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
             checkFmaScaled("sub-52 sub-52", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber52, subNormalSamples, runs, es);
             checkFmaScaled("sub-52 sub-51", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber51, subNormalSamples, runs, es);
             checkFmaScaled("sub-52 sub-50", rng, CStandardTest2::createSubNormalNumber52, CStandardTest2::createSubNormalNumber50, subNormalSamples, runs, es);
