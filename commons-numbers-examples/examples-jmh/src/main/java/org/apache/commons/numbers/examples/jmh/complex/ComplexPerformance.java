@@ -1209,6 +1209,10 @@ public class ComplexPerformance {
         return sqrt.apply(a, b) * rescale;
     }
 
+    // This is the fastest all round method.
+    // It remove the second edge case sort but uses only int comparison logic to test
+    // edge cases. It has no sub-normal edge case as this is not relevant when the high word
+    // it not used for the split.
     private static double hypot2b(double x, double y, DoubleDoubleBiFunction sqrt) {
         // The mask is used to remove the sign bit.
         final long xbits = Double.doubleToRawLongBits(x) & 0x7fff_ffff_ffff_ffffL;
