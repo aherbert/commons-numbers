@@ -192,9 +192,6 @@ public final class Complex implements Serializable  {
     private static final int EXP_1024 = 0x7ff_00000;
     /** Represents an exponent of -500 in unbiased form shifted 20-bits to align with the upper 32-bits of a double. */
     private static final int EXP_NEG_500 = 0x20b_00000;
-    /** Represents an exponent of -1022 in unbiased form (sub-normal number)
-     * shifted 20-bits to align with the upper 32-bits of a double. */
-    private static final int EXP_NEG_1022 = 0x001_00000;
 
     /** Serializable version identifier. */
     private static final long serialVersionUID = 20180201L;
@@ -3502,7 +3499,7 @@ public final class Complex implements Serializable  {
         // 'if' statement. Since the exponent difference between a and b
         // is below 60, if a's exponent is above 500 then b's cannot be below
         // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500.
+        // ((>500 - 60) - 600) > -500. Thus you cannot scale down and up at the same time.
         //
         // 4. There is no use of the absolute double value. The magnitude comparison is
         // performed using the long bit representation. The computation x^2+y^2 is
@@ -3600,7 +3597,7 @@ public final class Complex implements Serializable  {
      * Return {@code x^2 + y^2} with high accuracy.
      *
      * <p>It is assumed that {@code 2^500 > |x| >= |y| > 2^-500}. Thus there will be no
-     * overflow or underflow of the result.
+     * overflow or underflow of the result. The inputs are not assumed to be unsigned.
      *
      * <p>The computation is performed using Dekker's method for extended precision
      * multiplication of x and y and then summation of the extended precision squares.
