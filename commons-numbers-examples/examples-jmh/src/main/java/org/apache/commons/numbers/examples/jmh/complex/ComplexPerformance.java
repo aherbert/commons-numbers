@@ -606,6 +606,12 @@ public class ComplexPerformance {
     }
 
     @Benchmark
+    public double[] absDekkerFma(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2DekkerFma));
+    }
+
+    @Benchmark
     public double[] absDekkerSqrt(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
             (ToDoubleFunction<Complex>) z -> hypot(z.real(), z.imag(), ComplexPerformance::x2y2DekkerSqrt));
@@ -655,6 +661,12 @@ public class ComplexPerformance {
     public double[] abs2Dekker(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
             (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2Dekker));
+    }
+
+    @Benchmark
+    public double[] abs2DekkerFma(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2(z.real(), z.imag(), ComplexPerformance::x2y2DekkerFma));
     }
 
     @Benchmark
@@ -1326,6 +1338,18 @@ public class ComplexPerformance {
         final double r = xx + yy;
         return Math.sqrt(xx - r + yy + y2Low + x2Low + r);
     }
+
+    private static double x2y2DekkerFma(double x, double y) {
+        // Do a Dekker summation
+        final double xx = x * x;
+        final double yy = y * y;
+        final double x2Low = Math.fma(x, x, -xx);
+        final double y2Low = Math.fma(y, y, -yy);
+
+        final double r = xx + yy;
+        return Math.sqrt(xx - r + yy + y2Low + x2Low + r);
+    }
+
     /**
      * High accuracy {@code sqrt(x^2 + y^2)}.
      *
