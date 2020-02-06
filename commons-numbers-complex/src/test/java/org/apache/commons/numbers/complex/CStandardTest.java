@@ -600,33 +600,27 @@ public class CStandardTest {
     }
 
     /**
-     * Creates a sub-normal number with up to 52-bits in the mantissa.
+     * Creates a sub-normal number with up to 52-bits in the mantissa. The number of bits
+     * to drop must be in the range [0, 51].
      *
      * @param rng Source of randomness
+     * @param drop The number of mantissa bits to drop.
      * @return the number
      */
-    private static double createSubNormalNumber52(UniformRandomProvider rng) {
-        return Double.longBitsToDouble(rng.nextLong() >>> 12);
-    }
-
-    /**
-     * Creates a sub-normal number with up to 32-bits in the mantissa.
-     *
-     * @param rng Source of randomness
-     * @return the number
-     */
-    private static double createSubNormalNumber32(UniformRandomProvider rng) {
-        return Double.longBitsToDouble(rng.nextLong() >>> 32);
+    private static double createSubNormalNumber(UniformRandomProvider rng, int drop) {
+        return Double.longBitsToDouble(rng.nextLong() >>> (12 + drop));
     }
 
     /**
      * Creates a number in the range {@code [1, 2)} with up to 52-bits in the mantissa.
+     * Then modifies the exponent by the given amount.
      *
      * @param rng Source of randomness
+     * @param exponent Amount to change the exponent (in range [-1023, 1023])
      * @return the number
      */
-    private static double createFixedExponentNumber(UniformRandomProvider rng) {
-        return Double.longBitsToDouble((rng.nextLong() >>> 12) | (1023L << 52));
+    private static double createFixedExponentNumber(UniformRandomProvider rng, int exponent) {
+        return Double.longBitsToDouble((rng.nextLong() >>> 12) | ((1023L + exponent) << 52));
     }
 
     /**
@@ -910,9 +904,9 @@ public class CStandardTest {
         }
 
         // Test verses Math.hypot due to the use of a custom implementation.
-        // First test edge cases. Ignore negatives as the sign is simply removed.
-        final double[] parts = {0, Double.MIN_VALUE, Double.MIN_NORMAL, Double.MAX_VALUE,
-            Double.POSITIVE_INFINITY, Double.NaN};
+        // First test edge cases. Use negatives to test the sign is simply removed.
+        final double[] parts = {-0.0, -Double.MIN_VALUE, -Double.MIN_NORMAL, -Double.MAX_VALUE,
+            Double.NEGATIVE_INFINITY, Double.NaN};
         for (final double x : parts) {
             for (final double y : parts) {
                 Assertions.assertEquals(Math.hypot(x, y), complex(x, y).abs());
@@ -944,16 +938,14 @@ public class CStandardTest {
         // This test simply asserts the answer is either the same as Math.hypot or else is within
         // 1 ULP of a high precision computation.
         final int samples = 100;
-        assertAbs(rng, CStandardTest::createSubNormalNumber52, CStandardTest::createSubNormalNumber52, samples);
-        assertAbs(rng, CStandardTest::createSubNormalNumber52, CStandardTest::createSubNormalNumber32, samples);
-        assertAbs(rng, CStandardTest::createSubNormalNumber32, CStandardTest::createSubNormalNumber32, samples);
+        assertAbs(rng, r -> createSubNormalNumber(r, 0), r -> createSubNormalNumber(r, 0), samples);
+        assertAbs(rng, r -> createSubNormalNumber(r, 0), r -> createSubNormalNumber(r, 1), samples);
+        assertAbs(rng, r -> createSubNormalNumber(r, 0), r -> createSubNormalNumber(r, 2), samples);
         // Numbers on the same scale (fixed exponent)
-        assertAbs(rng, CStandardTest::createFixedExponentNumber, CStandardTest::createFixedExponentNumber, samples);
+        assertAbs(rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 0), samples);
         // Numbers on different scales
-        assertAbs(rng, CStandardTest::createFixedExponentNumber,
-            r -> createFixedExponentNumber(r) * 2, samples);
-        assertAbs(rng, CStandardTest::createFixedExponentNumber,
-            r -> Math.scalb(createFixedExponentNumber(r), 2 + r.nextInt(10)), samples);
+        assertAbs(rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 1), samples);
+        assertAbs(rng, r -> createFixedExponentNumber(r, 0), r -> createFixedExponentNumber(r, 2 + r.nextInt(10)), samples);
         // Complex cis numbers
         final ToDoubleFunction<UniformRandomProvider> cisGenerator = new ToDoubleFunction<UniformRandomProvider>() {
             private double tmp = Double.NaN;
