@@ -718,6 +718,12 @@ public class ComplexPerformance {
     }
 
     @Benchmark
+    public double[] abs2bDekkerFma(ComplexNumbers numbers) {
+        return apply(numbers.getNumbers(),
+            (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2DekkerFma));
+    }
+
+    @Benchmark
     public double[] abs2bDekkerSqrt(ComplexNumbers numbers) {
         return apply(numbers.getNumbers(),
             (ToDoubleFunction<Complex>) z -> hypot2b(z.real(), z.imag(), ComplexPerformance::x2y2DekkerSqrt));
