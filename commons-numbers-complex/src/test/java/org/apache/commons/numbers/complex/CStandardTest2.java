@@ -275,6 +275,8 @@ public class CStandardTest2 {
             double y = fy.getAsDouble();
 
             double o1 = hypot2b(x, y, (a, b) -> Math.sqrt(x2y2Dekker(a, b)));
+            // Test the original implementation
+            double o4 = hypotNo2ndSort(x, y, (a, b) -> Math.sqrt(x2y2HypotOriginal(a, b)));
 
             x = Math.abs(x);
             y = Math.abs(y);
@@ -298,7 +300,7 @@ public class CStandardTest2 {
             // Reference
             double o3 = Math.hypot(x, y);
             // Use the variant of hypot to contrast with FMA.
-            double o4 = Math.sqrt(x2y2Hypot(x, y));
+            //double o4 = Math.sqrt(x2y2Hypot(x, y));
             //double o4 = Complex.ofCartesian(x, y).abs();
 
             // Only interested in differences from realistic best result without BigDecimal or
@@ -651,6 +653,38 @@ public class CStandardTest2 {
         }
     }
 
+    private static class Lower32NumberGenerator extends CisNumberGenerator {
+        final static long EXP = Double.doubleToLongBits(1.0);
+
+        Lower32NumberGenerator(UniformRandomProvider rng) {
+            super(rng);
+        }
+
+        @Override
+        public double getAsDouble() {
+            if (Double.isNaN(tmp)) {
+                // 52-bits
+                final long bits = rng.nextLong() >>> 12;
+                // A different lower 32-bits
+                final int lower = rng.nextInt();
+                final long a = EXP | bits;
+                final long b = EXP | (bits ^ (lower & 0xffff_ffffL));
+                // Return the smallest number first
+                final double x = Double.longBitsToDouble(a);
+                final double y = Double.longBitsToDouble(b);
+                if (a < b) {
+                    tmp = y;
+                    return x;
+                }
+                tmp = x;
+                return y;
+            }
+            final double r = tmp;
+            tmp = Double.NaN;
+            return r;
+        }
+    }
+
     private static String format(double x) {
         // Full length representation with no sign bit
         long bits = Double.doubleToRawLongBits(x);
@@ -682,7 +716,7 @@ public class CStandardTest2 {
         return x1;
     }
 
-    private static double hypotExact(double x, double y) {
+    private static double hypot(double x, double y, DoubleDoubleBiFunction sqrt) {
         // Differences to the fdlibm reference:
         //
         // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
@@ -811,143 +845,102 @@ public class CStandardTest2 {
                 rescale = 0x1.0p-600;
             }
         }
-        //double x2y2 = new BigDecimal(a).pow(2).add(new BigDecimal(b).pow(2)).doubleValue();
-        double x2y2 = x2y2Exact(a, b);
-        return Math.sqrt(x2y2) * rescale;
+        return sqrt.apply(a, b) * rescale;
+    }
+
+    private static double hypotNo2ndSort(double x, double y, DoubleDoubleBiFunction sqrt) {
+        /* High word of x & y */
+        // The mask is used to remove the sign.
+        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fffffff;
+        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fffffff;
+
+        // Order by approximate magnitude (lower bits excluded)
+        double a;
+        double b;
+        if (hb > ha) {
+            a = y;
+            b = x;
+            final int j = ha;
+            ha = hb;
+            hb = j;
+        } else {
+            a = x;
+            b = y;
+        }
+
+        /* a <- |a| */
+        /* b <- |b| */
+        // No equivalent to directly writing back the high bits.
+        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
+        a = Math.abs(a);
+        b = Math.abs(b);
+
+        // Check if the smaller part is significant.
+        // Do not replace this with 27 since the product x^2 is computed in
+        // extended precision for an effective mantissa of 105-bits. Potentially it could be
+        // replaced with 54 where y^2 will not overlap extended precision x^2.
+        if ((ha - hb) > EXP_60) {
+            /* x/y > 2**60 */
+            // The addition will return nan for finite/nan combinations.
+            // Note: if both inputs are inf or nan this will not occur as the exponent is the
+            // same and inf+nan are handled later.
+            return a + b;
+        }
+
+        double rescale = 1.0;
+        if (ha > EXP_500) {
+            /* a > 2^500 */
+            if (ha >= EXP_1024) {
+                /* Inf or NaN */
+                // No bit manipulation on high and low 32-bits to check for a zero mantissa (Inf).
+                // Revert to Java functions for the IEEE754 result.
+                return a == Double.POSITIVE_INFINITY || b == Double.POSITIVE_INFINITY ?
+                    Double.POSITIVE_INFINITY :
+                    /* for sNaN */
+                    a + b;
+            }
+            /* scale a and b by 2^-600 */
+            a *= 0x1.0p-600;
+            b *= 0x1.0p-600;
+            rescale = 0x1.0p600;
+        } else if (hb < EXP_NEG_500) {
+            /* b < 2^-500 */
+            if (hb < EXP_NEG_1022) {
+                /* sub-normal or 0 */
+                // Intentional comparison with zero
+                if (b == 0.0) {
+                    return a;
+                }
+                /* reorder sub-normals */
+                if (a < b) {
+                    final double tmp = a;
+                    a = b;
+                    b = tmp;
+                }
+                /* scale a and b by 2^1022 */
+                a *= 0x1.0p1022;
+                b *= 0x1.0p1022;
+                rescale = 0x1.0p-1022;
+            } else {
+                /* scale a and b by 2^600 */
+                a *= 0x1.0p600;
+                b *= 0x1.0p600;
+                rescale = 0x1.0p-600;
+            }
+        }
+        return sqrt.apply(a, b) * rescale;
+    }
+
+    private static double hypotExact(double x, double y) {
+        return hypot(x, y, (a, b) -> {
+            //double x2y2 = new BigDecimal(a).pow(2).add(new BigDecimal(b).pow(2)).doubleValue();
+            double x2y2 = x2y2Exact(a, b);
+            return Math.sqrt(x2y2);
+        });
     }
 
     private static double hypotStandard(double x, double y) {
-        // Differences to the fdlibm reference:
-        //
-        // 1. fdlibm orders the two parts using the magnitude of the upper 32-bits.
-        // This can incorrectly order small sub-normal numbers which differ
-        // only in the lower 32-bits for the x^2+y^2 sum which requires x to be
-        // greater than y. This version performs a second reorder
-        // if the upper parts are equal. This can be done after the test for large magnitude
-        // differences. Note: An alternative using the entire 63-bit unsigned raw bits for the
-        // magnitude comparison are marginally slower in performance tests. For alignment
-        // with the fdlibm reference this implementation uses the upper 32-bits.
-        //
-        // 2. This stores the re-scaling factor for use in a multiplication.
-        // The original computed scaling by direct writing to the exponent bits.
-        // The high part was maintained through scaling for using in the high
-        // precision sum x^2 + y^2. This version has no requirement for that
-        // as the high part is extracted using Dekker's method.
-        //
-        // 3. An alteration is done here to add an 'else if' instead of a second
-        // 'if' statement. Since the exponent difference between a and b
-        // is below 60, if a's exponent is above 500 then b's cannot be below
-        // -500 even after scaling by -600 in the first conditional:
-        // ((>500 - 60) - 600) > -500
-        //
-        // 4. The original handling of sub-normal numbers does not scale the representation
-        // of the upper 32-bits (ha, hb). This is because sub-normals can have effective
-        // exponents in the range -1023 to -1074 and the exponent increase must be dynamically
-        // computed for an addition to the exponent bits. This is neglected in the fdlibm
-        // version. The effect is the extended precision computation reverts to a
-        // computation as if t1 and y1 were zero (see x2y2() below) and the result is the
-        // standard precision result x^2 + y^2. In contrast this implementation is not tied to
-        // manipulating bits to represent the magnitude of the high part of the split number.
-        // The split is computed dynamically on the scaled number. The effect is increased
-        // precision for the majority of sub-normal cases. In the event of worse performance
-        // the result is 1 ULP from the exact result.
-        //
-        // Original comments from fdlibm are in c style: /* */
-        // Extra comments added for reference.
-        //
-        // Note that the high 32-bits are compared to constants.
-        // The lowest 20-bits are the upper bits of the 52-bit mantissa.
-        // The next 11-bits are the biased exponent. The sign bit has been cleared.
-        // For clarity the values have been refactored to constants.
-        //
-        // Scaling factors are written using Java's binary floating point notation 0xN.NpE
-        // where the number following the p is the exponent. These are only used with
-        // a binary float value of 1.0 to create powers of 2, e.g. 0x1.0p600 is 2^600.
-
-        /* High word of x & y */
-        // The mask is used to remove the sign.
-        int ha = ((int) (Double.doubleToRawLongBits(x) >>> 32)) & 0x7fffffff;
-        int hb = ((int) (Double.doubleToRawLongBits(y) >>> 32)) & 0x7fffffff;
-
-        // Order by approximate magnitude (lower bits excluded)
-        double a;
-        double b;
-        if (hb > ha) {
-            a = y;
-            b = x;
-            final int j = ha;
-            ha = hb;
-            hb = j;
-        } else {
-            a = x;
-            b = y;
-        }
-
-        /* a <- |a| */
-        /* b <- |b| */
-        // No equivalent to directly writing back the high bits.
-        // Just use Math.abs(). It is a hotspot intrinsic in Java 8+.
-        a = Math.abs(a);
-        b = Math.abs(b);
-
-        // Check if the smaller part is significant.
-        // Do not replace this with 27 since the product x^2 is computed in
-        // extended precision for an effective mantissa of 105-bits. Potentially it could be
-        // replaced with 54 where y^2 will not overlap extended precision x^2.
-        if ((ha - hb) > EXP_60) {
-            /* x/y > 2**60 */
-            // The addition will return nan for finite/nan combinations.
-            // Note: if both inputs are inf or nan this will not occur as the exponent is the
-            // same and inf+nan are handled later.
-            return a + b;
-        }
-
-        // Second re-order in the rare event the upper 32-bits are the same.
-        // This reorder will ignore inf-nan combinations. These are rejected below.
-        if (ha == hb && a < b) {
-            final double tmp = a;
-            a = b;
-            b = tmp;
-        }
-
-        double rescale = 1.0;
-        if (ha > EXP_500) {
-            /* a > 2^500 */
-            if (ha >= EXP_1024) {
-                /* Inf or NaN */
-                // No bit manipulation on high and low 32-bits to check for a zero mantissa (Inf).
-                // Revert to Java functions for the IEEE754 result.
-                return a == Double.POSITIVE_INFINITY || b == Double.POSITIVE_INFINITY ?
-                    Double.POSITIVE_INFINITY :
-                    /* for sNaN */
-                    a + b;
-            }
-            /* scale a and b by 2^-600 */
-            a *= 0x1.0p-600;
-            b *= 0x1.0p-600;
-            rescale = 0x1.0p600;
-        } else if (hb < EXP_NEG_500) {
-            /* b < 2^-500 */
-            if (hb < EXP_NEG_1022) {
-                /* sub-normal or 0 */
-                // Intentional comparison with zero
-                if (b == 0.0) {
-                    return a;
-                }
-                /* scale a and b by 2^1022 */
-                a *= 0x1.0p1022;
-                b *= 0x1.0p1022;
-                rescale = 0x1.0p-1022;
-            } else {
-                /* scale a and b by 2^600 */
-                a *= 0x1.0p600;
-                b *= 0x1.0p600;
-                rescale = 0x1.0p-600;
-            }
-        }
-
-        return Math.sqrt(x * x + y * y) * rescale;
-        //return Math.sqrt(x2y2Hypot(a, b)) * rescale;
+        return hypot(x, y, (a, b) -> Math.sqrt(a * a + b * b));
     }
 
     // Adapted from https://stackoverflow.com/questions/3764978/why-hypot-function-is-so-slow
@@ -1100,6 +1093,22 @@ public class CStandardTest2 {
         final double y2 = y - y1;
         //final double t1 = Double.longBitsToDouble(Double.doubleToRawLongBits(t) & 0xffffffff00000000L);
         final double t1 = splitHigh(t);
+        final double t2 = t - t1;
+        return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
+    }
+
+    private static double x2y2HypotOriginal(double x, double y) {
+        final double w = x - y;
+        if (w > y) {
+            final double t1 = Double.longBitsToDouble(Double.doubleToRawLongBits(x) & 0xffffffff00000000L);
+            final double t2 = x - t1;
+            return t1 * t1 - (y * (-y) - t2 * (x + t1));
+        }
+        // 2y > x > y
+        final double t = x + x;
+        final double y1 = Double.longBitsToDouble(Double.doubleToRawLongBits(y) & 0xffffffff00000000L);
+        final double y2 = y - y1;
+        final double t1 = Double.longBitsToDouble(Double.doubleToRawLongBits(t) & 0xffffffff00000000L);
         final double t2 = t - t1;
         return t1 * y1 - (w * (-w) - (t1 * y2 + t2 * y));
     }
@@ -1341,7 +1350,7 @@ public class CStandardTest2 {
             (JumpableUniformRandomProvider) RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 526735472636L);
 
         // Can run max of approximately 1 billion per run.
-        int samples = 1 << 20;
+        int samples = 1 << 28;
         int runs = 16;
 
         // Sub-normals are slow to compute the correct answer
@@ -1363,13 +1372,18 @@ public class CStandardTest2 {
 //            rng = (JumpableUniformRandomProvider) RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 526735472636L);
 //            checkFmaScaled("m1010 m1010", rng, r -> createFixedExponentNumber(r, -1010), r -> createFixedExponentNumber(r, -1010), subNormalSamples, runs, es);
 
+            // Use this to check the original fdlibm implementation with no sort on all the bits.
+            // Small runs with 4 billion numbers show the same max error as Math.hypot (0.85319)
+            // but the better/worse count is: better 58, worse 91
+            checkFma("lower32", rng, Lower32NumberGenerator::new, samples, runs, es);
+
             // Cis and uniform are2 slower. Is this just because we have to use BigDecimal
             // to check the answer more often. Or use sin/cos to create a cis number?
             // These are cases where the branch prediction
             // in hypot cannot learn which to choose.
 //            checkFma("cis", rng, CisNumberGenerator::new, samples, runs, es);
 //            checkFma("cis2", rng, CisNumberGenerator2::new, samples, runs, es);
-            checkFma("polar", rng, PolarNumberGenerator::new, samples, runs, es);
+//            checkFma("polar", rng, PolarNumberGenerator::new, samples, runs, es);
 //            checkFma("uniform", rng, UniformRandomProvider::nextDouble, UniformRandomProvider::nextDouble, samples, runs, es);
 //            checkFma("random", rng, r -> {
 //                ZigguratNormalizedGaussianSampler s = ZigguratNormalizedGaussianSampler.of(r);
