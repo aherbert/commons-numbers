@@ -192,6 +192,11 @@ public final class LinearCombinationExact2 {
      * Shewchuk (1997) Theorum 13</a>
      */
     private static int fastExpansionSum(double[] e, int e0, int m, int f0, int n, double[] g) {
+        // TODO - change so that merge does the zero elimination and returns the length.
+        // remove zero elimination from the fast expansion sum.
+        // Thus zero elimination is only done if the expansion is to be used
+        // in another sum.
+
         // Combine e and f to a new expansion sorted in increasing order of magnitude.
         merge(e, e0, e0 + m, f0, f0 + n, g);
         final int len = m + n;
@@ -244,11 +249,33 @@ public final class LinearCombinationExact2 {
         // Bulk copy the sequence.
         // Then swap to the other as the low sequence and repeat.
         // The current high point in the high sequence can be cached as an absolute.
-        while (ei < em && fi < fn) {
-            if (Math.abs(e[ei]) < Math.abs(e[fi])) {
-                g[gi++] = e[ei++];
-            } else {
-                g[gi++] = e[fi++];
+//        while (ei < em && fi < fn) {
+//            if (Math.abs(e[ei]) < Math.abs(e[fi])) {
+//                g[gi++] = e[ei++];
+//            } else {
+//                g[gi++] = e[fi++];
+//            }
+//        }
+        // Assume that the start is within the array bounds.
+        // Cache the absolute value to reduce the number of calls to Math.abs.
+        double ev = Math.abs(e[ei]);
+        double fv = Math.abs(e[fi]);
+        if (ei < em && fi < fn) {
+            // Stop the loop when either counter reaches the length of the expansion.
+            for (;;) {
+                if (ev < fv) {
+                    g[gi++] = e[ei++];
+                    if (ei == em) {
+                        break;
+                    }
+                    ev = Math.abs(e[ei]);
+                } else {
+                    g[gi++] = e[fi++];
+                    if (fi == fn) {
+                        break;
+                    }
+                    fv = Math.abs(e[fi]);
+                }
             }
         }
         if (ei < em) {
