@@ -522,7 +522,7 @@ public class LinearCombinationPerformance {
         return scalar4Product(factors, LinearCombinationExact2::value);
     }
 
-    //@Benchmark
+    @Benchmark
     public double[] scalarDotExact2(LengthFactors factors) {
         return scalarProduct(factors, LinearCombinationExact2::value);
     }
