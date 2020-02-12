@@ -394,19 +394,26 @@ public final class LinearCombinationExact2 {
         x = e2 + a;
         e2 = sumLow(e2, a, x);
 
-        // Store but remove interspersed zeros
-        int en = ei;
-        if (e0 != 0) {
-            e[en++] = e0;
-        }
-        if (e1 != 0) {
-            e[en++] = e1;
-        }
-        if (e2 != 0) {
-            e[en++] = e2;
-        }
-        e[en++] = x;
-        return en - ei;
+//        // Store but remove interspersed zeros
+//        int en = ei;
+//        if (e0 != 0) {
+//            e[en++] = e0;
+//        }
+//        if (e1 != 0) {
+//            e[en++] = e1;
+//        }
+//        if (e2 != 0) {
+//            e[en++] = e2;
+//        }
+//        e[en++] = x;
+//        return en - ei;
+
+        // Zero elimination is performed in the merge functon
+        e[ei++] = e0;
+        e[ei++] = e1;
+        e[ei++] = e2;
+        e[ei] = x;
+        return 4;
     }
 
     /**
@@ -422,14 +429,19 @@ public final class LinearCombinationExact2 {
     private static int product(double a1, double b1, double[] e, int ei) {
         double e1 = a1 * b1;
         double e0 = productLow(a1, b1, e1);
-        // remove zeros
-        if (e0 != 0) {
-            e[ei] = e0;
-            e[ei + 1] = e1;
-            return 2;
-        }
-        e[ei] = e1;
-        return 1;
+//        // remove zeros
+//        if (e0 != 0) {
+//            e[ei] = e0;
+//            e[ei + 1] = e1;
+//            return 2;
+//        }
+//        e[ei] = e1;
+//        return 1;
+
+        // Zero elimination is performed in the merge functon
+        e[ei] = e0;
+        e[ei + 1] = e1;
+        return 2;
     }
 
     /**
