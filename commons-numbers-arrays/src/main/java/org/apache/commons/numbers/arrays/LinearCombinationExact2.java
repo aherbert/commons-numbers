@@ -191,40 +191,61 @@ public final class LinearCombinationExact2 {
      * @see <a href="http://www-2.cs.cmu.edu/afs/cs/project/quake/public/papers/robust-arithmetic.ps">
      * Shewchuk (1997) Theorum 13</a>
      */
+//    private static int fastExpansionSum(double[] e, int e0, int m, int f0, int n, double[] g) {
+//        // TODO - change so that merge does the zero elimination and returns the length.
+//        // remove zero elimination from the fast expansion sum.
+//        // Thus zero elimination is only done if the expansion is to be used
+//        // in another sum.
+//
+//        // Combine e and f to a new expansion sorted in increasing order of magnitude.
+//        merge(e, e0, e0 + m, f0, f0 + n, g);
+//        final int len = m + n;
+//        // Fast-two-sum the initial pair
+//        int ei = e0;
+//        double q = g[1] + g[0];
+//        double r = fastSumLow(g[1], g[0], q);
+//        if (r != 0) {
+//            e[ei++] = r;
+//        }
+//        // Two-sum the remaining pairs
+//        for (int i = 2; i < len; i++) {
+//            final double x = q + g[i];
+//            r = sumLow(q, g[i], x);
+//            q = x;
+//            if (r != 0) {
+//                e[ei++] = r;
+//            }
+//        }
+//        // if the sum is zero only add this if no others have been added
+//        if (q != 0 || ei == e0) {
+//            e[ei++] = q;
+//        }
+//        return ei - e0;
+//    }
     private static int fastExpansionSum(double[] e, int e0, int m, int f0, int n, double[] g) {
-        // TODO - change so that merge does the zero elimination and returns the length.
-        // remove zero elimination from the fast expansion sum.
-        // Thus zero elimination is only done if the expansion is to be used
-        // in another sum.
-
         // Combine e and f to a new expansion sorted in increasing order of magnitude.
-        merge(e, e0, e0 + m, f0, f0 + n, g);
-        final int len = m + n;
+        // The merge performs zero elimination.
+        final int len = merge(e, e0, e0 + m, f0, f0 + n, g);
+        if (len < 2) {
+            System.arraycopy(g, 0, e, e0, len);
+            return len;
+        }
         // Fast-two-sum the initial pair
         int ei = e0;
         double q = g[1] + g[0];
-        double r = fastSumLow(g[1], g[0], q);
-        if (r != 0) {
-            e[ei++] = r;
-        }
+        e[ei++] = fastSumLow(g[1], g[0], q);
         // Two-sum the remaining pairs
         for (int i = 2; i < len; i++) {
             final double x = q + g[i];
-            r = sumLow(q, g[i], x);
+            e[ei++] = sumLow(q, g[i], x);
             q = x;
-            if (r != 0) {
-                e[ei++] = r;
-            }
         }
-        // if the sum is zero only add this if no others have been added
-        if (q != 0 || ei == e0) {
-            e[ei++] = q;
-        }
+        e[ei++] = q;
         return ei - e0;
     }
-
     /**
      * Merge the expansions e and f into g, sorted in order of increasing magnitude.
+     * This performs zero elimination to remove zeros from the sequence g.
      *
      * @param e Expansion data.
      * @param e0 Start of expansion e.
@@ -232,45 +253,84 @@ public final class LinearCombinationExact2 {
      * @param f0 Start of expansion f.
      * @param fn End of expansion f.
      * @param g Output sequence.
+     * @return the length of the output sequence
      */
-    private static void merge(double[] e, int e0, int em, int f0, int fn, double[] g) {
+//    private static void merge(double[] e, int e0, int em, int f0, int fn, double[] g) {
+//        int ei = e0;
+//        int fi = f0;
+//        int gi = 0;
+//        // TODO
+//        // Make more efficient. This can be done by looking ahead in the lower
+//        // sequence until it is not lower anymore. If the expansions do not
+//        // contain zeros then this can be done using an exponential search:
+//        // https://en.wikipedia.org/wiki/Exponential_search
+//        //
+//        // The merge flip flops between the two sequences.
+//        // Set the low sequence as e or f.
+//        // Advance along the low sequence until is it not lower.
+//        // Bulk copy the sequence.
+//        // Then swap to the other as the low sequence and repeat.
+//        // The current high point in the high sequence can be cached as an absolute.
+////        while (ei < em && fi < fn) {
+////            if (Math.abs(e[ei]) < Math.abs(e[fi])) {
+////                g[gi++] = e[ei++];
+////            } else {
+////                g[gi++] = e[fi++];
+////            }
+////        }
+//        // Assume that the start is within the array bounds.
+//        // Cache the absolute value to reduce the number of calls to Math.abs.
+//        double ev = Math.abs(e[ei]);
+//        double fv = Math.abs(e[fi]);
+//        if (ei < em && fi < fn) {
+//            // Stop the loop when either counter reaches the length of the expansion.
+//            for (;;) {
+//                if (ev < fv) {
+//                    g[gi++] = e[ei++];
+//                    if (ei == em) {
+//                        break;
+//                    }
+//                    ev = Math.abs(e[ei]);
+//                } else {
+//                    g[gi++] = e[fi++];
+//                    if (fi == fn) {
+//                        break;
+//                    }
+//                    fv = Math.abs(e[fi]);
+//                }
+//            }
+//        }
+//        if (ei < em) {
+//            System.arraycopy(e, ei, g, gi, em - ei);
+//        } else {
+//            System.arraycopy(e, fi, g, gi, fn - fi);
+//        }
+//    }
+    private static int merge(double[] e, int e0, int em, int f0, int fn, double[] g) {
         int ei = e0;
         int fi = f0;
         int gi = 0;
-        // TODO
-        // Make more efficient. This can be done by looking ahead in the lower
-        // sequence until it is not lower anymore. If the expansions do not
-        // contain zeros then this can be done using an exponential search:
-        // https://en.wikipedia.org/wiki/Exponential_search
-        //
-        // The merge flip flops between the two sequences.
-        // Set the low sequence as e or f.
-        // Advance along the low sequence until is it not lower.
-        // Bulk copy the sequence.
-        // Then swap to the other as the low sequence and repeat.
-        // The current high point in the high sequence can be cached as an absolute.
-//        while (ei < em && fi < fn) {
-//            if (Math.abs(e[ei]) < Math.abs(e[fi])) {
-//                g[gi++] = e[ei++];
-//            } else {
-//                g[gi++] = e[fi++];
-//            }
-//        }
         // Assume that the start is within the array bounds.
-        // Cache the absolute value to reduce the number of calls to Math.abs.
+        // Cache the absolute values of each sequence.
         double ev = Math.abs(e[ei]);
         double fv = Math.abs(e[fi]);
         if (ei < em && fi < fn) {
             // Stop the loop when either counter reaches the length of the expansion.
             for (;;) {
                 if (ev < fv) {
-                    g[gi++] = e[ei++];
+                    if (ev != 0) {
+                        g[gi++] = e[ei];
+                    }
+                    ei++;
                     if (ei == em) {
                         break;
                     }
                     ev = Math.abs(e[ei]);
                 } else {
-                    g[gi++] = e[fi++];
+                    if (fv != 0) {
+                        g[gi++] = e[fi];
+                    }
+                    fi++;
                     if (fi == fn) {
                         break;
                     }
@@ -279,10 +339,21 @@ public final class LinearCombinationExact2 {
             }
         }
         if (ei < em) {
-            System.arraycopy(e, ei, g, gi, em - ei);
+            while (ei < em) {
+                if (e[ei] != 0) {
+                    g[gi++] = e[ei];
+                }
+                ei++;
+            }
         } else {
-            System.arraycopy(e, fi, g, gi, fn - fi);
+            while (fi < fn) {
+                if (e[fi] != 0) {
+                    g[gi++] = e[fi];
+                }
+                fi++;
+            }
         }
+        return gi;
     }
 
     /**
