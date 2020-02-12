@@ -290,20 +290,6 @@ public class LinearCombinationPerformance {
         return result;
     }
 
-    /**
-     * Copy the original to a new shorter length.
-     * Copy of {@link Arrays#copyOf(double[], int)} without the check for minimum length.
-     *
-     * @param original the original
-     * @param newLength the new length
-     * @return the copy
-     */
-    private static double[] copyOf(double[] original, int newLength) {
-        double[] copy = new double[newLength];
-        System.arraycopy(original, 0, copy, 0, newLength);
-        return copy;
-    }
-
     // Benchmark methods.
     //
     // The methods are partially documented as the names are self-documenting.
