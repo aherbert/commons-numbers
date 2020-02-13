@@ -371,6 +371,10 @@ public final class LinearCombinations {
             // Round-off parts of each sum are r[4-6].
             // The standard precision scalar product is term p which becomes r7.
             // Working variables h (current product high part) and x (new sum).
+
+            // TODO - update this to flip-flop variables p/q for the sum
+            // to remove copy writes of variables.
+
             double h;
             double x;
             double p = a1 * b1;
@@ -608,11 +612,6 @@ public final class LinearCombinations {
             for (int i = 3; i < len; i += 2) {
                 // Create the expansion to add inline.
                 // Do not re-use sumProduct to limit array read/writes.
-                // Q. Is this a micro optimisation. Writing to an array in sumProduct
-                // checks the doubles are zero. Then you can do a switch statement fall
-                // through for length 4,3,2,1 and zero elimination only then.
-                // a two sum of zero will be ignored.
-                // Create version 4 with this method instead.
 
                 final double a1 = a[i - 1];
                 final double b1 = b[i - 1];
@@ -628,21 +627,16 @@ public final class LinearCombinations {
                 final double f0 = DoublePrecision.productLow(a2, b2, f1);
 
                 // Inline an expansion sum to avoid sorting e and f into a sequence g.
-                double q;
                 // f0 into e
-                double x = e0 + f0;
-                e0 = DoublePrecision.twoSumLow(e0, f0, x);
-                q = x;
-                x = e1 + q;
-                e1 = DoublePrecision.twoSumLow(e1, q, x);
-                double e2 = x;
+                double q = e0 + f0;
+                e0 = DoublePrecision.twoSumLow(e0, f0, q);
+                double e2 = e1 + q;
+                e1 = DoublePrecision.twoSumLow(e1, q, e2);
                 // f1 into e
-                x = e1 + f1;
-                e1 = DoublePrecision.twoSumLow(e1, f1, x);
-                q = x;
-                x = e2 + q;
-                e2 = DoublePrecision.twoSumLow(e2, q, x);
-                // e3 == x
+                q = e1 + f1;
+                e1 = DoublePrecision.twoSumLow(e1, f1, q);
+                double e3 = e2 + q;
+                e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
                 // Add the round-off parts if non-zero.
                 int n = 0;
@@ -657,7 +651,7 @@ public final class LinearCombinations {
                 }
                 // Unlikely that the overall representation of the two-product is zero
                 // so no check for non-zero here.
-                growExpansion(e, size++, n, x);
+                growExpansion(e, size++, n, e3);
 
                 size = zeroElimination(e, size);
             }
@@ -691,121 +685,90 @@ public final class LinearCombinations {
         @Override
         public double value(double a1, double b1,
                             double a2, double b2) {
-            // Initial product creates the expansion e.
-            // This is merged with each product expansion f using a linear expansion sum.
-            double e0;
-            double e1;
-            double e2;
-            double e3;
-            double f0;
-            double f1;
+            // s is the running scalar product used for a final edge-case check
+            double s;
 
-            // q is the running scalar product, x & a are working variables
-            double q;
-            double x;
-            double a;
-            e1 = a1 * b1;
-            e0 = DoublePrecision.productLow(a1, b1, e1);
-            q = e1;
+            // Initial product creates the expansion e[0-1]
+            double e1 = a1 * b1;
+            double e0 = DoublePrecision.productLow(a1, b1, e1);
+            s = e1;
 
-            // First sum of the expansion f creates e[0-3]
-            f1 = a2 * b2;
-            f0 = DoublePrecision.productLow(a2, b2, f1);
-            q += f1;
+            // Second product creates expansion f[0-1]
+            double f1 = a2 * b2;
+            double f0 = DoublePrecision.productLow(a2, b2, f1);
+            s += f1;
+            // Expansion sum f into e to create e[0-3]
             // f0 into e
-            x = e0 + f0;
-            e0 = DoublePrecision.twoSumLow(e0, f0, x);
-            a = x;
-            x = e1 + a;
-            e1 = DoublePrecision.twoSumLow(e1, a, x);
-            e2 = x;
+            double q = e0 + f0;
+            e0 = DoublePrecision.twoSumLow(e0, f0, q);
+            double e2 = e1 + q;
+            e1 = DoublePrecision.twoSumLow(e1, q, e2);
             // f1 into e
-            x = e1 + f1;
-            e1 = DoublePrecision.twoSumLow(e1, f1, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            e3 = x;
+            q = e1 + f1;
+            e1 = DoublePrecision.twoSumLow(e1, f1, q);
+            double e3 = e2 + q;
+            e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
             // Final summation
-            return getSum(q, e0 + e1 + e2 + e3);
+            return getSum(s, e0 + e1 + e2 + e3);
         }
 
         @Override
         public double value(double a1, double b1,
                             double a2, double b2,
                             double a3, double b3) {
-            // Initial product creates the expansion e.
-            // This is merged with each product expansion f using a linear expansion sum.
-            double e0;
-            double e1;
-            double e2;
-            double e3;
-            double e4;
-            double e5;
-            double f0;
-            double f1;
+            // s is the running scalar product used for a final edge-case check
+            double s;
 
-            // q is the running scalar product, x & a are working variables
-            double q;
-            double x;
-            double a;
-            e1 = a1 * b1;
-            e0 = DoublePrecision.productLow(a1, b1, e1);
-            q = e1;
+            // Initial product creates the expansion e[0-1]
+            double e1 = a1 * b1;
+            double e0 = DoublePrecision.productLow(a1, b1, e1);
+            s = e1;
 
-            // First sum of the expansion f creates e[0-3]
-            f1 = a2 * b2;
-            f0 = DoublePrecision.productLow(a2, b2, f1);
-            q += f1;
+            // Second product creates expansion f[0-1]
+            double f1 = a2 * b2;
+            double f0 = DoublePrecision.productLow(a2, b2, f1);
+            s += f1;
+            // Expansion sum f into e to create e[0-3]
             // f0 into e
-            x = e0 + f0;
-            e0 = DoublePrecision.twoSumLow(e0, f0, x);
-            a = x;
-            x = e1 + a;
-            e1 = DoublePrecision.twoSumLow(e1, a, x);
-            e2 = x;
+            double q = e0 + f0;
+            e0 = DoublePrecision.twoSumLow(e0, f0, q);
+            double e2 = e1 + q;
+            e1 = DoublePrecision.twoSumLow(e1, q, e2);
             // f1 into e
-            x = e1 + f1;
-            e1 = DoublePrecision.twoSumLow(e1, f1, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            e3 = x;
+            q = e1 + f1;
+            e1 = DoublePrecision.twoSumLow(e1, f1, q);
+            double e3 = e2 + q;
+            e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
-            // Second sum of the expansion f creates e[0-5]
+            // Third product creates the expansion f[0-1]
             f1 = a3 * b3;
             f0 = DoublePrecision.productLow(a3, b3, f1);
-            q += f1;
+            s += f1;
+
+            // Expansion sum f into e.
             // f0 into e
-            x = e0 + f0;
-            e0 = DoublePrecision.twoSumLow(e0, f0, x);
-            a = x;
-            x = e1 + a;
-            e1 = DoublePrecision.twoSumLow(e1, a, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            a = x;
-            x = e3 + a;
-            e3 = DoublePrecision.twoSumLow(e3, a, x);
-            e4 = x;
+            q = e0 + f0;
+            e0 = DoublePrecision.twoSumLow(e0, f0, q);
+            double p = e1 + q;
+            e1 = DoublePrecision.twoSumLow(e1, q, p);
+            q = e2 + p;
+            e2 = DoublePrecision.twoSumLow(e2, p, q);
+            double e4 = e3 + q;
+            e3 = DoublePrecision.twoSumLow(e3, q, e4);
+
             // f1 into e
-            x = e1 + f1;
-            e1 = DoublePrecision.twoSumLow(e1, f1, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            a = x;
-            x = e3 + a;
-            e3 = DoublePrecision.twoSumLow(e3, a, x);
-            a = x;
-            x = e4 + a;
-            e4 = DoublePrecision.twoSumLow(e4, a, x);
-            e5 = x;
+            q = e1 + f1;
+            e0 = DoublePrecision.twoSumLow(e1, f1, q);
+            p = e2 + q;
+            e2 = DoublePrecision.twoSumLow(e2, q, p);
+            q = e3 + p;
+            e3 = DoublePrecision.twoSumLow(e3, p, q);
+            double e5 = e4 + q;
+            e4 = DoublePrecision.twoSumLow(e4, q, e5);
 
             // Final summation
-            return getSum(q, e0 + e1 + e2 + e3 + e4 + e5);
+            return getSum(s, e0 + e1 + e2 + e3 + e4 + e5);
         }
 
         @Override
@@ -813,122 +776,94 @@ public final class LinearCombinations {
                             double a2, double b2,
                             double a3, double b3,
                             double a4, double b4) {
-            // Initial product creates the expansion e.
-            // This is merged with each product expansion f using a linear expansion.
-            double e0;
-            double e1;
-            double e2;
-            double e3;
-            double e4;
-            double e5;
-            double e6;
-            double e7;
-            double f0;
-            double f1;
+            // s is the running scalar product used for a final edge-case check
+            double s;
 
-            // q is the running scalar product, x & a are working variables
-            double q;
-            double x;
-            double a;
-            e1 = a1 * b1;
-            e0 = DoublePrecision.productLow(a1, b1, e1);
-            q = e1;
+            // Initial product creates the expansion e[0-1]
+            double e1 = a1 * b1;
+            double e0 = DoublePrecision.productLow(a1, b1, e1);
+            s = e1;
 
-            // First sum of the expansion f creates e[0-3]
-            f1 = a2 * b2;
-            f0 = DoublePrecision.productLow(a2, b2, f1);
-            q += f1;
+            // Second product creates expansion f[0-1]
+            double f1 = a2 * b2;
+            double f0 = DoublePrecision.productLow(a2, b2, f1);
+            s += f1;
+            // Expansion sum f into e to create e[0-3]
             // f0 into e
-            x = e0 + f0;
-            e0 = DoublePrecision.twoSumLow(e0, f0, x);
-            a = x;
-            x = e1 + a;
-            e1 = DoublePrecision.twoSumLow(e1, a, x);
-            e2 = x;
+            double q = e0 + f0;
+            e0 = DoublePrecision.twoSumLow(e0, f0, q);
+            double e2 = e1 + q;
+            e1 = DoublePrecision.twoSumLow(e1, q, e2);
             // f1 into e
-            x = e1 + f1;
-            e1 = DoublePrecision.twoSumLow(e1, f1, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            e3 = x;
+            q = e1 + f1;
+            e1 = DoublePrecision.twoSumLow(e1, f1, q);
+            double e3 = e2 + q;
+            e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
-            // Second sum of the expansion f creates e[0-5]
+            // Third product creates the expansion f[0-1]
             f1 = a3 * b3;
             f0 = DoublePrecision.productLow(a3, b3, f1);
-            q += f1;
-            // f0 into e
-            x = e0 + f0;
-            e0 = DoublePrecision.twoSumLow(e0, f0, x);
-            a = x;
-            x = e1 + a;
-            e1 = DoublePrecision.twoSumLow(e1, a, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            a = x;
-            x = e3 + a;
-            e3 = DoublePrecision.twoSumLow(e3, a, x);
-            e4 = x;
-            // f1 into e
-            x = e1 + f1;
-            e1 = DoublePrecision.twoSumLow(e1, f1, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            a = x;
-            x = e3 + a;
-            e3 = DoublePrecision.twoSumLow(e3, a, x);
-            a = x;
-            x = e4 + a;
-            e4 = DoublePrecision.twoSumLow(e4, a, x);
-            e5 = x;
+            s += f1;
 
-            // Second sum of the expansion f creates e[0-7]
-            f1 = a4 * b4;
-            f0 = DoublePrecision.productLow(a4, b4, f1);
-            q += f1;
+            // Second product creates expansion g[0-1]
+            double g1 = a4 * b4;
+            double g0 = DoublePrecision.productLow(a4, b4, g1);
+            s += g1;
+            // Expansion sum g into f to create f[0-3]
+            // g0 into f
+            q = f0 + g0;
+            g0 = DoublePrecision.twoSumLow(f0, g0, q);
+            double f2 = f1 + q;
+            g1 = DoublePrecision.twoSumLow(f1, q, f2);
+            // g1 into f
+            q = f1 + g1;
+            g1 = DoublePrecision.twoSumLow(f1, g1, q);
+            double f3 = f2 + q;
+            f2 = DoublePrecision.twoSumLow(f2, q, f3);
+
+            // Expansion sum f into e.
             // f0 into e
-            x = e0 + f0;
-            e0 = DoublePrecision.twoSumLow(e0, f0, x);
-            a = x;
-            x = e1 + a;
-            e1 = DoublePrecision.twoSumLow(e1, a, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            a = x;
-            x = e3 + a;
-            e3 = DoublePrecision.twoSumLow(e3, a, x);
-            a = x;
-            x = e4 + a;
-            e4 = DoublePrecision.twoSumLow(e4, a, x);
-            a = x;
-            x = e5 + a;
-            e5 = DoublePrecision.twoSumLow(e5, a, x);
-            e6 = x;
+            q = e0 + f0;
+            e0 = DoublePrecision.twoSumLow(e0, f0, q);
+            double p = e1 + q;
+            e1 = DoublePrecision.twoSumLow(e1, q, p);
+            q = e2 + p;
+            e2 = DoublePrecision.twoSumLow(e2, p, q);
+            double e4 = e3 + q;
+            e3 = DoublePrecision.twoSumLow(e3, q, e4);
+
             // f1 into e
-            x = e1 + f1;
-            e1 = DoublePrecision.twoSumLow(e1, f1, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
-            a = x;
-            x = e3 + a;
-            e3 = DoublePrecision.twoSumLow(e3, a, x);
-            a = x;
-            x = e4 + a;
-            e4 = DoublePrecision.twoSumLow(e4, a, x);
-            a = x;
-            x = e5 + a;
-            e5 = DoublePrecision.twoSumLow(e5, a, x);
-            a = x;
-            x = e6 + a;
-            e6 = DoublePrecision.twoSumLow(e6, a, x);
-            e7 = x;
+            q = e1 + f1;
+            e0 = DoublePrecision.twoSumLow(e1, f1, q);
+            p = e2 + q;
+            e2 = DoublePrecision.twoSumLow(e2, q, p);
+            q = e3 + p;
+            e3 = DoublePrecision.twoSumLow(e3, p, q);
+            double e5 = e4 + q;
+            e4 = DoublePrecision.twoSumLow(e4, q, e5);
+
+            // f2 into e
+            q = e2 + f2;
+            e2 = DoublePrecision.twoSumLow(e2, f2, q);
+            p = e3 + q;
+            e3 = DoublePrecision.twoSumLow(e3, q, p);
+            q = e4 + p;
+            e4 = DoublePrecision.twoSumLow(e4, p, q);
+            double e6 = e5 + q;
+            e5 = DoublePrecision.twoSumLow(e5, q, e6);
+
+            // f3 into e
+            q = e3 + f3;
+            e3 = DoublePrecision.twoSumLow(e3, f3, q);
+            p = e4 + q;
+            e4 = DoublePrecision.twoSumLow(e4, q, p);
+            q = e5 + p;
+            e5 = DoublePrecision.twoSumLow(e5, p, q);
+            double e7 = e6 + q;
+            e6 = DoublePrecision.twoSumLow(e6, q, e7);
 
             // Final summation
-            return getSum(q, e0 + e1 + e2 + e3 + e4 + e5 + e6 + e7);
+            return getSum(s, e0 + e1 + e2 + e3 + e4 + e5 + e6 + e7);
         }
 
         /**
@@ -952,21 +887,16 @@ public final class LinearCombinations {
             final double f0 = DoublePrecision.productLow(a2, b2, f1);
 
             // Inline an expansion sum to avoid sorting e and f into a sequence g.
-            double x;
-            double a;
             // f0 into e
-            x = e0 + f0;
-            e0 = DoublePrecision.twoSumLow(e0, f0, x);
-            a = x;
-            x = e1 + a;
-            e1 = DoublePrecision.twoSumLow(e1, a, x);
-            double e2 = x;
+            double q = e0 + f0;
+            e0 = DoublePrecision.twoSumLow(e0, f0, q);
+            double e2 = e1 + q;
+            e1 = DoublePrecision.twoSumLow(e1, q, e2);
             // f1 into e
-            x = e1 + f1;
-            e1 = DoublePrecision.twoSumLow(e1, f1, x);
-            a = x;
-            x = e2 + a;
-            e2 = DoublePrecision.twoSumLow(e2, a, x);
+            q = e1 + f1;
+            e1 = DoublePrecision.twoSumLow(e1, f1, q);
+            double e3 = e2 + q;
+            e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
             // Store but remove interspersed zeros
             int ei = 0;
@@ -979,9 +909,9 @@ public final class LinearCombinations {
             if (e2 != 0) {
                 e[ei++] = e2;
             }
-            if (x != 0) {
-                e[ei++] = x;
-            }
+            // Unlikely that the overall representation of the two-product is zero
+            // so no check for non-zero here.
+            e[ei++] = e3;
             return ei;
         }
 
@@ -997,17 +927,15 @@ public final class LinearCombinations {
          * @param value Value to add.
          */
         private static void growExpansion(double[] expansion, int length, int start, double value) {
-            double a = value;
+            double p = value;
             for (int i = start; i < length; i++) {
-                final double b = expansion[i];
-                final double x = a + b;
-                final double error = DoublePrecision.twoSumLow(a, b, x);
-                // Store the smaller magnitude.
-                expansion[i] = error;
+                final double ei = expansion[i];
+                final double q = ei + p;
+                expansion[i] = DoublePrecision.twoSumLow(ei, p, q);
                 // Carry the larger magnitude up to the next iteration.
-                a = x;
+                p = q;
             }
-            expansion[length] = a;
+            expansion[length] = p;
         }
 
         /**
