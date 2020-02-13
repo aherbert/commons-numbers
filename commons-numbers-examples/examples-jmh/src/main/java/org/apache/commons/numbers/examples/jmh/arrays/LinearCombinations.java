@@ -283,34 +283,30 @@ public final class LinearCombinations {
                             double a2, double b2) {
             // Round-off parts of each product are r[0-1].
             // Round-off parts of each sum are r[2].
-            // The standard precision scalar product is term p which becomes r3.
-            // Working variables h (current product high part) and x (new sum).
-            double h;
-            double x;
+            // Working variables p/q (new/old sum).
+            // The standard precision scalar product is stored in s.
+
             double p = a1 * b1;
             double r0 = DoublePrecision.productLow(a1, b1, p);
-            h = a2 * b2;
-            double r1 = DoublePrecision.productLow(a2, b2, h);
-            x = p + h;
-            double r2 = DoublePrecision.twoSumLow(p, h, x);
-            p = x;
-            double r3 = x;
+            double q = a2 * b2;
+            double r1 = DoublePrecision.productLow(a2, b2, q);
+            final double s = p + q;
+            double r2 = DoublePrecision.twoSumLow(p, q, s);
+            double r3 = s;
 
             // In-line k-2 rounds of vector sum for k-fold precision
             for (int i = 2; i < k; i++) {
-                x = r1 + r0;
-                r0 = DoublePrecision.twoSumLow(r1, r0, x);
-                r1 = x;
-                x = r2 + r1;
-                r1 = DoublePrecision.twoSumLow(r2, r1, x);
-                r2 = x;
-                x = r3 + r2;
-                r2 = DoublePrecision.twoSumLow(r3, r2, x);
-                r3 = x;
+                q = r1 + r0;
+                r0 = DoublePrecision.twoSumLow(r1, r0, q);
+                p = r2 + q;
+                r1 = DoublePrecision.twoSumLow(r2, q, p);
+                q = r3 + p;
+                r2 = DoublePrecision.twoSumLow(r3, p, q);
+                r3 = q;
             }
 
             // Final summation
-            return getSum(p, r0 + r1 + r2 + r3);
+            return getSum(s, r0 + r1 + r2 + r3);
         }
 
         /** {@inheritDoc} */
@@ -320,45 +316,38 @@ public final class LinearCombinations {
                             double a3, double b3) {
             // Round-off parts of each product are r[0-2].
             // Round-off parts of each sum are r[3-4].
-            // The standard precision scalar product is term p which becomes r5.
-            // Working variables h (current product high part) and x (new sum).
-            double h;
-            double x;
+            // Working variables p/q (new/old sum) and h (current product high part).
+            // The standard precision scalar product is stored in s.
+
             double p = a1 * b1;
             double r0 = DoublePrecision.productLow(a1, b1, p);
-            h = a2 * b2;
+            double h = a2 * b2;
             double r1 = DoublePrecision.productLow(a2, b2, h);
-            x = p + h;
-            double r3 = DoublePrecision.twoSumLow(p, h, x);
-            p = x;
+            double q = p + h;
+            double r3 = DoublePrecision.twoSumLow(p, h, q);
             h = a3 * b3;
             double r2 = DoublePrecision.productLow(a3, b3, h);
-            x = p + h;
-            double r4 = DoublePrecision.twoSumLow(p, h, x);
-            p = x;
-            double r5 = x;
+            final double s = q + h;
+            double r4 = DoublePrecision.twoSumLow(q, h, s);
+            double r5 = s;
 
             // In-line k-2 rounds of vector sum for k-fold precision
             for (int i = 2; i < k; i++) {
-                x = r1 + r0;
-                r0 = DoublePrecision.twoSumLow(r1, r0, x);
-                r1 = x;
-                x = r2 + r1;
-                r1 = DoublePrecision.twoSumLow(r2, r1, x);
-                r2 = x;
-                x = r3 + r2;
-                r2 = DoublePrecision.twoSumLow(r3, r2, x);
-                r3 = x;
-                x = r4 + r3;
-                r3 = DoublePrecision.twoSumLow(r4, r3, x);
-                r4 = x;
-                x = r5 + r4;
-                r4 = DoublePrecision.twoSumLow(r5, r4, x);
-                r5 = x;
+                q = r1 + r0;
+                r0 = DoublePrecision.twoSumLow(r1, r0, q);
+                p = r2 + q;
+                r1 = DoublePrecision.twoSumLow(r2, q, p);
+                q = r3 + p;
+                r2 = DoublePrecision.twoSumLow(r3, p, q);
+                p = r4 + q;
+                r3 = DoublePrecision.twoSumLow(r4, q, p);
+                q = r5 + p;
+                r4 = DoublePrecision.twoSumLow(r5, p, q);
+                r5 = q;
             }
 
             // Final summation
-            return getSum(p, r0 + r1 + r2 + r3 + r4 + r5);
+            return getSum(s, r0 + r1 + r2 + r3 + r4 + r5);
         }
 
         /** {@inheritDoc} */
@@ -369,60 +358,46 @@ public final class LinearCombinations {
                             double a4, double b4) {
             // Round-off parts of each product are r[0-3].
             // Round-off parts of each sum are r[4-6].
-            // The standard precision scalar product is term p which becomes r7.
-            // Working variables h (current product high part) and x (new sum).
+            // Working variables p/q (new/old sum) and h (current product high part).
+            // The standard precision scalar product is stored in s.
 
-            // TODO - update this to flip-flop variables p/q for the sum
-            // to remove copy writes of variables.
-
-            double h;
-            double x;
             double p = a1 * b1;
             double r0 = DoublePrecision.productLow(a1, b1, p);
-            h = a2 * b2;
+            double h = a2 * b2;
             double r1 = DoublePrecision.productLow(a2, b2, h);
-            x = p + h;
-            double r4 = DoublePrecision.twoSumLow(p, h, x);
-            p = x;
+            double q = p + h;
+            double r4 = DoublePrecision.twoSumLow(p, h, q);
             h = a3 * b3;
             double r2 = DoublePrecision.productLow(a3, b3, h);
-            x = p + h;
-            double r5 = DoublePrecision.twoSumLow(p, h, x);
-            p = x;
+            p = q + h;
+            double r5 = DoublePrecision.twoSumLow(q, h, p);
             h = a4 * b4;
             double r3 = DoublePrecision.productLow(a4, b4, h);
-            x = p + h;
-            double r6 = DoublePrecision.twoSumLow(p, h, x);
-            p = x;
-            double r7 = x;
+            final double s = p + h;
+            double r6 = DoublePrecision.twoSumLow(p, h, s);
+            double r7 = s;
 
             // In-line k-2 rounds of vector sum for k-fold precision
             for (int i = 2; i < k; i++) {
-                x = r1 + r0;
-                r0 = DoublePrecision.twoSumLow(r1, r0, x);
-                r1 = x;
-                x = r2 + r1;
-                r1 = DoublePrecision.twoSumLow(r2, r1, x);
-                r2 = x;
-                x = r3 + r2;
-                r2 = DoublePrecision.twoSumLow(r3, r2, x);
-                r3 = x;
-                x = r4 + r3;
-                r3 = DoublePrecision.twoSumLow(r4, r3, x);
-                r4 = x;
-                x = r5 + r4;
-                r4 = DoublePrecision.twoSumLow(r5, r4, x);
-                r5 = x;
-                x = r6 + r5;
-                r5 = DoublePrecision.twoSumLow(r6, r5, x);
-                r6 = x;
-                x = r7 + r6;
-                r6 = DoublePrecision.twoSumLow(r7, r6, x);
-                r7 = x;
+                q = r1 + r0;
+                r0 = DoublePrecision.twoSumLow(r1, r0, q);
+                p = r2 + q;
+                r1 = DoublePrecision.twoSumLow(r2, q, p);
+                q = r3 + p;
+                r2 = DoublePrecision.twoSumLow(r3, p, q);
+                p = r4 + q;
+                r3 = DoublePrecision.twoSumLow(r4, q, p);
+                q = r5 + p;
+                r4 = DoublePrecision.twoSumLow(r5, p, q);
+                p = r6 + q;
+                r5 = DoublePrecision.twoSumLow(r6, q, p);
+                q = r7 + p;
+                r6 = DoublePrecision.twoSumLow(r7, p, q);
+                r7 = q;
             }
 
             // Final summation
-            return getSum(p, r0 + r1 + r2 + r3 + r4 + r5 + r6 + r7);
+            return getSum(s, r0 + r1 + r2 + r3 + r4 + r5 + r6 + r7);
         }
 
         /**
@@ -556,10 +531,6 @@ public final class LinearCombinations {
     // Add to performance test replacing the current versions
     // Check with the plot of relative error vs condition number.
     // Delete all the current versions that are replaced here.
-
-    // Run a profiler on the ExtendedPrecision implementations. Why is the use
-    // of fast-expansion-sum slow.
-    // Can it be done with recursive function calls or a more simple looping construct.
 
     /**
      * Computes linear combinations accurately using extended precision representations of
@@ -987,24 +958,24 @@ public final class LinearCombinations {
      * Gets the final sum. This checks the high precision sum is finite, otherwise
      * returns the standard precision sum for the IEEE754 result.
      *
-     * <p>The standard of high precision sum may be non-finite due to input infinite
+     * <p>The high precision sum may be non-finite due to input infinite
      * or NaN numbers or overflow in the summation. However the high precision sum
-     * can also be non-finite when the standard dot sum is finite. This occurs when
+     * can also be non-finite when the standard sum is finite. This occurs when
      * the split product had a component high-part that overflowed during
      * computation of the hx * hy partial result. In all cases returning the
-     * standard dot sum ensures the IEEE754 result.
+     * standard sum ensures the IEEE754 result.
      *
-     * @param sum Standard dot sum.
-     * @param dotKSum High precision dotK sum.
+     * @param sum Standard sum.
+     * @param hpSum High precision sum.
      * @return the sum
      */
-    static double getSum(double sum, double dotKSum) {
-        if (!Double.isFinite(dotKSum)) {
+    static double getSum(double sum, double hpSum) {
+        if (!Double.isFinite(hpSum)) {
             // Either we have split infinite numbers, some coefficients were NaNs,
             // or the split product overflowed.
-            // Return the naive implementation for the IEEE754 result
+            // Return the naive implementation for the IEEE754 result.
             return sum;
         }
-        return dotKSum;
+        return hpSum;
     }
 }
