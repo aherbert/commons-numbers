@@ -17,7 +17,6 @@
 
 package org.apache.commons.numbers.examples.jmh.arrays;
 
-import org.apache.commons.numbers.arrays.LinearCombination;
 import org.apache.commons.rng.UniformRandomProvider;
 import org.apache.commons.rng.simple.RandomSource;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -31,6 +30,7 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 
 import java.util.concurrent.TimeUnit;
 import java.util.function.DoubleUnaryOperator;
@@ -66,7 +66,7 @@ public class DoubleSplitPerformance {
     private static final double SAFE_UPPER = 0x1.0p995;
 
     /** The scale to use when down-scaling during a split into a high part.
-     * This must be larger than the multiplier and a power of 2 for exact scaling. */
+     * This must be small than the inverse of the multiplier and a power of 2 for exact scaling. */
     private static final double DOWN_SCALE = 0x1.0p-30;
 
     /** The scale to use when re-scaling during a split into a high part.
@@ -74,7 +74,7 @@ public class DoubleSplitPerformance {
     private static final double UP_SCALE = 0x1.0p30;
 
     /** The mask to zero the lower 27-bits of a long . */
-    private final static long ZERO_LOWER_27_BITS = (-1L) << 27;
+    private static final long ZERO_LOWER_27_BITS = 0xffff_ffff_f800_0000L;
 
     /**
      * The factors to multiply.
@@ -82,11 +82,11 @@ public class DoubleSplitPerformance {
     @State(Scope.Benchmark)
     public static class Factors {
         /** The mask for the sign bit and the mantissa. */
-        private final static long SIGN_MATISSA_MASK = 0x800f_ffff_ffff_ffffL;
+        private static final long SIGN_MATISSA_MASK = 0x800f_ffff_ffff_ffffL;
         /** The exponent for small numbers. */
-        private final static long EXP_SMALL = Double.doubleToRawLongBits(1.0);
+        private static final long EXP_SMALL = Double.doubleToRawLongBits(1.0);
         /** The exponent for big numbers. */
-        private final static long EXP_BIG = Double.doubleToRawLongBits(SAFE_UPPER);
+        private static final long EXP_BIG = Double.doubleToRawLongBits(SAFE_UPPER);
 
         /**
          * The number of factors.
@@ -96,7 +96,7 @@ public class DoubleSplitPerformance {
 
         /**
          * The fraction of small factors.
-         * 
+         *
          * <p>Note: The split numbers are used in multiplications.
          * It is unlikely that many numbers will be larger than the upper limit.
          * These numbers are edge cases that would cause overflow in multiplications if
@@ -142,16 +142,14 @@ public class DoubleSplitPerformance {
      * Compute an operation on the initial double of each factor.
      *
      * @param factors Factors.
+     * @param bh Data sink.
      * @param fun Scalar product function.
-     * @return the results
      */
-    private static double[] apply(Factors factors, DoubleUnaryOperator fun) {
+    private static void apply(Factors factors, Blackhole bh, DoubleUnaryOperator fun) {
         final double[] a = factors.getFactors();
-        final double[] result = new double[a.length];
         for (int i = 0; i < a.length; i++) {
-            result[i] = fun.applyAsDouble(a[i]);
+            bh.consume(fun.applyAsDouble(a[i]));
         }
-        return result;
     }
 
     /**
@@ -247,27 +245,27 @@ public class DoubleSplitPerformance {
      * Baseline using a no-operation on the factors.
      */
     @Benchmark
-    public double[] baseline(Factors factors) {
-        return apply(factors, a -> a);
+    public void baseline(Factors factors, Blackhole bh) {
+        apply(factors, bh, a -> a);
     }
 
     @Benchmark
-    public double[] dekker(Factors factors) {
-        return apply(factors, DoubleSplitPerformance::splitDekker);
+    public void dekker(Factors factors, Blackhole bh) {
+        apply(factors, bh, DoubleSplitPerformance::splitDekker);
     }
 
     @Benchmark
-    public double[] dekkerAbs(Factors factors) {
-        return apply(factors, DoubleSplitPerformance::splitDekkerAbs);
+    public void dekkerAbs(Factors factors, Blackhole bh) {
+        apply(factors, bh, DoubleSplitPerformance::splitDekkerAbs);
     }
 
     @Benchmark
-    public double[] dekkerRaw(Factors factors) {
-        return apply(factors, DoubleSplitPerformance::splitDekkerRaw);
+    public void dekkerRaw(Factors factors, Blackhole bh) {
+        apply(factors, bh, DoubleSplitPerformance::splitDekkerRaw);
     }
 
     @Benchmark
-    public double[] rawbits(Factors factors) {
-        return apply(factors, a -> Double.longBitsToDouble(Double.doubleToRawLongBits(a) & ZERO_LOWER_27_BITS));
+    public void rawbits(Factors factors, Blackhole bh) {
+        apply(factors, bh, a -> Double.longBitsToDouble(Double.doubleToRawLongBits(a) & ZERO_LOWER_27_BITS));
     }
 }

@@ -35,6 +35,7 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 
 import java.math.MathContext;
 import java.util.Arrays;
@@ -225,69 +226,61 @@ public class LinearCombinationPerformance {
      * Compute the scalar product for all the factors.
      *
      * @param factors Factors.
+     * @param bh Data sink.
      * @param fun Scalar product function.
-     * @return the scalar products
      */
-    private static double[] scalar2Product(Factors factors, Scalar2 fun) {
-        final double[] result = new double[factors.getSize()];
-        for (int i = 0; i < result.length; i++) {
+    private static void scalar2Product(Factors factors, Blackhole bh, Scalar2 fun) {
+        for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
-            result[i] = fun.apply(a[0], b[0], a[1], b[1]);
+            bh.consume(fun.apply(a[0], b[0], a[1], b[1]));
         }
-        return result;
     }
 
     /**
      * Compute the scalar product for all the factors.
      *
      * @param factors Factors.
+     * @param bh Data sink.
      * @param fun Scalar product function.
-     * @return the scalar products
      */
-    private static double[] scalar3Product(Factors factors, Scalar3 fun) {
-        final double[] result = new double[factors.getSize()];
-        for (int i = 0; i < result.length; i++) {
+    private static void scalar3Product(Factors factors, Blackhole bh, Scalar3 fun) {
+        for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
-            result[i] = fun.apply(a[0], b[0], a[1], b[1], a[2], b[2]);
+            bh.consume(fun.apply(a[0], b[0], a[1], b[1], a[2], b[2]));
         }
-        return result;
     }
 
     /**
      * Compute the scalar product for all the factors.
      *
      * @param factors Factors.
+     * @param bh Data sink.
      * @param fun Scalar product function.
-     * @return the scalar products
      */
-    private static double[] scalar4Product(Factors factors, Scalar4 fun) {
-        final double[] result = new double[factors.getSize()];
-        for (int i = 0; i < result.length; i++) {
+    private static void scalar4Product(Factors factors, Blackhole bh, Scalar4 fun) {
+        for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
-            result[i] = fun.apply(a[0], b[0], a[1], b[1], a[2], b[2], a[3], b[3]);
+            bh.consume(fun.apply(a[0], b[0], a[1], b[1], a[2], b[2], a[3], b[3]));
         }
-        return result;
     }
 
     /**
      * Compute the scalar product for all the factors.
      *
      * @param factors Factors.
+     * @param bh Data sink.
      * @param fun Scalar product function.
-     * @return the scalar products
      */
-    private static double[] scalarProduct(LengthFactors factors, ToDoubleBiFunction<double[], double[]> fun) {
-        final double[] result = new double[factors.getSize()];
-        for (int i = 0; i < result.length; i++) {
+    private static void scalarProduct(LengthFactors factors, Blackhole bh, ToDoubleBiFunction<double[], double[]> fun) {
+        for (int i = 0; i < factors.getSize(); i++) {
             // These should be pre-computed to the correct length
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
-            result[i] = fun.applyAsDouble(a, b);
+            bh.consume(fun.applyAsDouble(a, b));
         }
-        return result;
     }
 
     // Benchmark methods.
@@ -300,32 +293,32 @@ public class LinearCombinationPerformance {
      * Baseline the standard precision scalar product of length 2.
      */
     @Benchmark
-    public double[] scalar2Baseline(Factors factors) {
-        return scalar2Product(factors, (a1, b1, a2, b2) -> a1 * b1 + a2 * b2);
+    public void scalar2Baseline(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, (a1, b1, a2, b2) -> a1 * b1 + a2 * b2);
     }
 
     /**
      * Baseline the standard precision scalar product of length 3.
      */
     @Benchmark
-    public double[] scalar3Baseline(Factors factors) {
-        return scalar3Product(factors, (a1, b1, a2, b2, a3, b3) -> a1 * b1 + a2 * b2 + a3 * b3);
+    public void scalar3Baseline(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, (a1, b1, a2, b2, a3, b3) -> a1 * b1 + a2 * b2 + a3 * b3);
     }
 
     /**
      * Baseline the standard precision scalar product of length 4.
      */
     @Benchmark
-    public double[] scalar4Baseline(Factors factors) {
-        return scalar4Product(factors, (a1, b1, a2, b2, a3, b3, a4, b4) -> a1 * b1 + a2 * b2 + a3 * b3 + a4 * b4);
+    public void scalar4Baseline(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, (a1, b1, a2, b2, a3, b3, a4, b4) -> a1 * b1 + a2 * b2 + a3 * b3 + a4 * b4);
     }
 
     /**
      * Baseline the standard precision scalar product on two arrays.
      */
     @Benchmark
-    public double[] scalarBaseline(LengthFactors factors) {
-        return scalarProduct(factors, (a, b) -> {
+    public void scalarBaseline(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, (a, b) -> {
             double sum = 0;
             for (int i = 0; i < a.length; i++) {
                 sum += a[i] * b[i];
@@ -337,23 +330,23 @@ public class LinearCombinationPerformance {
     // Original method with Dekker split
 
     @Benchmark
-    public double[] scalar2Dot2s(Factors factors) {
-        return scalar2Product(factors, LinearCombinationDot2s::value);
+    public void scalar2Dot2s(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombinationDot2s::value);
     }
 
     @Benchmark
-    public double[] scalar3Dot2s(Factors factors) {
-        return scalar3Product(factors, LinearCombinationDot2s::value);
+    public void scalar3Dot2s(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombinationDot2s::value);
     }
 
     @Benchmark
-    public double[] scalar4Dot2s(Factors factors) {
-        return scalar4Product(factors, LinearCombinationDot2s::value);
+    public void scalar4Dot2s(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombinationDot2s::value);
     }
 
     @Benchmark
-    public double[] scalarDot2s(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationDot2s::value);
+    public void scalarDot2s(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationDot2s::value);
     }
 
     // Original method with masking split.
@@ -361,199 +354,199 @@ public class LinearCombinationPerformance {
     // The resulting split multiplication can have inexact results due to the loss of 1-bit.
 
     @Benchmark
-    public double[] scalar2Dot2sMask(Factors factors) {
-        return scalar2Product(factors, LinearCombinationDot2sSplitMask::value);
+    public void scalar2Dot2sMask(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombinationDot2sSplitMask::value);
     }
 
     @Benchmark
-    public double[] scalar3Dot2sMask(Factors factors) {
-        return scalar3Product(factors, LinearCombinationDot2sSplitMask::value);
+    public void scalar3Dot2sMask(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombinationDot2sSplitMask::value);
     }
 
     @Benchmark
-    public double[] scalar4Dot2sMask(Factors factors) {
-        return scalar4Product(factors, LinearCombinationDot2sSplitMask::value);
+    public void scalar4Dot2sMask(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombinationDot2sSplitMask::value);
     }
 
     @Benchmark
-    public double[] scalarDot2sMask(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationDot2sSplitMask::value);
+    public void scalarDot2sMask(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationDot2sSplitMask::value);
     }
 
     // dot3 using Dekker split
 
     @Benchmark
-    public double[] scalar2Dot3(Factors factors) {
-        return scalar2Product(factors, LinearCombination::value);
+    public void scalar2Dot3(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombination::value);
     }
 
     @Benchmark
-    public double[] scalar3Dot3(Factors factors) {
-        return scalar3Product(factors, LinearCombination::value);
+    public void scalar3Dot3(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombination::value);
     }
 
     @Benchmark
-    public double[] scalar4Dot3(Factors factors) {
-        return scalar4Product(factors, LinearCombination::value);
+    public void scalar4Dot3(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombination::value);
     }
 
     @Benchmark
-    public double[] scalarDot3(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombination::value);
+    public void scalarDot3(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombination::value);
     }
 
     // dotK
 
     @Benchmark
-    public double[] scalarDot4(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationDotK::value4);
+    public void scalarDot4(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationDotK::value4);
     }
 
     @Benchmark
-    public double[] scalarDot5(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationDotK::value5);
+    public void scalarDot5(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationDotK::value5);
     }
 
     @Benchmark
-    public double[] scalarDot6(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationDotK::value6);
+    public void scalarDot6(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationDotK::value6);
     }
 
     @Benchmark
-    public double[] scalarDot7(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationDotK::value7);
+    public void scalarDot7(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationDotK::value7);
     }
 
     // dot3 using masking split
     // TODO - bring this into the JMH project
 
     @Benchmark
-    public double[] scalar2Dot3Mask(Factors factors) {
-        return scalar2Product(factors, LinearCombination2::value);
+    public void scalar2Dot3Mask(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombination2::value);
     }
 
     @Benchmark
-    public double[] scalar3Dot3Mask(Factors factors) {
-        return scalar3Product(factors, LinearCombination2::value);
+    public void scalar3Dot3Mask(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombination2::value);
     }
 
     @Benchmark
-    public double[] scalar4Dot3Mask(Factors factors) {
-        return scalar4Product(factors, LinearCombination2::value);
+    public void scalar4Dot3Mask(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombination2::value);
     }
 
     @Benchmark
-    public double[] scalarDot3Mask(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombination2::value);
+    public void scalarDot3Mask(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombination2::value);
     }
 
     // Dekker's dot sum
 
     @Benchmark
-    public double[] scalar2Dekker(Factors factors) {
-        return scalar2Product(factors, LinearCombinationDekker::value);
+    public void scalar2Dekker(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombinationDekker::value);
     }
 
     @Benchmark
-    public double[] scalar3Dekker(Factors factors) {
-        return scalar3Product(factors, LinearCombinationDekker::value);
+    public void scalar3Dekker(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombinationDekker::value);
     }
 
     @Benchmark
-    public double[] scalar4Dekker(Factors factors) {
-        return scalar4Product(factors, LinearCombinationDekker::value);
+    public void scalar4Dekker(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombinationDekker::value);
     }
 
     @Benchmark
-    public double[] scalarDekker(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationDekker::value);
+    public void scalarDekker(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationDekker::value);
     }
 
     // Exact expansion sum
 
     @Benchmark
-    public double[] scalar2DotExact(Factors factors) {
-        return scalar2Product(factors, LinearCombinationExact::value);
+    public void scalar2DotExact(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombinationExact::value);
     }
 
     @Benchmark
-    public double[] scalar3DotExact(Factors factors) {
-        return scalar3Product(factors, LinearCombinationExact::value);
+    public void scalar3DotExact(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombinationExact::value);
     }
 
     @Benchmark
-    public double[] scalar4DotExact(Factors factors) {
-        return scalar4Product(factors, LinearCombinationExact::value);
+    public void scalar4DotExact(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombinationExact::value);
     }
 
     @Benchmark
-    public double[] scalarDotExact(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationExact::value);
+    public void scalarDotExact(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationExact::value);
     }
 
     // Exact expansion sum (version 2)
 
     //@Benchmark
-    public double[] scalar2DotExact2(Factors factors) {
-        return scalar2Product(factors, LinearCombinationExact2::value);
+    public void scalar2DotExact2(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombinationExact2::value);
     }
 
     //@Benchmark
-    public double[] scalar3DotExact2(Factors factors) {
-        return scalar3Product(factors, LinearCombinationExact2::value);
+    public void scalar3DotExact2(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombinationExact2::value);
     }
 
     //@Benchmark
-    public double[] scalar4DotExact2(Factors factors) {
-        return scalar4Product(factors, LinearCombinationExact2::value);
+    public void scalar4DotExact2(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombinationExact2::value);
     }
 
     @Benchmark
-    public double[] scalarDotExact2(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationExact2::value);
+    public void scalarDotExact2(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationExact2::value);
     }
 
     // Exact expansion sum (version 3)
 
     //@Benchmark
-    public double[] scalar2DotExact3(Factors factors) {
-        return scalar2Product(factors, LinearCombinationExact3::value);
+    public void scalar2DotExact3(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombinationExact3::value);
     }
 
     //@Benchmark
-    public double[] scalar3DotExact3(Factors factors) {
-        return scalar3Product(factors, LinearCombinationExact3::value);
+    public void scalar3DotExact3(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombinationExact3::value);
     }
 
     //@Benchmark
-    public double[] scalar4DotExact3(Factors factors) {
-        return scalar4Product(factors, LinearCombinationExact3::value);
+    public void scalar4DotExact3(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombinationExact3::value);
     }
 
     @Benchmark
-    public double[] scalarDotExact3(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationExact3::value);
+    public void scalarDotExact3(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationExact3::value);
     }
 
     // BigDecimal
 
     @Benchmark
-    public double[] scalar2BigDecimal(Factors factors) {
-        return scalar2Product(factors, LinearCombinationBigDecimal::value);
+    public void scalar2BigDecimal(Factors factors, Blackhole bh) {
+        scalar2Product(factors, bh, LinearCombinationBigDecimal::value);
     }
 
     @Benchmark
-    public double[] scalar3BigDecimal(Factors factors) {
-        return scalar3Product(factors, LinearCombinationBigDecimal::value);
+    public void scalar3BigDecimal(Factors factors, Blackhole bh) {
+        scalar3Product(factors, bh, LinearCombinationBigDecimal::value);
     }
 
     @Benchmark
-    public double[] scalar4BigDecimal(Factors factors) {
-        return scalar4Product(factors, LinearCombinationBigDecimal::value);
+    public void scalar4BigDecimal(Factors factors, Blackhole bh) {
+        scalar4Product(factors, bh, LinearCombinationBigDecimal::value);
     }
 
     @Benchmark
-    public double[] scalarBigDecimal(LengthFactors factors) {
-        return scalarProduct(factors, LinearCombinationBigDecimal::value);
+    public void scalarBigDecimal(LengthFactors factors, Blackhole bh) {
+        scalarProduct(factors, bh, LinearCombinationBigDecimal::value);
     }
 }
