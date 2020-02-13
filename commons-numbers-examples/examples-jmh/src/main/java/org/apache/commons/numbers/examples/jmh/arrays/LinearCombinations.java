@@ -143,7 +143,7 @@ public final class LinearCombinations {
             final double s = DoublePrecision.sumLow(x, xx, y, yy, r);
             r = r + s;
 
-            if (Double.isNaN(r)) {
+            if (!Double.isFinite(r)) {
                 // Either we have split infinite numbers or some coefficients were NaNs,
                 // just rely on the naive implementation and let IEEE754 handle this
                 return x + y;
@@ -783,12 +783,12 @@ public final class LinearCombinations {
             // Expansion sum g into f to create f[0-3]
             // g0 into f
             q = f0 + g0;
-            g0 = DoublePrecision.twoSumLow(f0, g0, q);
+            f0 = DoublePrecision.twoSumLow(f0, g0, q);
             double f2 = f1 + q;
-            g1 = DoublePrecision.twoSumLow(f1, q, f2);
+            f1 = DoublePrecision.twoSumLow(f1, q, f2);
             // g1 into f
             q = f1 + g1;
-            g1 = DoublePrecision.twoSumLow(f1, g1, q);
+            f1 = DoublePrecision.twoSumLow(f1, g1, q);
             double f3 = f2 + q;
             f2 = DoublePrecision.twoSumLow(f2, q, f3);
 

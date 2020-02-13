@@ -16,15 +16,15 @@
  */
 package org.apache.commons.numbers.examples.jmh.arrays;
 
-import org.apache.commons.numbers.arrays.LinearCombination;
-import org.apache.commons.numbers.arrays.LinearCombinationExact;
-import org.apache.commons.numbers.arrays.LinearCombinationExact2;
-import org.apache.commons.numbers.arrays.LinearCombinationExact3;
+import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ND;
 import org.apache.commons.rng.UniformRandomProvider;
 import org.apache.commons.rng.simple.RandomSource;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -33,10 +33,10 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Formatter;
-import java.util.function.ToDoubleBiFunction;
+import java.util.stream.Stream;
 
 /**
- * Test the accuracy of each variant of the {@link LinearCombination} class.
+ * Test the accuracy of each implementation of {@link LinearCombination}.
  */
 public class LinearCombinationAccuracyTest {
     /**
@@ -47,59 +47,23 @@ public class LinearCombinationAccuracyTest {
      */
     private static final int LENGTH = 100;
 
-    @Test
-    public void testDotDekker() {
-        assertDotProduct(LinearCombinationDekker::value, 1e20, 1e30);
-    }
-
-    @Test
-    public void testDot2sSplitMask() {
-        assertDotProduct(LinearCombinationDot2sSplitMask::value, 1e20, 1e30);
-    }
-
-//    @Test
-//    public void testDot2s() {
-//        assertDotProduct(LinearCombinationDot2s::value, 1e20, 1e30);
-//    }
-
-    @Test
-    public void testDot3() {
-        assertDotProduct(LinearCombination::value, 1e35, 1e45);
-    }
-
-    @Test
-    public void testDot4() {
-        assertDotProduct((a, b) -> LinearCombinationDotK.value(a, b, 4), 1e50, 1e65);
-    }
-
-    @Test
-    public void testDot5() {
-        assertDotProduct((a, b) -> LinearCombinationDotK.value(a, b, 5), 1e65, 1e85);
-    }
-
-    @Test
-    public void testDot6() {
-        assertDotProduct((a, b) -> LinearCombinationDotK.value(a, b, 6), 1e80, 1e100);
-    }
-
-    @Test
-    public void testDotExact() {
-        assertDotProduct(LinearCombinationExact::value, 1e300, -1);
-    }
-
-    @Test
-    public void testDotExact2() {
-        assertDotProduct(LinearCombinationExact2::value, 1e300, -1);
-    }
-
-    @Test
-    public void testDotExact3() {
-        assertDotProduct(LinearCombinationExact3::value, 1e300, -1);
-    }
-
-    @Test
-    public void testDotExactBigDecimal() {
-        assertDotProduct(LinearCombinationBigDecimal::value, 1e300, -1);
+    /**
+     * Provide instances of the LinearCombination interface as arguments.
+     *
+     * @return the stream
+     */
+    static Stream<Arguments> provideLinearCombination() {
+        return Stream.of(
+            Arguments.of(LinearCombinations.Dekker.INSTANCE, 1e20, 1e30),
+            Arguments.of(LinearCombinations.DotK.DOT_2, 1e20, 1e30),
+            Arguments.of(LinearCombinations.DotK.DOT_3, 1e35, 1e45),
+            Arguments.of(LinearCombinations.DotK.DOT_4, 1e50, 1e65),
+            Arguments.of(LinearCombinations.DotK.DOT_5, 1e65, 1e85),
+            Arguments.of(LinearCombinations.DotK.DOT_6, 1e80, 1e100),
+            Arguments.of(LinearCombinations.DotK.DOT_7, 1e95, 1e115),
+            Arguments.of(LinearCombinations.ExtendedPrecision.INSTANCE, 1e300, -1),
+            Arguments.of(LinearCombinations.Exact.INSTANCE, 1e300, -1)
+        );
     }
 
     /**
@@ -110,8 +74,9 @@ public class LinearCombinationAccuracyTest {
      * @param passC the pass condition number
      * @param failC the fail condition number (set to negative to ignore)
      */
-    private static void assertDotProduct(ToDoubleBiFunction<double[], double[]> fun,
-            double passC, double failC) {
+    @ParameterizedTest
+    @MethodSource("provideLinearCombination")
+    void testDotProduct(ND fun, double passC, double failC) {
         int samples = 10;
         final double[] x = new double[LENGTH];
         final double[] y = new double[LENGTH];
@@ -124,7 +89,7 @@ public class LinearCombinationAccuracyTest {
         double sum = 0;
         for (int i = 0; i < samples; i++) {
             final double expected = LinearCombinationUtils.genDot(passC, rng, x, y, null);
-            double observed = fun.applyAsDouble(x, y);
+            double observed = fun.value(x, y);
             sum += relativeError(expected, observed);
         }
         final double error = sum / samples;
@@ -135,7 +100,7 @@ public class LinearCombinationAccuracyTest {
         sum = 0;
         for (int i = 0; i < samples; i++) {
             final double expected = LinearCombinationUtils.genDot(failC, rng, x, y, null);
-            double observed = fun.applyAsDouble(x, y);
+            double observed = fun.value(x, y);
             sum += relativeError(expected, observed);
         }
         final double error2 = sum / samples;
@@ -177,18 +142,17 @@ public class LinearCombinationAccuracyTest {
             final double dot = LinearCombinationUtils.genDot(c, rng, x, y, cc);
             // Compute with different implementations.
             int j = 0;
-            final double[] e = new double[11];
+            final double[] e = new double[10];
             e[j++] = cc[0];
-            e[j++] = compute(x, y, dot, LinearCombinationDekker::value);
-            e[j++] = compute(x, y, dot, LinearCombinationDot2sSplitMask::value);
-            //e[j++] = compute(x, y, dot, LinearCombinationDot2s::value);
-            e[j++] = compute(x, y, dot, (a, b) -> LinearCombinationDotK.value(a, b, 3));
-            e[j++] = compute(x, y, dot, (a, b) -> LinearCombinationDotK.value(a, b, 4));
-            e[j++] = compute(x, y, dot, (a, b) -> LinearCombinationDotK.value(a, b, 5));
-            e[j++] = compute(x, y, dot, (a, b) -> LinearCombinationDotK.value(a, b, 6));
-            e[j++] = compute(x, y, dot, LinearCombinationExact::value);
-            e[j++] = compute(x, y, dot, LinearCombinationExact2::value);
-            e[j++] = compute(x, y, dot, LinearCombinationExact3::value);
+            e[j++] = compute(x, y, dot, LinearCombinations.Dekker.INSTANCE);
+            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_2);
+            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_3);
+            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_4);
+            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_5);
+            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_6);
+            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_7);
+            e[j++] = compute(x, y, dot, LinearCombinations.ExtendedPrecision.INSTANCE);
+            e[j++] = compute(x, y, dot, LinearCombinations.Exact.INSTANCE);
             data.add(e);
         }
 
@@ -198,7 +162,7 @@ public class LinearCombinationAccuracyTest {
         // Write to file in the Maven build directory
         try (BufferedWriter out = Files.newBufferedWriter(Paths.get("target/dot.csv"))) {
             // This assumes the order of tested implementations
-            out.append("Condition no,Dekker,Dot2sMask,Dot2s,Dot3,Dot4,Dot5,Dot6,DotExact,DotExact2");
+            out.append("Condition no,Dekker,Dot2,Dot3,Dot4,Dot5,Dot6,Dot7,ExtendedPrecision,Exact");
             out.newLine();
             StringBuilder sb = new StringBuilder(200);
             try (Formatter formatter = new Formatter(sb)) {
@@ -224,10 +188,8 @@ public class LinearCombinationAccuracyTest {
      * @param fun the function
      * @return the relative error
      */
-    private static double compute(double[] x, double[] y, double expected,
-            ToDoubleBiFunction<double[], double[]> fun) {
-        return relativeError(expected, fun.applyAsDouble(x, y));
-
+    private static double compute(double[] x, double[] y, double expected, ND fun) {
+        return relativeError(expected, fun.value(x, y));
     }
 
     /**
