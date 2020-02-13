@@ -62,7 +62,7 @@ final class DoublePrecision {
     private static final double SAFE_UPPER = 0x1.0p995;
 
     /** The scale to use when down-scaling during a split into a high part.
-     * This must be larger than the multiplier and a power of 2 for exact scaling. */
+     * This must be smaller than the inverse of the multiplier and a power of 2 for exact scaling. */
     private static final double DOWN_SCALE = 0x1.0p-30;
 
     /** The scale to use when re-scaling during a split into a high part.
