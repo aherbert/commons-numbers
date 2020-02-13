@@ -74,6 +74,9 @@ public final class LinearCombinationExact3 {
      * This is the inverse of {@link #DOWN_SCALE}. */
     private static final double UP_SCALE = 0x1.0p30;
 
+//    // test elimination of garbage collection
+//    private static final double[] e = new double[1000];
+
     /** Private constructor. */
     private LinearCombinationExact3() {
         // intentionally empty.

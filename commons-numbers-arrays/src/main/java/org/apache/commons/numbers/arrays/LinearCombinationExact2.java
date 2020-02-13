@@ -76,6 +76,11 @@ public final class LinearCombinationExact2 {
 
     //static int count1, count2;
 
+//    // test elimination of garbage collection
+//    private static final double[] e = new double[1000];
+//    private static final double[] g = new double[1000];
+//    private static final int[] size = new int[250];
+
     /** Private constructor. */
     private LinearCombinationExact2() {
         // intentionally empty.
