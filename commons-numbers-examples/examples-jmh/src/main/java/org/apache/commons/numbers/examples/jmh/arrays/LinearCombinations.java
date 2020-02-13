@@ -30,6 +30,10 @@ import java.math.BigDecimal;
  * @see LinearCombination
  */
 public final class LinearCombinations {
+
+    /** No public constructor. */
+    private LinearCombinations() {}
+
     /**
      * Base class to compute a linear combination with high accuracy.
      * Contains common code for computing short combinations and computing
@@ -570,7 +574,7 @@ public final class LinearCombinations {
          * bit of the next value. The summation of the expansion is exact (without round-off error)
          * and is equal to the original number. The largest magnitude value in the expansion is
          * an approximation of the number.
-         * 
+         *
          * Expansions are created from normal numbers by multiplications or additions that
          * represent the result exactly with extended precision. Addition of expansions f and g
          * of length m and n creates an expansion of length (m+n). Some parts of the expansion
