@@ -97,7 +97,7 @@ final class DoublePrecision {
      */
     static double highPart(double value) {
         // Avoid overflow
-        if (value >= SAFE_UPPER || value <= -SAFE_UPPER) {
+        if (Math.abs(value) >= SAFE_UPPER) {
             // Do scaling.
             final double x = value * DOWN_SCALE;
             final double c = MULTIPLIER * x;
