@@ -76,7 +76,7 @@ public class LinearCombinationAccuracyTest {
      */
     @ParameterizedTest
     @MethodSource("provideLinearCombination")
-    void testDotProduct(ND fun, double passC, double failC) {
+    public void testDotProduct(ND fun, double passC, double failC) {
         int samples = 10;
         final double[] x = new double[LENGTH];
         final double[] y = new double[LENGTH];

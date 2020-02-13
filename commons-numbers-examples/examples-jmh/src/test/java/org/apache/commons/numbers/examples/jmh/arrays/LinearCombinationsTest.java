@@ -54,7 +54,7 @@ public class LinearCombinationsTest {
 
     @ParameterizedTest
     @MethodSource("provideLinearCombination")
-    void testSingleElementArray(ND fun) {
+    public void testSingleElementArray(ND fun) {
         final double[] a = {1.23456789};
         final double[] b = {98765432.1};
 
@@ -63,7 +63,7 @@ public class LinearCombinationsTest {
 
     @ParameterizedTest
     @MethodSource("provideLinearCombination")
-    void testTwoSums(ND fun) {
+    public void testTwoSums(ND fun) {
         final BigFraction[] aF = new BigFraction[] {
             BigFraction.of(-1321008684645961L, 268435456L),
             BigFraction.of(-5774608829631843L, 268435456L),
@@ -105,7 +105,7 @@ public class LinearCombinationsTest {
 
     @ParameterizedTest
     @MethodSource("provideLinearCombination")
-    void testHuge(ND fun) {
+    public void testHuge(ND fun) {
         final int scale = 971;
         final double[] a = new double[] {
             -1321008684645961.0 / 268435456.0,
@@ -140,7 +140,7 @@ public class LinearCombinationsTest {
 
     @ParameterizedTest
     @MethodSource("provideLinearCombination")
-    void testArrayVsInline(ND fun) {
+    public void testArrayVsInline(ND fun) {
         // Assume the instance implements the inline functions
         final TwoD fun2 = (TwoD) fun;
         final ThreeD fun3 = (ThreeD) fun;
@@ -183,7 +183,7 @@ public class LinearCombinationsTest {
 
     @ParameterizedTest
     @MethodSource("provideLinearCombination")
-    void testNonFinite(ND fun) {
+    public void testNonFinite(ND fun) {
         final double[][] a = new double[][] {
             {1, 2, 3, 4},
             {1, Double.POSITIVE_INFINITY, 3, 4},
