@@ -580,12 +580,4 @@ public class LinearCombinationsTest {
         Assertions.assertEquals(Double.MIN_VALUE, clip(MIN.multiply(new BigDecimal(1.5))).doubleValue());
         Assertions.assertEquals(Double.MIN_VALUE * 2, clip(MIN.multiply(new BigDecimal(1.6))).doubleValue());
     }
-
-    @Test
-    public void testSplitAssumptions() {
-        final double scale = (1 << 27) + 1;
-        final double limit = 0x1.0p995;
-        Assertions.assertTrue(Double.isFinite(limit * scale));
-        Assertions.assertTrue(Double.isFinite(-limit * scale));
-    }
 }

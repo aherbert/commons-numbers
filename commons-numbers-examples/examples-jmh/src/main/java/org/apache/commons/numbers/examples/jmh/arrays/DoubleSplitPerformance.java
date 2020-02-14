@@ -62,11 +62,11 @@ public class DoubleSplitPerformance {
 
     /** The upper limit above which a number may overflow during the split into a high part.
      * Assuming the multiplier is above 2^27 and the maximum exponent is 1023 then a safe
-     * limit is a value with an exponent of (1023 - 28) = 2^995. */
-    private static final double SAFE_UPPER = 0x1.0p995;
+     * limit is a value with an exponent of (1023 - 27) = 2^996. */
+    private static final double SAFE_UPPER = 0x1.0p996;
 
     /** The scale to use when down-scaling during a split into a high part.
-     * This must be small than the inverse of the multiplier and a power of 2 for exact scaling. */
+     * This must be smaller than the inverse of the multiplier and a power of 2 for exact scaling. */
     private static final double DOWN_SCALE = 0x1.0p-30;
 
     /** The scale to use when re-scaling during a split into a high part.
@@ -183,15 +183,15 @@ public class DoubleSplitPerformance {
             if (Double.isInfinite(hi)) {
                 // Number is too large.
                 // This occurs if value is infinite or close to Double.MAX_VALUE.
-                // Note that multiplication by (2^s+1) can cause hi to have an exponent
-                // 1 greater than input value which will overflow if the exponent is already +1023.
-                // Revert to the raw upper 26 bits of the 53-bit mantissa (including the assumed
-                // leading 1 bit). This conversion will result in the high part being a
-                // 27-bit significand and the potential loss of bits during addition and
-                // multiplication. (Contrast to the Dekker split which creates two 26-bit
-                // numbers with a bit moved to the sign of low.)
+                // Note that Dekker's split creates an approximating 26-bit number which may
+                // have an exponent 1 greater than the input value. This will overflow if the
+                // exponent is already +1023. Revert to the raw upper 26 bits of the 53-bit
+                // mantissa (including the assumed leading 1 bit). This conversion will result in
+                // the low part being a 27-bit significand and the potential loss of bits during
+                // addition and multiplication. (Contrast to the Dekker split which creates two
+                // 26-bit numbers with a bit of information moved to the sign of low.)
                 // The conversion will maintain Infinite in the high part where the resulting
-                // low part (value - high) is NaN.
+                // low part a_lo = a - a_hi = inf - inf = NaN.
                 return Double.longBitsToDouble(Double.doubleToRawLongBits(value) & ZERO_LOWER_27_BITS);
             }
             return hi;
