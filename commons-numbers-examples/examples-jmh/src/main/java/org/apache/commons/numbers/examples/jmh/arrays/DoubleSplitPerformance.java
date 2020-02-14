@@ -131,16 +131,46 @@ public class DoubleSplitPerformance {
     }
 
     /**
-     * Compute an operation on the initial double of each factor.
-     *
-     * @param factors Factors.
-     * @param bh Data sink.
-     * @param fun Scalar product function.
+     * The split method.
      */
-    private static void apply(Factors factors, Blackhole bh, DoubleUnaryOperator fun) {
-        final double[] a = factors.getFactors();
-        for (int i = 0; i < a.length; i++) {
-            bh.consume(fun.applyAsDouble(a[i]));
+    @State(Scope.Benchmark)
+    public static class SplitMethod {
+        /**
+         * The name of the method.
+         */
+        @Param({"none", "dekker", "dekkerAbs", "dekkerRaw", "bits"})
+        private String name;
+
+        /** The split function. */
+        private DoubleUnaryOperator fun;
+
+        /**
+         * Gets the function.
+         *
+         * @return the function
+         */
+        public DoubleUnaryOperator getFunction() {
+            return fun;
+        }
+
+        /**
+         * Create the factors.
+         */
+        @Setup
+        public void setup() {
+            if ("none".equals(name)) {
+                fun = a -> a;
+            } else if ("dekker".equals(name)) {
+                fun = DoubleSplitPerformance::splitDekker;
+            } else if ("dekkerAbs".equals(name)) {
+                fun = DoubleSplitPerformance::splitDekkerAbs;
+            } else if ("dekkerRaw".equals(name)) {
+                fun = DoubleSplitPerformance::splitDekkerRaw;
+            } else if ("bits".equals(name)) {
+                fun = DoubleSplitPerformance::splitBits;
+            } else {
+                throw new IllegalStateException("Unknown method: " + name);
+            }
         }
     }
 
@@ -227,71 +257,46 @@ public class DoubleSplitPerformance {
         return c - (c - value);
     }
 
+    /**
+     * Implement a split using the upper and lower raw bits from the value.
+     *
+     * @param value Value.
+     * @return the high part of the value.
+     */
+    private static double splitBits(double value) {
+        return Double.longBitsToDouble(Double.doubleToRawLongBits(value) & ZERO_LOWER_27_BITS);
+    }
+
     // Benchmark methods.
-    //
-    // The methods are partially documented as the names are self-documenting.
-    // CHECKSTYLE: stop JavadocMethod
-    // CHECKSTYLE: stop DesignForExtension
 
     /**
-     * Baseline using a no-operation on the factors.
+     * Benchmark extracting the high part of the split number.
      *
      * @param factors Factors.
      * @param bh Data sink.
+     * @param method Split method
      */
     @Benchmark
-    public void baseline(Factors factors, Blackhole bh) {
-        apply(factors, bh, a -> a);
+    public void high(Factors factors, Blackhole bh, SplitMethod method) {
+        final DoubleUnaryOperator fun = method.getFunction();
+        final double[] a = factors.getFactors();
+        for (int i = 0; i < a.length; i++) {
+            bh.consume(fun.applyAsDouble(a[i]));
+        }
     }
-
     /**
-     * Dekker's split with overflow protection for large magnitudes; uses two signed comparisons
-     * for the magnitude check.
+     * Benchmark extracting the low part of the split number.
      *
      * @param factors Factors.
      * @param bh Data sink.
+     * @param method Split method
      */
     @Benchmark
-    public void dekker(Factors factors, Blackhole bh) {
-        apply(factors, bh, DoubleSplitPerformance::splitDekker);
-    }
-
-    /**
-     * Dekker's split with overflow protection for large magnitudes; uses a single unsigned
-     * comparison (with an absolute value) for the magnitude check.
-     *
-     * @param factors Factors.
-     * @param bh Data sink.
-     */
-    @Benchmark
-    public void dekkerAbs(Factors factors, Blackhole bh) {
-        apply(factors, bh, DoubleSplitPerformance::splitDekkerAbs);
-    }
-
-    /**
-     * Dekker's split without overflow protection.
-     *
-     * @param factors Factors.
-     * @param bh Data sink.
-     */
-    @Benchmark
-    public void dekkerRaw(Factors factors, Blackhole bh) {
-        apply(factors, bh, DoubleSplitPerformance::splitDekkerRaw);
-    }
-
-    /**
-     * Split using the upper and lower raw bits from the double.
-     *
-     * <p>Note: This method will not work for very small sub-normal numbers
-     * ({@code <= 27} bits) as the high part will be zero and the low part will
-     * have all the information. Methods that assume {@code hi > lo} will have
-     * undefined behaviour.
-     *
-     * @param factors Factors.
-     * @param bh Data sink.
-     */
-    @Benchmark
-    public void rawbits(Factors factors, Blackhole bh) {
-        apply(factors, bh, a -> Double.longBitsToDouble(Double.doubleToRawLongBits(a) & ZERO_LOWER_27_BITS));
+    public void low(Factors factors, Blackhole bh, SplitMethod method) {
+        final DoubleUnaryOperator fun = method.getFunction();
+        final double[] a = factors.getFactors();
+        for (int i = 0; i < a.length; i++) {
+            bh.consume(a[i] - fun.applyAsDouble(a[i]));
+        }
     }
 }

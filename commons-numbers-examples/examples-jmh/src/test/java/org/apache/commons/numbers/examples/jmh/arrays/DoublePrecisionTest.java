@@ -35,4 +35,22 @@ public class DoublePrecisionTest {
         Assertions.assertEquals(Double.POSITIVE_INFINITY, limit * 2 * scale);
         Assertions.assertEquals(Double.NEGATIVE_INFINITY, -limit * 2 * scale);
     }
+
+    @Test
+    public void testHighPart() {
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPart(Double.POSITIVE_INFINITY));
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPart(Double.NEGATIVE_INFINITY));
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPart(Double.NaN));
+        Assertions.assertTrue(Double.isFinite(DoublePrecision.highPart(Double.MAX_VALUE)));
+        Assertions.assertTrue(Double.isFinite(DoublePrecision.highPart(-Double.MAX_VALUE)));
+    }
+
+    @Test
+    public void testHighPartUnscaled() {
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.POSITIVE_INFINITY));
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.NEGATIVE_INFINITY));
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.NaN));
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.MAX_VALUE));
+        Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(-Double.MAX_VALUE));
+    }
 }

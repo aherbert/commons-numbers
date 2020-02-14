@@ -72,6 +72,176 @@ final class DoublePrecision {
     /** The mask to zero the lower 27-bits of a long . */
     private static final long ZERO_LOWER_27_BITS = 0xffff_ffff_f800_0000L;
 
+    /**
+     * Compute the low part of the double length number {@code (z,zz)} for the exact
+     * product of {@code x} and {@code y}. The low part of the result {@code zz} is computed
+     * by splitting the input numbers into parts to allow partial products to be computed.
+     * Each instance uses a different split method.
+     */
+    enum Product {
+        /**
+         * Implement Dekker's method to split a value into two parts.
+         * Uses scaling to avoid overflow in intermediate computations.
+         */
+        DEKKER {
+            /**
+             * {@inheritDoc}
+             *
+             * <p>Implement Dekker's method to split a value into two parts. Multiplying by (2^s + 1) creates
+             * a big value from which to derive the two split parts.
+             * <pre>
+             * c = (2^s + 1) * a
+             * a_big = c - a
+             * a_hi = c - a_big
+             * a_lo = a - a_hi
+             * a = a_hi + a_lo
+             * </pre>
+             *
+             * <p>The multiplicand allows a p-bit value to be split into
+             * (p-s)-bit value {@code a_hi} and a non-overlapping (s-1)-bit value {@code a_lo}.
+             * Combined they have (p􏰔-1) bits of significand but the sign bit of {@code a_lo}
+             * contains a bit of information. The constant is chosen so that s is ceil(p/2) where
+             * the precision p for a double is 53-bits (1-bit of the mantissa is assumed to be
+             * 1 for a non sub-normal number) and s is 27.
+             *
+             * <p>This conversion uses scaling to avoid overflow in intermediate computations.
+             *
+             * <p>Splitting a NaN or infinite value will return NaN. Any finite value will return
+             * a finite value.
+             */
+            @Override
+            double highPart(double a) {
+                // Avoid overflow
+                if (Math.abs(a) >= SAFE_UPPER) {
+                    // Do scaling.
+                    final double x = a * DOWN_SCALE;
+                    final double c = MULTIPLIER * x;
+                    final double hi = (c - (c - x)) * UP_SCALE;
+                    if (Double.isInfinite(hi)) {
+                        // Number is too large.
+                        // This occurs if value is infinite or close to Double.MAX_VALUE.
+                        // Note that Dekker's split creates an approximating 26-bit number which may
+                        // have an exponent 1 greater than the input value. This will overflow if the
+                        // exponent is already +1023. Revert to the raw upper 26 bits of the 53-bit
+                        // mantissa (including the assumed leading 1 bit). This conversion will result in
+                        // the low part being a 27-bit significand and the potential loss of bits during
+                        // addition and multiplication. (Contrast to the Dekker split which creates two
+                        // 26-bit numbers with a bit of information moved to the sign of low.)
+                        // The conversion will maintain Infinite in the high part where the resulting
+                        // low part a_lo = a - a_hi = inf - inf = NaN.
+                        return Double.longBitsToDouble(Double.doubleToRawLongBits(a) & ZERO_LOWER_27_BITS);
+                    }
+                    return hi;
+                }
+                // normal conversion
+                final double c = MULTIPLIER * a;
+                return c - (c - a);
+            }
+        },
+        /**
+         * Implement Dekker's method to split a value into two parts.
+         *
+         * <p>Warning: This method does not perform scaling in Dekker's split and large
+         * finite numbers can create NaN results.
+         */
+        FAST_DEKKER {
+            /**
+             * {@inheritDoc}
+             *
+             * <p>Implement Dekker's method to split a value into two parts (see {@link Product#DEKKER}).
+             *
+             * <p>Warning: This method does not perform scaling in Dekker's split and large
+             * finite numbers can create NaN results. Overflow may occur when the exponent of
+             * the input value is above 996.
+             *
+             * <p>Splitting a NaN or infinite value will return NaN. Any finite value will return
+             * a finite value.
+             */
+            @Override
+            double highPart(double a) {
+                // normal conversion without overflow checks
+                final double c = MULTIPLIER * a;
+                return c - (c - a);
+            }
+        },
+        /**
+         * Implement a split using the upper and lower raw bits from the value.
+         *
+         * <p>Note: This method will not work for very small sub-normal numbers
+         * ({@code <= 27} bits) as the high part will be zero and the low part will
+         * have all the information. Methods that assume {@code hi > lo} will have
+         * undefined behaviour.
+         */
+        SPLIT {
+            /**
+             * {@inheritDoc}
+             *
+             * <p>Split using the upper and lower raw bits from the double.
+             *
+             * <p>Splitting a NaN value will return NaN or infinite. Splitting an infinite
+             * value will return infinite. Any finite value will return a finite value.
+             */
+            @Override
+            double highPart(double a) {
+                return Double.longBitsToDouble(Double.doubleToRawLongBits(a) & ZERO_LOWER_27_BITS);
+            }
+        };
+
+        /**
+         * Compute the low part of the double length number {@code (z,zz)} for the exact
+         * product of {@code x} and {@code y}. The standard precision product {@code x*y}
+         * must be provided. The numbers {@code x} and {@code y}
+         * are split into high and low parts for an extended precision algorithm:
+         * <pre>
+         * lx * ly - (((xy - hx * hy) - lx * hy) - hx * ly)
+         * </pre>
+         *
+         * <p>Note: This uses the high part of the result {@code (z,zz)} as {@code x * y} and not
+         * {@code hx * hy + hx * ty + tx * hy} as specified in Dekker's original paper.
+         * See Shewchuk (1997) for working examples.
+         *
+         * <p>Warning: Dekker's split can produce high parts that are larger in magnitude than
+         * the input number as the high part is a 26-bit approximation of the number. Thus it is
+         * possible that the standard product {@code x * y} does not overflow but the extended
+         * precision sub-product {@code hx * hy} does overflow.
+         *
+         * @param x First factor.
+         * @param y Second factor.
+         * @param xy Product of the factors (x * y).
+         * @return the low part of the product double length number
+         * @see <a href="http://www-2.cs.cmu.edu/afs/cs/project/quake/public/papers/robust-arithmetic.ps">
+         * Shewchuk (1997) Theorum 18</a>
+         */
+        double low(double x, double y, double xy) {
+            // Split the numbers using Dekker's algorithm
+            final double hx = highPart(x);
+            final double lx = x - hx;
+
+            final double hy = highPart(y);
+            final double ly = y - hy;
+
+            // Compute the multiply low part:
+            // err1 = xy - hx * hy
+            // err2 = err1 - lx * hy
+            // err3 = err2 - hx * ly
+            // low = lx * ly - err3
+            return lx * ly - (((xy - hx * hy) - lx * hy) - hx * ly);
+        }
+
+        /**
+         * Split a value into the high-part {@code hi} of a two part number. Subtracting the
+         * high part from the original number creates the low part.
+         * <pre>
+         * lo = a - hi
+         * a = hi + lo
+         * </pre>
+         *
+         * @param a Value.
+         * @return the high part of the value.
+         */
+        abstract double highPart(double a);
+    }
+
     /** Private constructor. */
     private DoublePrecision() {
         // intentionally empty.
@@ -95,6 +265,11 @@ final class DoublePrecision {
      * the precision p for a double is 53-bits (1-bit of the mantissa is assumed to be
      * 1 for a non sub-normal number) and s is 27.
      *
+     * <p>This conversion uses scaling to avoid overflow in intermediate computations.
+     *
+     * <p>Splitting a NaN or infinite value will return NaN. Any finite value will return
+     * a finite value.
+     *
      * @param value Value.
      * @return the high part of the value.
      */
@@ -102,9 +277,7 @@ final class DoublePrecision {
         // Avoid overflow
         if (Math.abs(value) >= SAFE_UPPER) {
             // Do scaling.
-            final double x = value * DOWN_SCALE;
-            final double c = MULTIPLIER * x;
-            final double hi = (c - (c - x)) * UP_SCALE;
+            final double hi = highPartUnscaled(value * DOWN_SCALE) * UP_SCALE;
             if (Double.isInfinite(hi)) {
                 // Number is too large.
                 // This occurs if value is infinite or close to Double.MAX_VALUE.
@@ -117,13 +290,48 @@ final class DoublePrecision {
                 // 26-bit numbers with a bit of information moved to the sign of low.)
                 // The conversion will maintain Infinite in the high part where the resulting
                 // low part a_lo = a - a_hi = inf - inf = NaN.
-                return Double.longBitsToDouble(Double.doubleToRawLongBits(value) & ZERO_LOWER_27_BITS);
+                return highPartSplit(value);
             }
             return hi;
         }
         // normal conversion
+        return highPartUnscaled(value);
+    }
+
+    /**
+     * Implement Dekker's method to split a value into two parts (see {@link #highPart(double)}).
+     *
+     * <p>This conversion does not use scaling and the result of overflow is NaN. Overflow
+     * may occur when the exponent of the input value is above 996.
+     *
+     * <p>Splitting a NaN or infinite value will return NaN.
+     *
+     * @param value Value.
+     * @return the high part of the value.
+     * @see Math#getExponent(double)
+     */
+    static double highPartUnscaled(double value) {
         final double c = MULTIPLIER * value;
         return c - (c - value);
+    }
+
+    /**
+     * Implement a split using the upper and lower raw bits from the value.
+     *
+     * <p>Note: This method will not work for very small sub-normal numbers
+     * ({@code <= 27} bits) as the high part will be zero and the low part will
+     * have all the information. Methods that assume {@code hi > lo} will have
+     * undefined behaviour.
+     *
+     * <p>Splitting a NaN value will return NaN or infinite. Splitting an infinite
+     * value will return infinite. Any finite value will return a finite value.
+     *
+     * @param value Value.
+     * @return the high part of the value.
+     * @see Math#getExponent(double)
+     */
+    static double highPartSplit(double value) {
+        return Double.longBitsToDouble(Double.doubleToRawLongBits(value) & ZERO_LOWER_27_BITS);
     }
 
     /**
@@ -150,6 +358,33 @@ final class DoublePrecision {
         final double lx = x - hx;
 
         final double hy = highPart(y);
+        final double ly = y - hy;
+
+        return productLow(hx, lx, hy, ly, xy);
+    }
+
+    /**
+     * Compute the low part of the double length number {@code (z,zz)} for the exact
+     * product of {@code x} and {@code y} using Dekker's mult12 algorithm. The standard
+     * precision product {@code x*y} must be provided. The numbers {@code x} and {@code y}
+     * are split into high and low parts using Dekker's algorithm.
+     *
+     * <p>Warning: This method does not perform scaling in Dekker's split and large
+     * finite numbers can create NaN results.
+     *
+     * @param x First factor.
+     * @param y Second factor.
+     * @param xy Product of the factors (x * y).
+     * @return the low part of the product double length number
+     * @see #highPartUnscaled(double)
+     * @see #productLow(double, double, double, double, double)
+     */
+    static double productLowUnscaled(double x, double y, double xy) {
+        // Split the numbers using Dekker's algorithm without scaling
+        final double hx = highPartUnscaled(x);
+        final double lx = x - hx;
+
+        final double hy = highPartUnscaled(y);
         final double ly = y - hy;
 
         return productLow(hx, lx, hy, ly, xy);

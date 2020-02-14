@@ -16,6 +16,7 @@
  */
 package org.apache.commons.numbers.examples.jmh.arrays;
 
+import org.apache.commons.numbers.examples.jmh.arrays.DoublePrecision.Product;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.FourD;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ThreeD;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.TwoD;
