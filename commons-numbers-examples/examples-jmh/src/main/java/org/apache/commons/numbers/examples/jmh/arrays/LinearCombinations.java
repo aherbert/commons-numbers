@@ -16,8 +16,8 @@
  */
 package org.apache.commons.numbers.examples.jmh.arrays;
 
-import org.apache.commons.numbers.examples.jmh.arrays.DoublePrecision.Product;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.FourD;
+import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ND;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ThreeD;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.TwoD;
 
@@ -226,6 +226,16 @@ public final class LinearCombinations {
      * {@link Dot2s} class provides an alternative faster implementation that sums the
      * round-off parts during processing to avoid array allocation overhead. The results will
      * not be identical due to a different order for the summation of the round-off parts.
+     *
+     * <p>The number of operations will scale with {@code k}. When computing the small linear
+     * combinations {@link TwoD}, {@link ThreeD} and {@link FourD} using a {@code k} value too
+     * large will result in more operations than the number used by {@link ExtendedPrecision}.
+     * For a small {@code n}-dimension linear combinations the value {@code k = n+1} will have the
+     * same number of operations as {@link ExtendedPrecision} and users should switch to the
+     * {@link ExtendedPrecision} class. This rule does not apply to the
+     * {@link ND} implementations as {@link ExtendedPrecision} eliminates redundant operations
+     * on zeros. In this case equivalent performance will be observed when {@code k <= n+1}.
+     * Choice of implementation must consider performance and accuracy on real-world data.
      */
     public static final class DotK extends BaseLinearCombination implements TwoD, ThreeD, FourD {
         /** An instance computing 3-fold precision. */
