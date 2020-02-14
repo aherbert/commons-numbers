@@ -55,7 +55,7 @@ public class LinearCombinationAccuracyTest {
     static Stream<Arguments> provideLinearCombination() {
         return Stream.of(
             Arguments.of(LinearCombinations.Dekker.INSTANCE, 1e20, 1e30),
-            Arguments.of(LinearCombinations.DotK.DOT_2, 1e20, 1e30),
+            Arguments.of(LinearCombinations.Dot2s.INSTANCE, 1e20, 1e30),
             Arguments.of(LinearCombinations.DotK.DOT_3, 1e35, 1e45),
             Arguments.of(LinearCombinations.DotK.DOT_4, 1e50, 1e65),
             Arguments.of(LinearCombinations.DotK.DOT_5, 1e65, 1e85),
@@ -145,7 +145,7 @@ public class LinearCombinationAccuracyTest {
             final double[] e = new double[10];
             e[j++] = cc[0];
             e[j++] = compute(x, y, dot, LinearCombinations.Dekker.INSTANCE);
-            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_2);
+            e[j++] = compute(x, y, dot, LinearCombinations.Dot2s.INSTANCE);
             e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_3);
             e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_4);
             e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_5);

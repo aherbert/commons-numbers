@@ -219,10 +219,14 @@ public final class LinearCombinations {
      * <a href="http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.2.1547">
      * Accurate Sum and Dot Product</a> by Takeshi Ogita, Siegfried M. Rump,
      * and Shin'ichi Oishi published in <em>SIAM J. Sci. Comput</em>.
+     *
+     * <p>Note: It is possible to use this class to compute 2-fold precision. In this case
+     * the round-off parts of the dot-product are stored in an array and summed. The
+     * {@link Dot2s} class provides an alternative faster implementation that sums the
+     * round-off parts during processing to avoid array allocation overhead. The results will
+     * not be identical due to a different order for the summation of the round-off parts.
      */
     public static final class DotK extends BaseLinearCombination implements TwoD, ThreeD, FourD {
-        /** An instance computing 2-fold precision. */
-        public static final DotK DOT_2 = new DotK(2);
         /** An instance computing 3-fold precision. */
         public static final DotK DOT_3 = new DotK(3);
         /** An instance computing 4-fold precision. */
@@ -430,6 +434,118 @@ public final class LinearCombinations {
                 p[i - 1] = DoublePrecision.twoSumLow(p[i], p[i - 1], x);
                 p[i] = x;
             }
+        }
+    }
+
+    /**
+     * Computes linear combinations accurately using the Dot2s algorithm of Ogita et al
+     * for 2-fold precision of the sum.
+     *
+     * <p>It is based on the 2005 paper
+     * <a href="http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.2.1547">
+     * Accurate Sum and Dot Product</a> by Takeshi Ogita, Siegfried M. Rump,
+     * and Shin'ichi Oishi published in <em>SIAM J. Sci. Comput</em>.
+     *
+     * <p>This is faster than using {@link DotK} with a {@code k} of 2. The results will
+     * not be identical due to a different summation order of the round-off parts.
+     */
+    public static final class Dot2s extends BaseLinearCombination implements TwoD, ThreeD, FourD {
+        /** An instance computing 2-fold precision. */
+        public static final Dot2s INSTANCE = new Dot2s();
+
+        /** Private constructor. */
+        private Dot2s() {}
+
+        /** {@inheritDoc} */
+        @Override
+        protected double computeValue(double[] a, double[] b) {
+            // Implement dot2s (Algorithm 5.4) from Ogita et al (2005).
+            final int len = a.length;
+
+            // p is the standard scalar product sum.
+            // s is the sum of round-off parts.
+            double p = a[0] * b[0];
+            double s = DoublePrecision.productLow(a[0], b[0], p);
+
+            // Remaining split products added to the current sum and round-off sum.
+            for (int i = 1; i < len; i++) {
+                final double h = a[i] * b[i];
+                final double r = DoublePrecision.productLow(a[i], b[i], h);
+
+                final double x = p + h;
+                // s_i = s_(i-1) + (q_i + r_i)
+                s += (DoublePrecision.twoSumLow(p, h, x) + r);
+                p = x;
+            }
+
+            return getSum(p, p + s);
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        public double value(double a1, double b1,
+                            double a2, double b2) {
+            // p/pn are the standard scalar product old/new sum.
+            // s is the sum of round-off parts.
+            final double p = a1 * b1;
+            double s = DoublePrecision.productLow(a1, b1, p);
+            final double h = a2 * b2;
+            final double r = DoublePrecision.productLow(a2, b2, h);
+            final double pn = p + h;
+            s += (DoublePrecision.twoSumLow(p, h, pn) + r);
+
+            // Final summation
+            return getSum(pn, pn + s);
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        public double value(double a1, double b1,
+                            double a2, double b2,
+                            double a3, double b3) {
+            // Sum round-off parts in s: s_i = s_(i-1) + (q_i + r_i)
+            // The standard precision scalar product is stored in p_n.
+            double p = a1 * b1;
+            double s = DoublePrecision.productLow(a1, b1, p);
+            double h = a2 * b2;
+            double r = DoublePrecision.productLow(a2, b2, h);
+            double q = p + h;
+            s += (r + DoublePrecision.twoSumLow(p, h, q));
+            h = a3 * b3;
+            r = DoublePrecision.productLow(a3, b3, h);
+            final double pn = q + h;
+            s += (r + DoublePrecision.twoSumLow(q, h, pn));
+
+            // Final summation
+            return getSum(pn, pn + s);
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        public double value(double a1, double b1,
+                            double a2, double b2,
+                            double a3, double b3,
+                            double a4, double b4) {
+            // p/q are the standard scalar product old/new sum (alternating).
+            // s is the sum of round-off parts.
+            // pn is the final scalar product sum.
+            double p = a1 * b1;
+            double s = DoublePrecision.productLow(a1, b1, p);
+            double h = a2 * b2;
+            double r = DoublePrecision.productLow(a2, b2, h);
+            final double q = p + h;
+            s += (DoublePrecision.twoSumLow(p, h, q) + r);
+            h = a3 * b3;
+            r = DoublePrecision.productLow(a3, b3, h);
+            p = q + h;
+            s += (DoublePrecision.twoSumLow(q, h, p) + r);
+            h = a4 * b4;
+            r = DoublePrecision.productLow(a4, b4, h);
+            final double pn = p + h;
+            s += (DoublePrecision.twoSumLow(p, h, pn) + r);
+
+            // Final summation
+            return getSum(pn, pn + s);
         }
     }
 

@@ -182,8 +182,9 @@ final class DoublePrecision {
 
     /**
      * Compute the round-off {@code s} from the sum of two split numbers {@code (x, xx)}
-     * and {@code (y, yy)} using Dekker's add2 algorithm. The sum of the high parts
-     * {@code r} must be provided.
+     * and {@code (y, yy)} using Dekker's add2 algorithm. The values are not required to be
+     * ordered by magnitude as an absolute comparison is made to determine the summation order.
+     * The sum of the high parts {@code r} must be provided.
      *
      * <p>The result {@code (r, s)} must be re-balanced to create the split result {@code (z, zz)}:
      * <pre>

@@ -41,7 +41,7 @@ public class LinearCombinationsTest {
     static Stream<Arguments> provideLinearCombination() {
         return Stream.of(
             Arguments.of(LinearCombinations.Dekker.INSTANCE),
-            Arguments.of(LinearCombinations.DotK.DOT_2),
+            Arguments.of(LinearCombinations.Dot2s.INSTANCE),
             Arguments.of(LinearCombinations.DotK.DOT_3),
             Arguments.of(LinearCombinations.DotK.DOT_4),
             Arguments.of(LinearCombinations.DotK.DOT_5),
