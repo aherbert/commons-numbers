@@ -46,13 +46,6 @@ import java.util.function.DoubleUnaryOperator;
 @Fork(value = 1, jvmArgs = {"-server", "-Xms512M", "-Xmx512M"})
 public class DoubleSplitPerformance {
     /**
-     * The seed to use to create the factors.
-     * Using a fixed seed ensures the same factors are created for the variable
-     * length arrays as for the small fixed size arrays.
-     */
-    private static final long SEED = System.currentTimeMillis();
-
-    /**
      * The multiplier used to split the double value into high and low parts. From
      * Dekker (1971): "The constant should be chosen equal to 2^(p - p/2) + 1,
      * where p is the number of binary digits in the mantissa". Here p is 53
@@ -122,8 +115,7 @@ public class DoubleSplitPerformance {
          */
         @Setup
         public void setup() {
-            final UniformRandomProvider rng =
-                    RandomSource.create(RandomSource.XO_RO_SHI_RO_1024_PP, SEED);
+            final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_1024_PP);
             a = new double[size];
             for (int i = 0; i < size; i++) {
                 long bits = rng.nextLong() & SIGN_MATISSA_MASK;
