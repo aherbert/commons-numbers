@@ -18,10 +18,6 @@
 package org.apache.commons.numbers.examples.jmh.arrays;
 
 import org.apache.commons.numbers.arrays.LinearCombination;
-import org.apache.commons.numbers.arrays.LinearCombination2;
-import org.apache.commons.numbers.arrays.LinearCombinationExact;
-import org.apache.commons.numbers.arrays.LinearCombinationExact2;
-import org.apache.commons.numbers.arrays.LinearCombinationExact3;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.FourD;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ND;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ThreeD;
@@ -169,13 +165,126 @@ public class LinearCombinationPerformance {
     }
 
     /**
-     * Compute the scalar product for all the factors.
+     * The {@link LinearCombination} implementation.
+     */
+    @State(Scope.Benchmark)
+    public static class Calculator {
+        /**
+         * The implementation name.
+         */
+        @Param({"standard",
+                "current",
+                "dekker",
+                "dot2s",
+                "dot2", "dot3", "dot4", "dot5", "dot6", "dot7",
+                "exact",
+                "extended"})
+        private String name;
+
+        /** The 2D implementation. */
+        private TwoD twod;
+        /** The 3D implementation. */
+        private ThreeD threed;
+        /** The 4D implementation. */
+        private FourD fourd;
+        /** The ND implementation. */
+        private ND nd;
+
+        /**
+         * @return the 2D implementation
+         */
+        public TwoD getTwoD() {
+            return twod;
+        }
+
+        /**
+         * @return the 3D implementation
+         */
+        public ThreeD getThreeD() {
+            return threed;
+        }
+
+        /**
+         * @return the 4D implementation
+         */
+        public FourD getFourD() {
+            return fourd;
+        }
+
+        /**
+         * @return the ND implementation
+         */
+        public ND getND() {
+            return nd;
+        }
+
+        /**
+         * Setup the implementation.
+         */
+        @Setup
+        public void setup() {
+            if ("standard".endsWith(name)) {
+                // Standard precision dot product
+                twod = (a1, b1, a2, b2) -> a1 * b1 + a2 * b2;
+                threed = (a1, b1, a2, b2, a3, b3) -> a1 * b1 + a2 * b2 + a3 * b3;
+                fourd = (a1, b1, a2, b2, a3, b3, a4, b4) -> a1 * b1 + a2 * b2 + a3 * b3 + a4 * b4;
+                nd = (a, b) -> {
+                    double sum = 0;
+                    for (int i = 0; i < a.length; i++) {
+                        sum += a[i] * b[i];
+                    }
+                    return sum;
+                };
+                return;
+            }
+            if ("current".endsWith(name)) {
+                twod = LinearCombination::value;
+                threed = LinearCombination::value;
+                fourd = LinearCombination::value;
+                nd = LinearCombination::value;
+                return;
+            }
+            // All implementations below are expected to implement all the interfaces.
+            if ("dekker".equals(name)) {
+                nd = LinearCombinations.Dekker.INSTANCE;
+            } else if ("dot2s".equals(name)) {
+                nd = LinearCombinations.Dot2s.INSTANCE;
+            } else if ("dot2".equals(name)) {
+                nd = new LinearCombinations.DotK(2);
+            } else if ("dot3".equals(name)) {
+                nd = LinearCombinations.DotK.DOT_3;
+            } else if ("dot4".equals(name)) {
+                nd = LinearCombinations.DotK.DOT_4;
+            } else if ("dot5".equals(name)) {
+                nd = LinearCombinations.DotK.DOT_5;
+            } else if ("dot6".equals(name)) {
+                nd = LinearCombinations.DotK.DOT_6;
+            } else if ("dot7".equals(name)) {
+                nd = LinearCombinations.DotK.DOT_7;
+            } else if ("exact".equals(name)) {
+                nd = LinearCombinations.Exact.INSTANCE;
+            } else if ("extended".equals(name)) {
+                nd = LinearCombinations.ExtendedPrecision.INSTANCE;
+            } else {
+                throw new IllegalStateException("Unknown implementation: " + name);
+            }
+            // Possible class-cast exception for partial implementations...
+            twod = (TwoD) nd;
+            threed = (ThreeD) nd;
+            fourd = (FourD) nd;
+        }
+    }
+
+    /**
+     * Compute the 2D scalar product for all the factors.
      *
      * @param factors Factors.
      * @param bh Data sink.
-     * @param fun Scalar product function.
+     * @param calc Scalar product calculator.
      */
-    private static void scalar2Product(Factors factors, Blackhole bh, TwoD fun) {
+    @Benchmark
+    public static void twoD(Factors factors, Blackhole bh, Calculator calc) {
+        final TwoD fun = calc.getTwoD();
         for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
@@ -184,13 +293,15 @@ public class LinearCombinationPerformance {
     }
 
     /**
-     * Compute the scalar product for all the factors.
+     * Compute the 3D scalar product for all the factors.
      *
      * @param factors Factors.
      * @param bh Data sink.
-     * @param fun Scalar product function.
+     * @param calc Scalar product calculator.
      */
-    private static void scalar3Product(Factors factors, Blackhole bh, ThreeD fun) {
+    @Benchmark
+    public static void threeD(Factors factors, Blackhole bh, Calculator calc) {
+        final ThreeD fun = calc.getThreeD();
         for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
@@ -199,13 +310,15 @@ public class LinearCombinationPerformance {
     }
 
     /**
-     * Compute the scalar product for all the factors.
+     * Compute the 4D scalar product for all the factors.
      *
      * @param factors Factors.
      * @param bh Data sink.
-     * @param fun Scalar product function.
+     * @param calc Scalar product calculator.
      */
-    private static void scalar4Product(Factors factors, Blackhole bh, FourD fun) {
+    @Benchmark
+    public static void fourD(Factors factors, Blackhole bh, Calculator calc) {
+        final FourD fun = calc.getFourD();
         for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
@@ -214,351 +327,20 @@ public class LinearCombinationPerformance {
     }
 
     /**
-     * Compute the scalar product for all the factors.
+     * Compute the ND scalar product for all the factors.
      *
      * @param factors Factors.
      * @param bh Data sink.
-     * @param fun Scalar product function.
+     * @param calc Scalar product calculator.
      */
-    private static void scalarProduct(LengthFactors factors, Blackhole bh, ND fun) {
+    @Benchmark
+    public static void nD(LengthFactors factors, Blackhole bh, Calculator calc) {
+        final ND fun = calc.getND();
         for (int i = 0; i < factors.getSize(); i++) {
             // These should be pre-computed to the correct length
             final double[] a = factors.getA(i);
             final double[] b = factors.getB(i);
             bh.consume(fun.value(a, b));
         }
-    }
-
-    // Benchmark methods.
-    //
-    // The methods are partially documented as the names are self-documenting.
-    // CHECKSTYLE: stop JavadocMethod
-    // CHECKSTYLE: stop DesignForExtension
-
-    /**
-     * Baseline the standard precision scalar product of length 2.
-     * @param factors Factors
-     * @param bh Data sink.
-     */
-    @Benchmark
-    public void scalar2Baseline(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, (a1, b1, a2, b2) -> a1 * b1 + a2 * b2);
-    }
-
-    /**
-     * Baseline the standard precision scalar product of length 3.
-     * @param factors Factors
-     * @param bh Data sink.
-     */
-    @Benchmark
-    public void scalar3Baseline(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, (a1, b1, a2, b2, a3, b3) -> a1 * b1 + a2 * b2 + a3 * b3);
-    }
-
-    /**
-     * Baseline the standard precision scalar product of length 4.
-     * @param factors Factors
-     * @param bh Data sink.
-     */
-    @Benchmark
-    public void scalar4Baseline(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, (a1, b1, a2, b2, a3, b3, a4, b4) -> a1 * b1 + a2 * b2 + a3 * b3 + a4 * b4);
-    }
-
-    /**
-     * Baseline the standard precision scalar product on two arrays.
-     * @param factors Factors
-     * @param bh Data sink.
-     */
-    @Benchmark
-    public void scalarBaseline(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, (a, b) -> {
-            double sum = 0;
-            for (int i = 0; i < a.length; i++) {
-                sum += a[i] * b[i];
-            }
-            return sum;
-        });
-    }
-
-    // Original method with Dekker split
-
-    @Benchmark
-    public void scalar2Dot2s(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinationDot2s::value);
-    }
-
-    @Benchmark
-    public void scalar3Dot2s(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinationDot2s::value);
-    }
-
-    @Benchmark
-    public void scalar4Dot2s(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinationDot2s::value);
-    }
-
-    @Benchmark
-    public void scalarDot2s(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationDot2s::value);
-    }
-
-    // Original method with masking split.
-    // This is faster as it has no branching during the split to handle overflow.
-    // The resulting split multiplication can have inexact results due to the loss of 1-bit.
-
-    @Benchmark
-    public void scalar2Dot2sMask(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinationDot2sSplitMask::value);
-    }
-
-    @Benchmark
-    public void scalar3Dot2sMask(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinationDot2sSplitMask::value);
-    }
-
-    @Benchmark
-    public void scalar4Dot2sMask(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinationDot2sSplitMask::value);
-    }
-
-    @Benchmark
-    public void scalarDot2sMask(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationDot2sSplitMask::value);
-    }
-
-    // dot3 using Dekker split
-
-    @Benchmark
-    public void scalar2Dot3(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombination::value);
-    }
-
-    @Benchmark
-    public void scalar3Dot3(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombination::value);
-    }
-
-    @Benchmark
-    public void scalar4Dot3(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombination::value);
-    }
-
-    @Benchmark
-    public void scalarDot3(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombination::value);
-    }
-
-
-    @Benchmark
-    public void scalar2Dot3b(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinations.DotK.DOT_3);
-    }
-
-    @Benchmark
-    public void scalar3Dot3b(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinations.DotK.DOT_3);
-    }
-
-    @Benchmark
-    public void scalar4Dot3b(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinations.DotK.DOT_3);
-    }
-
-    @Benchmark
-    public void scalarDot3b(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinations.DotK.DOT_3);
-    }
-
-    // dotK
-
-    @Benchmark
-    public void scalarDot4(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationDotK::value4);
-    }
-
-    @Benchmark
-    public void scalarDot5(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationDotK::value5);
-    }
-
-    @Benchmark
-    public void scalarDot6(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationDotK::value6);
-    }
-
-    @Benchmark
-    public void scalarDot7(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationDotK::value7);
-    }
-
-    @Benchmark
-    public void scalarDot4b(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinations.DotK.DOT_4);
-    }
-
-    @Benchmark
-    public void scalarDot5b(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinations.DotK.DOT_5);
-    }
-
-    @Benchmark
-    public void scalarDot6b(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinations.DotK.DOT_6);
-    }
-
-    @Benchmark
-    public void scalarDot7b(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinations.DotK.DOT_7);
-    }
-
-    // Dekker's dot sum
-
-    @Benchmark
-    public void scalar2Dekker(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinationDekker::value);
-    }
-
-    @Benchmark
-    public void scalar3Dekker(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinationDekker::value);
-    }
-
-    @Benchmark
-    public void scalar4Dekker(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinationDekker::value);
-    }
-
-    @Benchmark
-    public void scalarDekker(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationDekker::value);
-    }
-
-    // Exact expansion sum
-
-    @Benchmark
-    public void scalar2DotExact(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinationExact::value);
-    }
-
-    @Benchmark
-    public void scalar3DotExact(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinationExact::value);
-    }
-
-    @Benchmark
-    public void scalar4DotExact(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinationExact::value);
-    }
-
-    @Benchmark
-    public void scalarDotExact(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationExact::value);
-    }
-
-    // Exact expansion sum (version 2)
-
-    //@Benchmark
-    public void scalar2DotExact2(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinationExact2::value);
-    }
-
-    //@Benchmark
-    public void scalar3DotExact2(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinationExact2::value);
-    }
-
-    //@Benchmark
-    public void scalar4DotExact2(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinationExact2::value);
-    }
-
-    @Benchmark
-    public void scalarDotExact2(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationExact2::value);
-    }
-
-    // Exact expansion sum (version 3)
-
-    @Benchmark
-    public void scalar2DotExact3(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinationExact3::value);
-    }
-
-    @Benchmark
-    public void scalar3DotExact3(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinationExact3::value);
-    }
-
-    @Benchmark
-    public void scalar4DotExact3(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinationExact3::value);
-    }
-
-    @Benchmark
-    public void scalarDotExact3(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationExact3::value);
-    }
-
-    @Benchmark
-    public void scalar2DotExact3b(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinations.ExtendedPrecision.INSTANCE);
-    }
-
-    @Benchmark
-    public void scalar3DotExact3b(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinations.ExtendedPrecision.INSTANCE);
-    }
-
-    @Benchmark
-    public void scalar4DotExact3b(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinations.ExtendedPrecision.INSTANCE);
-    }
-
-    @Benchmark
-    public void scalarDotExact3b(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinations.ExtendedPrecision.INSTANCE);
-    }
-
-    // BigDecimal
-
-    @Benchmark
-    public void scalar2BigDecimal(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinationBigDecimal::value);
-    }
-
-    @Benchmark
-    public void scalar3BigDecimal(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinationBigDecimal::value);
-    }
-
-    @Benchmark
-    public void scalar4BigDecimal(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinationBigDecimal::value);
-    }
-
-    @Benchmark
-    public void scalarBigDecimal(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinationBigDecimal::value);
-    }
-
-    @Benchmark
-    public void scalar2BigDecimalb(Factors factors, Blackhole bh) {
-        scalar2Product(factors, bh, LinearCombinations.Exact.INSTANCE);
-    }
-
-    @Benchmark
-    public void scalar3BigDecimalb(Factors factors, Blackhole bh) {
-        scalar3Product(factors, bh, LinearCombinations.Exact.INSTANCE);
-    }
-
-    @Benchmark
-    public void scalar4BigDecimalb(Factors factors, Blackhole bh) {
-        scalar4Product(factors, bh, LinearCombinations.Exact.INSTANCE);
-    }
-
-    @Benchmark
-    public void scalarBigDecimalb(LengthFactors factors, Blackhole bh) {
-        scalarProduct(factors, bh, LinearCombinations.Exact.INSTANCE);
     }
 }

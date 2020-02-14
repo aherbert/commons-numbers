@@ -21,11 +21,17 @@ import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ND;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ThreeD;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.TwoD;
 import org.apache.commons.numbers.fraction.BigFraction;
+import org.apache.commons.rng.UniformRandomProvider;
+import org.apache.commons.rng.simple.RandomSource;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.util.SplittableRandom;
 import java.util.stream.Stream;
 
@@ -33,6 +39,9 @@ import java.util.stream.Stream;
  * Test each implementation of the LinearCombination interface.
  */
 public class LinearCombinationsTest {
+    /** Double.MIN_VALUE as a BigDecimal. Use string constructor to truncate precision to 4.9e-324. */
+    private static final BigDecimal MIN = BigDecimal.valueOf(Double.MIN_VALUE);
+
     /**
      * Provide instances of the LinearCombination interface as arguments.
      *
@@ -335,5 +344,248 @@ public class LinearCombinationsTest {
                                                                      a[10][2], b[10][2],
                                                                      a[10][3], b[10][3]));
         Assertions.assertEquals(Double.NEGATIVE_INFINITY, fun.value(a[10], b[10]));
+    }
+
+    /**
+     * This creates a scenario where the split product will overflow but the standard
+     * precision computation will not. The result is expected to be in standard precision.
+     *
+     * <p>Note: This test assumes that LinearCombination computes a split number
+     * using Dekker's method. This can result in the high part of the number being
+     * greater in magnitude than the the original number due to round-off in the split.
+     */
+    @Test
+    public void testOverflow() {
+        // Create a simple dot product that is different in high precision and has
+        // values that create a high part above the original number. This can be done using
+        // a mantissa with almost all bits set to 1.
+        final double x = Math.nextDown(2.0);
+        final double y = -Math.nextDown(x);
+        final double xxMxy = x * x + x * y;
+        final double xxMxyHighPrecision = LinearCombinations.DotK.DOT_3.value(x, x, x, y);
+        Assertions.assertNotEquals(xxMxy, xxMxyHighPrecision, "High precision result should be different");
+
+        // Scale it close to max value.
+        // The current exponent is 0 so the combined scale must be 1023-1 as the
+        // partial product x*x and x*y have an exponent 1 higher
+        Assertions.assertEquals(0, Math.getExponent(x));
+        Assertions.assertEquals(0, Math.getExponent(y));
+
+        final double a1 = Math.scalb(x, 1022 - 30);
+        final double b1 = Math.scalb(x, 30);
+        final double a2 = a1;
+        final double b2 = Math.scalb(y, 30);
+        // Verify low precision result is scaled and finite
+        final double sxxMxy = Math.scalb(xxMxy, 1022);
+        Assertions.assertEquals(sxxMxy, a1 * b1 + a2 * b2);
+        Assertions.assertTrue(Double.isFinite(sxxMxy));
+
+        // High precision result.
+        // First demonstrate that Dekker's split will create overflow in the high part.
+        final double m = (1 << 27) + 1;
+        double c;
+        c = a1 * m;
+        final double ha1 = c - (c - a1);
+        c = b1 * m;
+        final double hb1 = c - (c - b1);
+        c = a2 * m;
+        final double ha2 = c - (c - a2);
+        c = b2 * m;
+        final double hb2 = c - (c - b2);
+        Assertions.assertTrue(Double.isFinite(ha1));
+        Assertions.assertTrue(Double.isFinite(hb1));
+        Assertions.assertTrue(Double.isFinite(ha2));
+        Assertions.assertTrue(Double.isFinite(hb2));
+        // High part should be bigger in magnitude
+        Assertions.assertTrue(Math.abs(ha1) > Math.abs(a1));
+        Assertions.assertTrue(Math.abs(hb1) > Math.abs(b1));
+        Assertions.assertTrue(Math.abs(ha2) > Math.abs(a2));
+        Assertions.assertTrue(Math.abs(hb2) > Math.abs(b2));
+        Assertions.assertEquals(Double.POSITIVE_INFINITY, ha1 * hb1, "Expected split high part to overflow");
+        Assertions.assertEquals(Double.NEGATIVE_INFINITY, ha2 * hb2, "Expected split high part to overflow");
+
+        // LinearCombination should detect the high precision result is not finite
+        // and return the low precision result.
+        Assertions.assertEquals(sxxMxy, LinearCombinations.DotK.DOT_3.value(a1, b1, a2, b2));
+        Assertions.assertEquals(sxxMxy, LinearCombinations.DotK.DOT_3.value(a1, b1, a2, b2, 0, 0));
+        Assertions.assertEquals(sxxMxy, LinearCombinations.DotK.DOT_3.value(a1, b1, a2, b2, 0, 0, 0, 0));
+        Assertions.assertEquals(sxxMxy, LinearCombinations.DotK.DOT_3.value(new double[] {a1, a2}, new double[] {b1, b2}));
+    }
+
+    /**
+     * This is an extreme case of the sum x^2 + y^2 - 1 when x^2 + y^2 are 1.0 within
+     * floating-point error but if performed using high precision subtracting 1.0 is not 0.0.
+     * This case is derived from computations on a complex cis number.
+     */
+    @Test
+    public void testCisNumber() {
+        final double theta = 5.992112452678286E-7;
+        final double x = Math.cos(theta);
+        final double y = Math.sin(theta);
+        assertValue(LinearCombinations.DotK.DOT_3.value(x, x, y, y, 1, -1),
+                new double[] {x, y, 1},
+                new double[] {x, y, -1});
+    }
+
+    /**
+     * Test the sum of vectors composed of sub-vectors of [a1, a2, a3, a4] * [a1, a2, -a3, -a4]
+     * where a1^2 + a2^2 = 1 and a3^2 + a4^2 = 1 such that the sum is approximately 0 every
+     * 4 products. This is a test that is failed by various implementations that accumulate the
+     * round-off sum in single or 2-fold precision.
+     */
+    @Test
+    public void testSumZero() {
+        // Fixed seed for stability
+        final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_128_PP, 876543L);
+        final int size = 10;
+        // Create random doublets of pairs of numbers that sum to 1 or -1.
+        for (int length = 4; length <= 12; length += 4) {
+            final double[] a = new double[length];
+            final double[] b = new double[length];
+            for (int i = 0; i < size; i++) {
+                // Flip-flop above and below zero
+                double sign = 1;
+                for (int k = 0; k < length; k += 4) {
+                    // Create 2 complex cis numbers
+                    final double theta1 = rng.nextDouble() * Math.PI / 2;
+                    final double theta2 = rng.nextDouble() * Math.PI / 2;
+                    a[k + 0] = b[k + 0] = Math.cos(theta1);
+                    a[k + 1] = b[k + 1] = Math.sin(theta1);
+                    a[k + 2] = b[k + 2] = Math.cos(theta2);
+                    a[k + 3] = b[k + 3] = Math.sin(theta2);
+                    a[k + 0] *= sign;
+                    a[k + 1] *= sign;
+                    a[k + 2] *= sign;
+                    a[k + 3] *= sign;
+                    // Invert second pair.
+                    // The sum of the pairs should be zero +/- floating point error.
+                    a[k + 2] = -a[k + 2];
+                    a[k + 3] = -a[k + 3];
+                    sign = -sign;
+                }
+                assertValue(LinearCombinations.DotK.DOT_3.value(a, b), a, b);
+            }
+        }
+    }
+
+    /**
+     * Compute the sum of the product of factors in arbitrary precision and compare it to the
+     * given value.
+     *
+     * @param value the value
+     * @param a factors
+     * @param b factors
+     */
+    private static void assertValue(double value, double[] a, double[] b) {
+        final double expected = computeValue(a, b);
+        Assertions.assertEquals(expected, value, Math.ulp(expected),
+            () -> "Difference in Ulps = " + ulps(expected, value));
+    }
+
+    /**
+     * Compute the sum of the product of pairs of input data using BigDecimal.
+     * The BigDecimal is not allowed to underflow Double.MIN_VALUE.
+     *
+     * @param data the data
+     * @return the sum of products
+     */
+    private static double computeValue(double[] a, double[] b) {
+        BigDecimal sum = new BigDecimal(a[0]).multiply(new BigDecimal(b[0]));
+        for (int i = 1; i < a.length; i++) {
+            sum = clip(sum.add(clip(new BigDecimal(a[i]).multiply(new BigDecimal(b[i])))));
+        }
+        return sum.doubleValue();
+    }
+
+    /**
+     * Compute the units of least precision (ulps) between the two numbers.
+     *
+     * @param a first number
+     * @param b second number
+     * @return the ulps
+     */
+    private static long ulps(double a, double b) {
+        long x = Double.doubleToLongBits(a);
+        long y = Double.doubleToLongBits(b);
+        if (x != y) {
+            if ((x ^ y) < 0L) {
+                // Opposite signs. Measure the combined distance to zero.
+                if (x < 0) {
+                    final long tmp = x;
+                    x = y;
+                    y = tmp;
+                }
+                return (x - Double.doubleToLongBits(0.0)) + (y - Double.doubleToLongBits(-0.0)) + 1;
+            }
+            return Math.abs(x - y);
+        }
+        return 0;
+    }
+
+    /**
+     * Clip the value to the minimum value that can be stored by a double.
+     * Ideally this should round BigDecimal to values occupied by sub-normal numbers.
+     * That is non-trivial so this just removes excess precision in the significand and
+     * clips it to Double.MIN_VALUE or zero if the value is very small. The ultimate use for
+     * the BigDecimal is rounded to the closest double so this method is adequate. It would
+     * take many summations of extended precision sub-normal numbers to create more
+     * than a few ULP difference to the final double value
+     *
+     * <p>In data output by the various tests the values have never been known to require
+     * clipping so this is just a safety threshold.
+     *
+     * @param a the value
+     * @return the clipped value
+     */
+    private static BigDecimal clip(BigDecimal a) {
+        // Min value is approx 4.9e-324. Anything with fewer decimal digits to the right of the
+        // decimal point is OK.
+        if (a.scale() < 324) {
+            return a;
+        }
+        // Reduce the scale
+        final BigDecimal b = a.setScale(MIN.scale(), RoundingMode.HALF_UP);
+        // Clip to min value
+        final BigDecimal bb = b.abs();
+        if (bb.compareTo(MIN) < 0) {
+            // Note the number may be closer to MIN than zero so do rounding
+            if (MIN.subtract(bb).compareTo(bb) < 0) {
+                // Closer to MIN
+                return a.signum() == -1 ? MIN.negate() : MIN;
+            }
+            // Closer to zero
+            return BigDecimal.ZERO;
+        }
+        // Anything above min is allowed.
+        return b;
+    }
+
+    /**
+     * Test the clip method does what it specifies.
+     */
+    @Test
+    public void testClip() {
+        // min value is not affected
+        Assertions.assertEquals(Double.MIN_VALUE, clip(MIN).doubleValue());
+        Assertions.assertEquals(-Double.MIN_VALUE, clip(MIN.negate()).doubleValue());
+        // Round-up to min
+        Assertions.assertEquals(Double.MIN_VALUE, clip(MIN.divide(new BigDecimal(2))).doubleValue());
+        Assertions.assertEquals(-Double.MIN_VALUE, clip(MIN.negate().divide(new BigDecimal(2))).doubleValue());
+        // Round down to zero
+        Assertions.assertEquals(0, clip(MIN.divide(new BigDecimal(2.1), MathContext.DECIMAL64)).doubleValue());
+        Assertions.assertEquals(0, clip(MIN.negate().divide(new BigDecimal(2.1), MathContext.DECIMAL64)).doubleValue());
+        // It does not matter if BigDecimal is more precise than a sub-normal number
+        // when the output is ultimately rounded to a double.
+        Assertions.assertEquals(Double.MIN_VALUE, clip(MIN.multiply(new BigDecimal(1.1))).doubleValue());
+        Assertions.assertEquals(Double.MIN_VALUE, clip(MIN.multiply(new BigDecimal(1.5))).doubleValue());
+        Assertions.assertEquals(Double.MIN_VALUE * 2, clip(MIN.multiply(new BigDecimal(1.6))).doubleValue());
+    }
+
+    @Test
+    public void testSplitAssumptions() {
+        final double scale = (1 << 27) + 1;
+        final double limit = 0x1.0p995;
+        Assertions.assertTrue(Double.isFinite(limit * scale));
+        Assertions.assertTrue(Double.isFinite(-limit * scale));
     }
 }
