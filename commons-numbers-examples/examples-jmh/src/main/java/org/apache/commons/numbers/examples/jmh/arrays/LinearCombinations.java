@@ -606,7 +606,7 @@ public final class LinearCombinations {
                 // f1 into e
                 q = e1 + f1;
                 e1 = DoublePrecision.twoSumLow(e1, f1, q);
-                double e3 = e2 + q;
+                final double e3 = e2 + q;
                 e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
                 // Add the round-off parts if non-zero.
@@ -665,8 +665,8 @@ public final class LinearCombinations {
             s = e1;
 
             // Second product creates expansion f[0-1]
-            double f1 = a2 * b2;
-            double f0 = DoublePrecision.productLow(a2, b2, f1);
+            final double f1 = a2 * b2;
+            final double f0 = DoublePrecision.productLow(a2, b2, f1);
             s += f1;
             // Expansion sum f into e to create e[0-3]
             // f0 into e
@@ -677,7 +677,7 @@ public final class LinearCombinations {
             // f1 into e
             q = e1 + f1;
             e1 = DoublePrecision.twoSumLow(e1, f1, q);
-            double e3 = e2 + q;
+            final double e3 = e2 + q;
             e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
             // Final summation
@@ -735,7 +735,7 @@ public final class LinearCombinations {
             e2 = DoublePrecision.twoSumLow(e2, q, p);
             q = e3 + p;
             e3 = DoublePrecision.twoSumLow(e3, p, q);
-            double e5 = e4 + q;
+            final double e5 = e4 + q;
             e4 = DoublePrecision.twoSumLow(e4, q, e5);
 
             // Final summation
@@ -777,8 +777,8 @@ public final class LinearCombinations {
             s += f1;
 
             // Second product creates expansion g[0-1]
-            double g1 = a4 * b4;
-            double g0 = DoublePrecision.productLow(a4, b4, g1);
+            final double g1 = a4 * b4;
+            final double g0 = DoublePrecision.productLow(a4, b4, g1);
             s += g1;
             // Expansion sum g into f to create f[0-3]
             // g0 into f
@@ -789,7 +789,7 @@ public final class LinearCombinations {
             // g1 into f
             q = f1 + g1;
             f1 = DoublePrecision.twoSumLow(f1, g1, q);
-            double f3 = f2 + q;
+            final double f3 = f2 + q;
             f2 = DoublePrecision.twoSumLow(f2, q, f3);
 
             // Expansion sum f into e.
@@ -830,7 +830,7 @@ public final class LinearCombinations {
             e4 = DoublePrecision.twoSumLow(e4, q, p);
             q = e5 + p;
             e5 = DoublePrecision.twoSumLow(e5, p, q);
-            double e7 = e6 + q;
+            final double e7 = e6 + q;
             e6 = DoublePrecision.twoSumLow(e6, q, e7);
 
             // Final summation
@@ -866,7 +866,7 @@ public final class LinearCombinations {
             // f1 into e
             q = e1 + f1;
             e1 = DoublePrecision.twoSumLow(e1, f1, q);
-            double e3 = e2 + q;
+            final double e3 = e2 + q;
             e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
             // Store but remove interspersed zeros
