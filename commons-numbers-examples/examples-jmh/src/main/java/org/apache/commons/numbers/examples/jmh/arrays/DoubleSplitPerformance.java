@@ -243,27 +243,61 @@ public class DoubleSplitPerformance {
 
     /**
      * Baseline using a no-operation on the factors.
+     *
+     * @param factors Factors.
+     * @param bh Data sink.
      */
     @Benchmark
     public void baseline(Factors factors, Blackhole bh) {
         apply(factors, bh, a -> a);
     }
 
+    /**
+     * Dekker's split with overflow protection for large magnitudes; uses two signed comparisons
+     * for the magnitude check.
+     *
+     * @param factors Factors.
+     * @param bh Data sink.
+     */
     @Benchmark
     public void dekker(Factors factors, Blackhole bh) {
         apply(factors, bh, DoubleSplitPerformance::splitDekker);
     }
 
+    /**
+     * Dekker's split with overflow protection for large magnitudes; uses a single unsigned
+     * comparison (with an absolute value) for the magnitude check.
+     *
+     * @param factors Factors.
+     * @param bh Data sink.
+     */
     @Benchmark
     public void dekkerAbs(Factors factors, Blackhole bh) {
         apply(factors, bh, DoubleSplitPerformance::splitDekkerAbs);
     }
 
+    /**
+     * Dekker's split without overflow protection.
+     *
+     * @param factors Factors.
+     * @param bh Data sink.
+     */
     @Benchmark
     public void dekkerRaw(Factors factors, Blackhole bh) {
         apply(factors, bh, DoubleSplitPerformance::splitDekkerRaw);
     }
 
+    /**
+     * Split using the upper and lower raw bits from the double.
+     *
+     * <p>Note: This method will not work for very small sub-normal numbers
+     * ({@code <= 27} bits) as the high part will be zero and the low part will
+     * have all the information. Methods that assume {@code hi > lo} will have
+     * undefined behaviour.
+     *
+     * @param factors Factors.
+     * @param bh Data sink.
+     */
     @Benchmark
     public void rawbits(Factors factors, Blackhole bh) {
         apply(factors, bh, a -> Double.longBitsToDouble(Double.doubleToRawLongBits(a) & ZERO_LOWER_27_BITS));

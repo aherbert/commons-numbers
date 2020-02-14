@@ -283,7 +283,7 @@ public class LinearCombinationPerformance {
      * @param calc Scalar product calculator.
      */
     @Benchmark
-    public static void twoD(Factors factors, Blackhole bh, Calculator calc) {
+    public void twoD(Factors factors, Blackhole bh, Calculator calc) {
         final TwoD fun = calc.getTwoD();
         for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
@@ -300,7 +300,7 @@ public class LinearCombinationPerformance {
      * @param calc Scalar product calculator.
      */
     @Benchmark
-    public static void threeD(Factors factors, Blackhole bh, Calculator calc) {
+    public void threeD(Factors factors, Blackhole bh, Calculator calc) {
         final ThreeD fun = calc.getThreeD();
         for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
@@ -317,7 +317,7 @@ public class LinearCombinationPerformance {
      * @param calc Scalar product calculator.
      */
     @Benchmark
-    public static void fourD(Factors factors, Blackhole bh, Calculator calc) {
+    public void fourD(Factors factors, Blackhole bh, Calculator calc) {
         final FourD fun = calc.getFourD();
         for (int i = 0; i < factors.getSize(); i++) {
             final double[] a = factors.getA(i);
@@ -334,7 +334,7 @@ public class LinearCombinationPerformance {
      * @param calc Scalar product calculator.
      */
     @Benchmark
-    public static void nD(LengthFactors factors, Blackhole bh, Calculator calc) {
+    public void nD(LengthFactors factors, Blackhole bh, Calculator calc) {
         final ND fun = calc.getND();
         for (int i = 0; i < factors.getSize(); i++) {
             // These should be pre-computed to the correct length

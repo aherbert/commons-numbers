@@ -474,7 +474,7 @@ public final class LinearCombinations {
 
                 final double x = p + h;
                 // s_i = s_(i-1) + (q_i + r_i)
-                s += (DoublePrecision.twoSumLow(p, h, x) + r);
+                s += DoublePrecision.twoSumLow(p, h, x) + r;
                 p = x;
             }
 
@@ -492,7 +492,7 @@ public final class LinearCombinations {
             final double h = a2 * b2;
             final double r = DoublePrecision.productLow(a2, b2, h);
             final double pn = p + h;
-            s += (DoublePrecision.twoSumLow(p, h, pn) + r);
+            s += DoublePrecision.twoSumLow(p, h, pn) + r;
 
             // Final summation
             return getSum(pn, pn + s);
@@ -510,11 +510,11 @@ public final class LinearCombinations {
             double h = a2 * b2;
             double r = DoublePrecision.productLow(a2, b2, h);
             double q = p + h;
-            s += (r + DoublePrecision.twoSumLow(p, h, q));
+            s += r + DoublePrecision.twoSumLow(p, h, q);
             h = a3 * b3;
             r = DoublePrecision.productLow(a3, b3, h);
             final double pn = q + h;
-            s += (r + DoublePrecision.twoSumLow(q, h, pn));
+            s += r + DoublePrecision.twoSumLow(q, h, pn);
 
             // Final summation
             return getSum(pn, pn + s);
@@ -534,15 +534,15 @@ public final class LinearCombinations {
             double h = a2 * b2;
             double r = DoublePrecision.productLow(a2, b2, h);
             final double q = p + h;
-            s += (DoublePrecision.twoSumLow(p, h, q) + r);
+            s += DoublePrecision.twoSumLow(p, h, q) + r;
             h = a3 * b3;
             r = DoublePrecision.productLow(a3, b3, h);
             p = q + h;
-            s += (DoublePrecision.twoSumLow(q, h, p) + r);
+            s += DoublePrecision.twoSumLow(q, h, p) + r;
             h = a4 * b4;
             r = DoublePrecision.productLow(a4, b4, h);
             final double pn = p + h;
-            s += (DoublePrecision.twoSumLow(p, h, pn) + r);
+            s += DoublePrecision.twoSumLow(p, h, pn) + r;
 
             // Final summation
             return getSum(pn, pn + s);

@@ -32,5 +32,5 @@
   <suppress checks="IllegalCatch" files=".*[/\\]test[/\\].*" />
   <suppress checks="MethodName" files=".*[/\\]test[/\\].*" />
   <suppress checks="ConstantName" files=".*[/\\]test[/\\].*" />
-  <suppress checks="MethodLength" files=".*/LinearCombinationTest.java" />
+  <suppress checks="MethodLength" files=".*/LinearCombination.*Test.java" />
 </suppressions>
