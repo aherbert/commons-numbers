@@ -54,23 +54,26 @@ final class LinearCombinationUtils {
      * Generates ill conditioned dot products. The length of the vectors should be
      * {@code n>=6}.
      *
-     * <p>The condition number is defined as twice the sum of the absolute products
-     * divided by the absolute of the dot product:
+     * <p>The condition number is defined as the inverse of the cosine of the angle between
+     * the two vectors:
      *
      * <pre>
-     * d = x'*y = DotExact(x, y)
-     * C = 2*(abs(x’)*abs(y))/abs(d)
+     * C = 1 / cos angle(x, y)
+     *   = ||x'|| ||y|| / |x'*y|
      * </pre>
+     * <p>where |x'*y| is the absolute of the dot product and ||.|| is the 2-norm (i.e. the
+     * Euclidean length of each vector).
      *
-     * <p>A high condition number means that large values are added together to make
-     * a small value, i.e. large cancellation occurs. Computation of the actual dot
-     * product requires an exact method to avoid cancellation floating-point errors.
-     * This method uses BigDecimal to compute DotExact(x, y). The dot product result
-     * d is created in the range [-1, 1]. The actual condition number can be
-     * obtained by passing an array {@code computeC}. This is computed in standard
-     * precision thus if finite then the dot product of the factors does not
-     * overflow. The routine has been tested with anticipated condition numbers up
-     * to 1e300.
+     * <p>A high condition number means that small perturbations in the values result in
+     * a large change in the final result. This occurs when the cosine of the angle approaches
+     * 0 and the vectors are close to orthogonal.
+     * 
+     * <p>Computation of the actual dot product requires an exact method to avoid cancellation
+     * floating-point errors. BigDecimal is used to compute the exact result to the accuracy
+     * defined by the {@link MathContext}. The dot product result is created in the range [-1, 1].
+     * The actual condition number can be obtained by passing an array {@code computeC}. The
+     * routine has been tested with anticipated condition numbers up to 1e300 to generate data
+     * where the standard precision dot product will not overflow.
      *
      * <p>Uses the GenDot algorithm 6.1 from <a
      * href="http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.2.1547">
@@ -90,6 +93,8 @@ final class LinearCombinationUtils {
      * @param context the context to use for rounding the exact sum
      * @return the exact dot product
      * @throws IllegalArgumentException If the vector length is below 6
+     * @see <a href="https://en.wikipedia.org/wiki/Condition_number">Condition number</a>
+     * @see <a href="https://en.wikipedia.org/wiki/Dot_product">Dot product</a>
      */
     static double genDot(double c, UniformRandomProvider rng,
             double[] x, double[] y, double[] computeC, MathContext context) {
@@ -137,7 +142,8 @@ final class LinearCombinationUtils {
             // y(i) according to (*).
             // sum(i) = xi * yi + sum(i-1)
             // yi = (sum(i) - sum(i-1)) / xi
-            // Here the new sum(i) is a random number with the
+            // Here the new sum(i) is a random number with the exponent gradually
+            // reducing to e[end] = 0 so the final result is in [-1, 1].
             y[i] = (Math.scalb(m1p1(rng), e[i - n2]) - exact.doubleValue()) / x[i];
             // Maintain the exact dot product
             exact = exact.add(new BigDecimal(x[i]).multiply(new BigDecimal(y[i])), context);
@@ -150,16 +156,30 @@ final class LinearCombinationUtils {
             swap(y, i - 1, j);
         }
 
+        // Ogita el at.
         // Compute condition number:
         // d = DotExact(x’,y);             % the true dot product rounded to nearest
         // C = 2*(abs(x’)*abs(y))/abs(d);  % the actual condition number
+
+        // Compare to this:
+        // https://math.stackexchange.com/questions/3147927/condition-number-of-dot-product-of-vectors
+        // Compute the inverse of the cosine between the two vectors.
+        // ||y^t|| ||x|| / | y^t x |
+        // This value is similar to that computed by Ogita et al which effectively
+        // is using the magnitude of the largest component to approximate the vector
+        // length. This works as the vectors are created with matched magnitudes in their
+        // components. Here we compute the actual vector lengths ||y^t|| and ||x||.
         final double d = exact.doubleValue();
         if (computeC != null) {
-            double cc = 0;
+            // Sum should not overflow as elements are bounded to an exponent half the size
+            // of the input condition number.
+            double s1 = 0;
+            double s2 = 0;
             for (int i = 0; i < n; i++) {
-                cc += Math.abs(x[i] * y[i]);
+                s1 += x[i] * x[i];
+                s2 += y[i] * y[i];
             }
-            computeC[0] = 2 * cc / Math.abs(d);
+            computeC[0] = Math.sqrt(s1) * Math.sqrt(s2) / Math.abs(d);
         }
         return d;
     }

@@ -162,7 +162,7 @@ public class LinearCombinationAccuracyTest {
         // Write to file in the Maven build directory
         try (BufferedWriter out = Files.newBufferedWriter(Paths.get("target/dot.csv"))) {
             // This assumes the order of tested implementations
-            out.append("Condition no,Dekker,Dot2,Dot3,Dot4,Dot5,Dot6,Dot7,ExtendedPrecision,Exact");
+            out.append("Condition no,Dekker,Dot2s,Dot3,Dot4,Dot5,Dot6,Dot7,ExtendedPrecision,Exact");
             out.newLine();
             StringBuilder sb = new StringBuilder(200);
             try (Formatter formatter = new Formatter(sb)) {
