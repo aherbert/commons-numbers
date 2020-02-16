@@ -41,6 +41,7 @@ public class DoublePrecisionTest {
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPart(Double.POSITIVE_INFINITY));
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPart(Double.NEGATIVE_INFINITY));
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPart(Double.NaN));
+        // Any finite number should be split to a finite number
         Assertions.assertTrue(Double.isFinite(DoublePrecision.highPart(Double.MAX_VALUE)));
         Assertions.assertTrue(Double.isFinite(DoublePrecision.highPart(-Double.MAX_VALUE)));
     }
@@ -50,6 +51,7 @@ public class DoublePrecisionTest {
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.POSITIVE_INFINITY));
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.NEGATIVE_INFINITY));
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.NaN));
+        // Large finite numbers will overflow during the split
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(Double.MAX_VALUE));
         Assertions.assertEquals(Double.NaN, DoublePrecision.highPartUnscaled(-Double.MAX_VALUE));
     }
