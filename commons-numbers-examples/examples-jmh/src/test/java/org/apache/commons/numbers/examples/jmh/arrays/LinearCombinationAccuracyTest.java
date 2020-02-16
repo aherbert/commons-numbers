@@ -33,6 +33,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Formatter;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -47,8 +48,13 @@ public class LinearCombinationAccuracyTest {
      */
     private static final int LENGTH = 100;
 
+    /** The number of samples to test the dot product. */
+    private static final int SAMPLES = 10;
+
     /**
-     * Provide instances of the LinearCombination interface as arguments.
+     * Provide instances of the LinearCombination interface as arguments
+     * along with the condition numbers where instance will pass and fail.
+     * A pass is a mean relative error to the true dot product of {@code < 1e-3}.
      *
      * @return the stream
      */
@@ -77,7 +83,6 @@ public class LinearCombinationAccuracyTest {
     @ParameterizedTest
     @MethodSource("provideLinearCombination")
     public void testDotProduct(ND fun, double passC, double failC) {
-        int samples = 10;
         final double[] x = new double[LENGTH];
         final double[] y = new double[LENGTH];
         // Fixed seed to consistency
@@ -87,23 +92,23 @@ public class LinearCombinationAccuracyTest {
         // may not be the requested condition number. It will average out at the desired
         // level and the pass/fail condition bounds should be suitably broad.
         double sum = 0;
-        for (int i = 0; i < samples; i++) {
+        for (int i = 0; i < SAMPLES; i++) {
             final double expected = LinearCombinationUtils.genDot(passC, rng, x, y, null);
-            double observed = fun.value(x, y);
+            final double observed = fun.value(x, y);
             sum += relativeError(expected, observed);
         }
-        final double error = sum / samples;
+        final double error = sum / SAMPLES;
         Assertions.assertTrue(error < 1e-3, () -> "Expected to pass at C=" + passC + ". Error = " + error);
         if (failC < 0) {
             return;
         }
         sum = 0;
-        for (int i = 0; i < samples; i++) {
+        for (int i = 0; i < SAMPLES; i++) {
             final double expected = LinearCombinationUtils.genDot(failC, rng, x, y, null);
-            double observed = fun.value(x, y);
+            final double observed = fun.value(x, y);
             sum += relativeError(expected, observed);
         }
-        final double error2 = sum / samples;
+        final double error2 = sum / SAMPLES;
         Assertions.assertFalse(error2 < 1e-3, () -> "Expected to fail at C=" + failC + ". Error = " + error2);
     }
 
@@ -111,7 +116,8 @@ public class LinearCombinationAccuracyTest {
      * Report the relative error of various implementations. This is not a test.
      * The method generates dot products with a random condition number over a suitable range.
      * The relative error of various dot product implementations are saved to a result file.
-     * The file can be used to set the assertion pass/fail levels for the other tests.
+     * The file can be used to set the assertion pass/fail levels for
+     * {@link #testDotProduct(ND, double, double)}.
      *
      * @throws IOException Signals that an I/O exception has occurred.
      */
@@ -123,10 +129,10 @@ public class LinearCombinationAccuracyTest {
         // Here the condition number is in 1e10 to 1e120 as low condition numbers are
         // computed by all methods with relative error below 1e-16. This uses the shorter
         // length for speed.
-        int samples = 2000;
+        final int samples = 2000;
         // Sample from the log-uniform distribution:
-        double logA = Math.log(1e10);
-        double logB = Math.log(1e120);
+        final double logA = Math.log(1e10);
+        final double logB = Math.log(1e120);
 
         final ArrayList<double[]> data = new ArrayList<>(samples);
         final UniformRandomProvider rng = RandomSource.create(RandomSource.XO_RO_SHI_RO_1024_PP);
@@ -134,25 +140,33 @@ public class LinearCombinationAccuracyTest {
         final double[] y = new double[LENGTH];
         final double[] cc = new double[1];
 
+        // Instances to test and their names (for the report file)
+        final ArrayList<ND> methods = new ArrayList<>();
+        final ArrayList<String> names = new ArrayList<>();
+        addMethod(methods, names, LinearCombinations.Dekker.INSTANCE, "dekker");
+        addMethod(methods, names, LinearCombinations.Dot2s.INSTANCE, "dot2s");
+        addMethod(methods, names, LinearCombinations.DotK.DOT_3, "dot3");
+        addMethod(methods, names, LinearCombinations.DotK.DOT_4, "dot4");
+        addMethod(methods, names, LinearCombinations.DotK.DOT_5, "dot5");
+        addMethod(methods, names, LinearCombinations.DotK.DOT_6, "dot6");
+        addMethod(methods, names, LinearCombinations.DotK.DOT_7, "dot7");
+        addMethod(methods, names, LinearCombinations.ExtendedPrecision.INSTANCE, "extended");
+        addMethod(methods, names, LinearCombinations.Exact.INSTANCE, "exact");
+
         for (int i = 0; i < samples; i++) {
             // Random condition number.
             // This should be approximately uniform over the logarithm of the range.
             final double u = rng.nextDouble();
             final double c = Math.exp(u * logB + (1 - u) * logA);
             final double dot = LinearCombinationUtils.genDot(c, rng, x, y, cc);
-            // Compute with different implementations.
+            // Compute with different methods.
+            // Store the condition number of the data first.
+            final double[] e = new double[methods.size() + 1];
             int j = 0;
-            final double[] e = new double[10];
             e[j++] = cc[0];
-            e[j++] = compute(x, y, dot, LinearCombinations.Dekker.INSTANCE);
-            e[j++] = compute(x, y, dot, LinearCombinations.Dot2s.INSTANCE);
-            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_3);
-            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_4);
-            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_5);
-            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_6);
-            e[j++] = compute(x, y, dot, LinearCombinations.DotK.DOT_7);
-            e[j++] = compute(x, y, dot, LinearCombinations.ExtendedPrecision.INSTANCE);
-            e[j++] = compute(x, y, dot, LinearCombinations.Exact.INSTANCE);
+            for (final ND method : methods) {
+                e[j++] = compute(x, y, dot, method);
+            }
             data.add(e);
         }
 
@@ -161,12 +175,11 @@ public class LinearCombinationAccuracyTest {
 
         // Write to file in the Maven build directory
         try (BufferedWriter out = Files.newBufferedWriter(Paths.get("target/dot.csv"))) {
-            // This assumes the order of tested implementations
-            out.append("Condition no,Dekker,Dot2s,Dot3,Dot4,Dot5,Dot6,Dot7,ExtendedPrecision,Exact");
+            out.append("Condition no," + names.stream().collect(Collectors.joining(",")));
             out.newLine();
-            StringBuilder sb = new StringBuilder(200);
+            final StringBuilder sb = new StringBuilder(200);
             try (Formatter formatter = new Formatter(sb)) {
-                for (double[] e : data) {
+                for (final double[] e : data) {
                     sb.setLength(0);
                     formatter.format("%.3g", e[0]);
                     for (int i = 1; i < e.length; i++) {
@@ -177,6 +190,20 @@ public class LinearCombinationAccuracyTest {
                 }
             }
         }
+    }
+
+    /**
+     * Adds the method to the lists
+     *
+     * @param methods List of methods.
+     * @param names List of method names.
+     * @param method Method implementation.
+     * @param name Method name.
+     */
+    private static void addMethod(ArrayList<ND> methods, ArrayList<String> names,
+                                  ND method, String name) {
+        methods.add(method);
+        names.add(name);
     }
 
     /**
