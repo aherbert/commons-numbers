@@ -517,11 +517,11 @@ public final class LinearCombinations {
                             double a3, double b3) {
             // Sum round-off parts in s: s_i = s_(i-1) + (q_i + r_i)
             // The standard precision scalar product is stored in p_n.
-            double p = a1 * b1;
+            final double p = a1 * b1;
             double s = DoublePrecision.productLow(a1, b1, p);
             double h = a2 * b2;
             double r = DoublePrecision.productLow(a2, b2, h);
-            double q = p + h;
+            final double q = p + h;
             s += r + DoublePrecision.twoSumLow(p, h, q);
             h = a3 * b3;
             r = DoublePrecision.productLow(a3, b3, h);
