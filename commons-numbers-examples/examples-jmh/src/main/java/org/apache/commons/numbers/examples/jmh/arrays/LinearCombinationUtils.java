@@ -67,7 +67,7 @@ final class LinearCombinationUtils {
      * <p>A high condition number means that small perturbations in the values result in
      * a large change in the final result. This occurs when the cosine of the angle approaches
      * 0 and the vectors are close to orthogonal.
-     * 
+     *
      * <p>Computation of the actual dot product requires an exact method to avoid cancellation
      * floating-point errors. BigDecimal is used to compute the exact result to the accuracy
      * defined by the {@link MathContext}. The dot product result is created in the range [-1, 1].
