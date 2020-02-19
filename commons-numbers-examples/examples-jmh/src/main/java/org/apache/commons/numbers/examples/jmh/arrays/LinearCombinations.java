@@ -17,6 +17,7 @@
 package org.apache.commons.numbers.examples.jmh.arrays;
 
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.FourD;
+import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ND;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.ThreeD;
 import org.apache.commons.numbers.examples.jmh.arrays.LinearCombination.TwoD;
 
@@ -85,6 +86,43 @@ public final class LinearCombinations {
                 result += a[i] * b[i];
             }
             return result;
+        }
+    }
+
+    /**
+     * Computes linear combinations using standard precision multiplication and summation.
+     *
+     * <p>This class is used for a baseline and does not provide high precision results.
+     */
+    static final class StandardPrecision implements TwoD, ThreeD, FourD, ND {
+        /** An instance. */
+        static final StandardPrecision INSTANCE = new StandardPrecision();
+
+        /** Private constructor. */
+        private StandardPrecision() {}
+
+        @Override
+        public double value(double[] a, double[] b) {
+            double sum = 0;
+            for (int i = 0; i < a.length; i++) {
+                sum += a[i] * b[i];
+            }
+            return sum;
+        }
+
+        @Override
+        public double value(double a1, double b1, double a2, double b2) {
+            return a1 * b1 + a2 * b2;
+        }
+
+        @Override
+        public double value(double a1, double b1, double a2, double b2, double a3, double b3) {
+            return a1 * b1 + a2 * b2 + a3 * b3;
+        }
+
+        @Override
+        public double value(double a1, double b1, double a2, double b2, double a3, double b3, double a4, double b4) {
+            return a1 * b1 + a2 * b2 + a3 * b3 + a4 * b4;
         }
     }
 

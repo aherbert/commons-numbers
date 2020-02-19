@@ -131,7 +131,7 @@ public class LinearCombinationAccuracyTest {
         // length for speed.
         final int samples = 2000;
         // Sample from the log-uniform distribution:
-        final double logA = Math.log(1e10);
+        final double logA = Math.log(1);
         final double logB = Math.log(1e120);
 
         final ArrayList<double[]> data = new ArrayList<>(samples);
@@ -143,6 +143,7 @@ public class LinearCombinationAccuracyTest {
         // Instances to test and their names (for the report file)
         final ArrayList<ND> methods = new ArrayList<>();
         final ArrayList<String> names = new ArrayList<>();
+        addMethod(methods, names, LinearCombinations.StandardPrecision.INSTANCE, "standard");
         addMethod(methods, names, LinearCombinations.Dekker.INSTANCE, "dekker");
         addMethod(methods, names, LinearCombinations.Dot2s.INSTANCE, "dot2s");
         addMethod(methods, names, LinearCombinations.DotK.DOT_3, "dot3");

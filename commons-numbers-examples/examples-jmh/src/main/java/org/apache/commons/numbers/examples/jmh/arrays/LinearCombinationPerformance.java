@@ -223,20 +223,6 @@ public class LinearCombinationPerformance {
          */
         @Setup
         public void setup() {
-            if ("standard".endsWith(name)) {
-                // Standard precision dot product
-                twod = (a1, b1, a2, b2) -> a1 * b1 + a2 * b2;
-                threed = (a1, b1, a2, b2, a3, b3) -> a1 * b1 + a2 * b2 + a3 * b3;
-                fourd = (a1, b1, a2, b2, a3, b3, a4, b4) -> a1 * b1 + a2 * b2 + a3 * b3 + a4 * b4;
-                nd = (a, b) -> {
-                    double sum = 0;
-                    for (int i = 0; i < a.length; i++) {
-                        sum += a[i] * b[i];
-                    }
-                    return sum;
-                };
-                return;
-            }
             if ("current".endsWith(name)) {
                 twod = LinearCombination::value;
                 threed = LinearCombination::value;
@@ -245,7 +231,9 @@ public class LinearCombinationPerformance {
                 return;
             }
             // All implementations below are expected to implement all the interfaces.
-            if ("dekker".equals(name)) {
+            if ("standard".endsWith(name)) {
+                nd = LinearCombinations.StandardPrecision.INSTANCE;
+            } else if ("dekker".equals(name)) {
                 nd = LinearCombinations.Dekker.INSTANCE;
             } else if ("dot2s".equals(name)) {
                 nd = LinearCombinations.Dot2s.INSTANCE;

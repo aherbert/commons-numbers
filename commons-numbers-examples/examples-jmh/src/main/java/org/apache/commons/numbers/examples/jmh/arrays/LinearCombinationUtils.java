@@ -30,6 +30,7 @@ final class LinearCombinationUtils {
 
     /** No construction. */
     private LinearCombinationUtils() {}
+
     /**
      * Generates ill conditioned dot products.
      * See {@link #genDot(double, UniformRandomProvider, double[], double[], double[], MathContext)}.
