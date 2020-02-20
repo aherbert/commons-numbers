@@ -56,8 +56,10 @@ public class LinearCombinationsTest {
             Arguments.of(LinearCombinations.DotK.DOT_5),
             Arguments.of(LinearCombinations.DotK.DOT_6),
             Arguments.of(LinearCombinations.DotK.DOT_7),
-            Arguments.of(LinearCombinations.Exact.INSTANCE),
-            Arguments.of(LinearCombinations.ExtendedPrecision.INSTANCE)
+            Arguments.of(LinearCombinations.ExtendedPrecision.INSTANCE),
+            Arguments.of(LinearCombinations.ExtendedPrecision.DOUBLE),
+            Arguments.of(LinearCombinations.ExtendedPrecision.EXACT),
+            Arguments.of(LinearCombinations.Exact.INSTANCE)
         );
     }
 
@@ -161,14 +163,14 @@ public class LinearCombinationsTest {
         double sArray;
         final double scale = 1e17;
         for (int i = 0; i < 1000; ++i) {
-            final double u1 = scale * rng.nextDouble();
-            final double u2 = scale * rng.nextDouble();
-            final double u3 = scale * rng.nextDouble();
-            final double u4 = scale * rng.nextDouble();
-            final double v1 = scale * rng.nextDouble();
-            final double v2 = scale * rng.nextDouble();
-            final double v3 = scale * rng.nextDouble();
-            final double v4 = scale * rng.nextDouble();
+            final double u1 = scale * (rng.nextDouble() - rng.nextInt(1));
+            final double u2 = scale * (rng.nextDouble() - rng.nextInt(1));
+            final double u3 = scale * (rng.nextDouble() - rng.nextInt(1));
+            final double u4 = scale * (rng.nextDouble() - rng.nextInt(1));
+            final double v1 = scale * (rng.nextDouble() - rng.nextInt(1));
+            final double v2 = scale * (rng.nextDouble() - rng.nextInt(1));
+            final double v3 = scale * (rng.nextDouble() - rng.nextInt(1));
+            final double v4 = scale * (rng.nextDouble() - rng.nextInt(1));
 
             // One sum.
             sInline = fun2.value(u1, v1, u2, v2);

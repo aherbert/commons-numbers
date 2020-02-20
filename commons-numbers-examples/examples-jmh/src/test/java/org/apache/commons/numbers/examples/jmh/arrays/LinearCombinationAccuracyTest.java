@@ -68,6 +68,8 @@ public class LinearCombinationAccuracyTest {
             Arguments.of(LinearCombinations.DotK.DOT_6, 1e80, 1e100),
             Arguments.of(LinearCombinations.DotK.DOT_7, 1e95, 1e115),
             Arguments.of(LinearCombinations.ExtendedPrecision.INSTANCE, 1e300, -1),
+            Arguments.of(LinearCombinations.ExtendedPrecision.DOUBLE, 1e300, -1),
+            Arguments.of(LinearCombinations.ExtendedPrecision.EXACT, 1e300, -1),
             Arguments.of(LinearCombinations.Exact.INSTANCE, 1e300, -1)
         );
     }
@@ -152,6 +154,8 @@ public class LinearCombinationAccuracyTest {
         addMethod(methods, names, LinearCombinations.DotK.DOT_6, "dot6");
         addMethod(methods, names, LinearCombinations.DotK.DOT_7, "dot7");
         addMethod(methods, names, LinearCombinations.ExtendedPrecision.INSTANCE, "extended");
+        addMethod(methods, names, LinearCombinations.ExtendedPrecision.DOUBLE, "extended2");
+        addMethod(methods, names, LinearCombinations.ExtendedPrecision.EXACT, "extended_exact");
         addMethod(methods, names, LinearCombinations.Exact.INSTANCE, "exact");
 
         for (int i = 0; i < samples; i++) {

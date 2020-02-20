@@ -178,7 +178,7 @@ public class LinearCombinationPerformance {
                 "dot2s",
                 "dot2", "dot3", "dot4", "dot5", "dot6", "dot7",
                 "exact",
-                "extended"})
+                "extended", "extended2", "extended_exact"})
         private String name;
 
         /** The 2D implementation. */
@@ -253,6 +253,10 @@ public class LinearCombinationPerformance {
                 nd = LinearCombinations.Exact.INSTANCE;
             } else if ("extended".equals(name)) {
                 nd = LinearCombinations.ExtendedPrecision.INSTANCE;
+            } else if ("extended2".equals(name)) {
+                nd = LinearCombinations.ExtendedPrecision.DOUBLE;
+            } else if ("extended_exact".equals(name)) {
+                nd = LinearCombinations.ExtendedPrecision.EXACT;
             } else {
                 throw new IllegalStateException("Unknown implementation: " + name);
             }

@@ -692,12 +692,6 @@ public final class LinearCombinations {
         }
     }
 
-    // TODO
-    // Add Junit test for this class
-    // Add to performance test replacing the current versions
-    // Check with the plot of relative error vs condition number.
-    // Delete all the current versions that are replaced here.
-
     /**
      * Computes linear combinations accurately using extended precision representations of
      * floating point numbers.
@@ -727,11 +721,632 @@ public final class LinearCombinations {
          * will require a large size and the sum is computationally more expensive.
          */
 
-        /** An instance. */
-        public static final ExtendedPrecision INSTANCE = new ExtendedPrecision();
+        /**
+         * An instance computing the final summation of the extended precision value
+         * using standard precision. The sum will be within 1 ULP of the exact result.
+         */
+        public static final ExtendedPrecision INSTANCE = new ExtendedPrecision(new ApproximationSum());
 
-        /** Private constructor. */
-        private ExtendedPrecision() {}
+        /**
+         * An instance computing the final summation of the extended precision value
+         * using two-fold precision. The sum will be within 1 ULP of the exact result.
+         */
+        public static final ExtendedPrecision DOUBLE = new ExtendedPrecision(new TwoSum());
+
+        /**
+         * An instance computing the final summation of the extended precision value exactly.
+         */
+        public static final ExtendedPrecision EXACT = new ExtendedPrecision(new ExactSum());
+
+        /**
+         * Define methods to sum an expansion.
+         */
+        private interface ExpansionSum {
+            /**
+             * Sum the expansion of size m. It can be assumed that the size is non-zero.
+             *
+             * @param e Expansion.
+             * @param m Size.
+             * @return the sum
+             */
+            double sum(double[] e, int m);
+
+            /**
+             * Sum the expansion; low parts have smaller magnitudes.
+             *
+             * @param e0 Part 0.
+             * @param e1 Part 1.
+             * @param e2 Part 2.
+             * @param e3 Part 3.
+             * @return the sum
+             */
+            double sum(double e0, double e1, double e2, double e3);
+
+            /**
+             * Sum the expansion; low parts have smaller magnitudes.
+             *
+             * @param e0 Part 0.
+             * @param e1 Part 1.
+             * @param e2 Part 2.
+             * @param e3 Part 3.
+             * @param e4 Part 4.
+             * @param e5 Part 5.
+             * @return the sum
+             */
+            double sum(double e0, double e1, double e2, double e3, double e4, double e5);
+
+            /**
+             * Sum the expansion; low parts have smaller magnitudes.
+             *
+             * @param e0 Part 0.
+             * @param e1 Part 1.
+             * @param e2 Part 2.
+             * @param e3 Part 3.
+             * @param e4 Part 4.
+             * @param e5 Part 5.
+             * @param e6 Part 6.
+             * @param e7 Part 7.
+             * @return the sum
+             */
+            double sum(double e0, double e1, double e2, double e3, double e4, double e5, double e6, double e7);
+        }
+
+        /**
+         * Shewchuk's APPROXIMATION algorithm sums the parts in order of increasing magnitude.
+         * The sum is within 1 ulp of the true expansion value.
+         */
+        private static class ApproximationSum implements ExpansionSum {
+            @Override
+            public double sum(double[] e, int m) {
+                double sum = 0;
+                for (int i = 0; i < m; i++) {
+                    sum += e[i];
+                }
+                return sum;
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3) {
+                return e0 + e1 + e2 + e3;
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3, double e4, double e5) {
+                return e0 + e1 + e2 + e3 + e4 + e5;
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3, double e4, double e5, double e6, double e7) {
+                return e0 + e1 + e2 + e3 + e4 + e5 + e6 + e7;
+            }
+        }
+
+        /**
+         * Perform a two-sum through the expansion.
+         * The single pass with two-sum ensures that the final term e_m is a good approximation
+         * for e: |e - e_m| < ulp(e_m); and the sum of the parts to
+         * e_(m-1) is within 1 ULP of the round-off ulp(|e - e_m|).
+         */
+        private static class TwoSum implements ExpansionSum {
+            @Override
+            public double sum(double[] e, int m) {
+                double q = e[0];
+                double qq = 0.0;
+                for (int i = 1; i < m; i++) {
+                    final double p = q + e[i];
+                    qq += DoublePrecision.twoSumLow(q, e[i], p);
+                    q = p;
+                }
+                return q + qq;
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3) {
+                double q = e0 + e1;
+                double qq = DoublePrecision.fastTwoSumLow(e0, e1, q);
+                final double p = q + e2;
+                qq += DoublePrecision.twoSumLow(q, e2, p);
+                q = p + e3;
+                qq += DoublePrecision.twoSumLow(p, e3, q);
+                return q + qq;
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3, double e4, double e5) {
+                double q = e0 + e1;
+                double qq = DoublePrecision.fastTwoSumLow(e0, e1, q);
+                double p = q + e2;
+                qq += DoublePrecision.twoSumLow(q, e2, p);
+                q = p + e3;
+                qq += DoublePrecision.twoSumLow(p, e3, q);
+                p = q + e4;
+                qq += DoublePrecision.twoSumLow(q, e4, p);
+                q = p + e5;
+                qq += DoublePrecision.twoSumLow(p, e5, q);
+                return q + qq;
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3, double e4, double e5, double e6, double e7) {
+                double q = e0 + e1;
+                double qq = DoublePrecision.fastTwoSumLow(e0, e1, q);
+                double p = q + e2;
+                qq += DoublePrecision.twoSumLow(q, e2, p);
+                q = p + e3;
+                qq += DoublePrecision.twoSumLow(p, e3, q);
+                p = q + e4;
+                qq += DoublePrecision.twoSumLow(q, e4, p);
+                q = p + e5;
+                qq += DoublePrecision.twoSumLow(p, e5, q);
+                p = q + e6;
+                qq += DoublePrecision.twoSumLow(q, e6, p);
+                q = p + e7;
+                qq += DoublePrecision.twoSumLow(p, e7, q);
+                return q + qq;
+            }
+        }
+
+        /**
+         * Shewchuk's COMPRESS(e) algorithm uses fast-two-sum with a double pass
+         * (big->small then small->big) and zero elimination for up to 6m additions (zero
+         * elimination reduces the size of the second pass). This ensure e_m is within 1
+         * ULP of the expansion value: |e - e_m| < ulp(e_m); and the sum to e_(m-1) is
+         * within 1 ULP of the round-off ulp(|e - e_m|). Summation of the expansion should
+         * then have low error.
+         *
+         * <p>Here we modify the second pass to set a sticky bit on the carried sum
+         * that allows the rounding of the next addition to compute round-to-nearest,
+         * ties-to-even rounding. This simulates the floating point addition of a+b into
+         * an extended register where some extra digits are held beyond the precision of
+         * the result for use in rounding. The final digit is the sticky bit, a bit wise OR
+         * of all the bits from the exact result that are discarded. This works if the value
+         * with the sticky bit is added to a value with a higher exponent. The use of the
+         * COMPRESS algorithm ensures the next addition is to a number larger in magnitude.
+         *
+         * <p>Note: The final addition of the sticky carry must be to a non-zero value.
+         * Otherwise the sticky bit will be left in the result potentially causing a 1
+         * ULP error.
+         *
+         * <p>Details of the sticky bit can be found in:
+         * <blockquote>
+         * Coonen, J.T., "An Implementation Guide to a Proposed Standard for Floating Point
+         * Arithmetic", Computer, Vol. 13, No. 1, Jan. 1980, pp 68-79.
+         * </blockquote>
+         */
+        private static class ExactSum implements ExpansionSum {
+            @Override
+            public double sum(double[] e, int size) {
+                if (size == 1) {
+                    return e[0];
+                }
+
+                // First traversal (from big to small)
+                // Shewchuk uses (Q,q) for (big,small) from fast-two-sum and carries Q.
+                // Here use (q,qq); p is used for intermediates.
+                final int m = size - 1;
+                double q = e[m];
+                int bottom = m;
+                for (int i = m - 1; i >= 0; i--) {
+                    final double p = q + e[i];
+                    final double qq = DoublePrecision.fastTwoSumLow(q, e[i], p);
+                    if (qq != 0) {
+                        // Store larger component in e and carry the smaller
+                        e[bottom] = p;
+                        bottom--;
+                        q = qq;
+                    } else {
+                        // Compression.
+                        q = p;
+                    }
+                }
+                // Redundant store
+                // e[bottom] = q
+
+                if (bottom == m) {
+                    // Complete compression to size 1
+                    return q;
+                }
+
+                // Second traversal (from small to big)
+                // Here we do not store the round-off parts back into the expansion
+                // but summarise them into the carry using a sticky bit.
+                for (int i = bottom + 1; i < m; i++) {
+                    q = fastSumWithStickyBit(e[i], q);
+                }
+                // Final sum. No requirement to compute round-off.
+                return e[m] + q;
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3) {
+                // compress(e) into g.
+                double g3 = 0.0;
+                double g2 = 0.0;
+                double g1 = 0.0;
+
+                // First traversal (from big to small).
+                double q = e3 + e2;
+                double qq = DoublePrecision.fastTwoSumLow(e3, e2, q);
+                if (qq != 0) {
+                    g3 = q;
+                    q = qq;
+                }
+                double p = q + e1;
+                qq = DoublePrecision.fastTwoSumLow(q, e1, p);
+                if (qq != 0) {
+                    g2 = p;
+                    p = qq;
+                }
+                q = p + e0;
+                qq = DoublePrecision.fastTwoSumLow(p, e0, q);
+                if (qq != 0) {
+                    g1 = p;
+                    q = qq;
+                }
+                // g0 = q
+
+                // Second traversal (from small to big)
+                // Here we do not store the round-off parts back into the expansion
+                // but summarise them into the carry using a sticky bit sum.
+                return stickySum(q, g1, g2, g3);
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3, double e4, double e5) {
+                // compress(e) into g.
+                double g5 = 0.0;
+                double g4 = 0.0;
+                double g3 = 0.0;
+                double g2 = 0.0;
+                double g1 = 0.0;
+
+                // First traversal (from big to small).
+                double q = e5 + e4;
+                double qq = DoublePrecision.fastTwoSumLow(e5, e4, q);
+                if (qq != 0) {
+                    g5 = q;
+                    q = qq;
+                }
+                double p = q + e3;
+                qq = DoublePrecision.fastTwoSumLow(q, e3, p);
+                if (qq != 0) {
+                    g4 = p;
+                    p = qq;
+                }
+                q = p + e2;
+                qq = DoublePrecision.fastTwoSumLow(p, e2, q);
+                if (qq != 0) {
+                    g3 = q;
+                    q = qq;
+                }
+                p = q + e1;
+                qq = DoublePrecision.fastTwoSumLow(q, e1, p);
+                if (qq != 0) {
+                    g2 = p;
+                    p = qq;
+                }
+                q = p + e0;
+                qq = DoublePrecision.fastTwoSumLow(p, e0, q);
+                if (qq != 0) {
+                    g1 = q;
+                    q = qq;
+                }
+                // g0 = q
+
+                // Second traversal (from small to big)
+                // Here we do not store the round-off parts back into the expansion
+                // but summarise them into the carry using a sticky bit sum.
+                return stickySum(q, g1, g2, g3, g4, g5);
+            }
+
+            @Override
+            public double sum(double e0, double e1, double e2, double e3, double e4, double e5, double e6, double e7) {
+                // compress(e) into g.
+                double g7 = 0.0;
+                double g6 = 0.0;
+                double g5 = 0.0;
+                double g4 = 0.0;
+                double g3 = 0.0;
+                double g2 = 0.0;
+                double g1 = 0.0;
+
+                // First traversal (from big to small).
+                // If round-off is non-zero it is carried down and the high part deposited in g.
+                // If round-off is zero compression has occurred. The high part is carried and
+                // gi remains zero. This does not eliminate zeros from g but spurious zeros are
+                // left to avoid use of array indexing. These are ignored from the sum operations.
+                double q = e7 + e6;
+                double qq = DoublePrecision.fastTwoSumLow(e7, e6, q);
+                if (qq != 0) {
+                    g7 = q;
+                    q = qq;
+                }
+                double p = q + e5;
+                qq = DoublePrecision.fastTwoSumLow(q, e5, p);
+                if (qq != 0) {
+                    g6 = p;
+                    p = qq;
+                }
+                q = p + e4;
+                qq = DoublePrecision.fastTwoSumLow(p, e4, q);
+                if (qq != 0) {
+                    g5 = q;
+                    q = qq;
+                }
+                p = q + e3;
+                qq = DoublePrecision.fastTwoSumLow(q, e3, p);
+                if (qq != 0) {
+                    g4 = p;
+                    p = qq;
+                }
+                q = p + e2;
+                qq = DoublePrecision.fastTwoSumLow(p, e2, q);
+                if (qq != 0) {
+                    g3 = q;
+                    q = qq;
+                }
+                p = q + e1;
+                qq = DoublePrecision.fastTwoSumLow(q, e1, p);
+                if (qq != 0) {
+                    g2 = p;
+                    p = qq;
+                }
+                q = p + e0;
+                qq = DoublePrecision.fastTwoSumLow(p, e0, q);
+                if (qq != 0) {
+                    g1 = q;
+                    q = qq;
+                }
+                // g0 = q
+
+                // Second traversal (from small to big)
+                // Here we do not store the round-off parts back into the expansion
+                // but summarise them into the carry using a sticky bit sum.
+                return stickySum(q, g1, g2, g3, g4, g5, g6, g7);
+            }
+
+            /**
+             * Compute the summation of the parts using a fast-two-sum. The remainder is
+             * carried into the next part using a sticky bit for the final correctly
+             * rounded result.
+             *
+             * @param g0 Part 0
+             * @param g1 Part 1
+             * @param g2 Part 2
+             * @param g3 Part 3
+             * @param g4 Part 4
+             * @param g5 Part 5
+             * @param g6 Part 6
+             * @param g7 Part 7
+             * @return the sum
+             */
+            private static double stickySum(double g0, double g1, double g2, double g3,
+                                            double g4, double g5, double g6, double g7) {
+                if (g7 == 0) {
+                    return stickySum(g0, g1, g2, g3, g4, g5, g6);
+                }
+                double q = fastSumWithStickyBit(g1, g0);
+                q = fastSumWithStickyBit(g2, q);
+                q = fastSumWithStickyBit(g3, q);
+                q = fastSumWithStickyBit(g4, q);
+                q = fastSumWithStickyBit(g5, q);
+                return g7 + fastSumWithStickyBit(g6, q);
+            }
+
+            /**
+             * Compute the summation of the parts using a fast-two-sum. The remainder is
+             * carried into the next part using a sticky bit for the final correctly
+             * rounded result.
+             *
+             * @param g0 Part 0
+             * @param g1 Part 1
+             * @param g2 Part 2
+             * @param g3 Part 3
+             * @param g4 Part 4
+             * @param g5 Part 5
+             * @param g6 Part 6
+             * @return the sum
+             */
+            private static double stickySum(double g0, double g1, double g2, double g3,
+                                            double g4, double g5, double g6) {
+                if (g6 == 0) {
+                    return stickySum(g0, g1, g2, g3, g4, g5);
+                }
+                double q = fastSumWithStickyBit(g1, g0);
+                q = fastSumWithStickyBit(g2, q);
+                q = fastSumWithStickyBit(g3, q);
+                q = fastSumWithStickyBit(g4, q);
+                return g6 + fastSumWithStickyBit(g5, q);
+            }
+
+            /**
+             * Compute the summation of the parts using a fast-two-sum. The remainder is
+             * carried into the next part using a sticky bit for the final correctly
+             * rounded result.
+             *
+             * @param g0 Part 0
+             * @param g1 Part 1
+             * @param g2 Part 2
+             * @param g3 Part 3
+             * @param g4 Part 4
+             * @param g5 Part 5
+             * @return the sum
+             */
+            private static double stickySum(double g0, double g1, double g2, double g3,
+                                            double g4, double g5) {
+                if (g5 == 0) {
+                    return stickySum(g0, g1, g2, g3, g4);
+                }
+                double q = fastSumWithStickyBit(g1, g0);
+                q = fastSumWithStickyBit(g2, q);
+                q = fastSumWithStickyBit(g3, q);
+                return g5 + fastSumWithStickyBit(g4, q);
+            }
+
+            /**
+             * Compute the summation of the parts using a fast-two-sum. The remainder is
+             * carried into the next part using a sticky bit for the final correctly
+             * rounded result.
+             *
+             * @param g0 Part 0
+             * @param g1 Part 1
+             * @param g2 Part 2
+             * @param g3 Part 3
+             * @param g4 Part 4
+             * @return the sum
+             */
+            private static double stickySum(double g0, double g1, double g2, double g3,
+                                            double g4) {
+                if (g4 == 0) {
+                    return stickySum(g0, g1, g2, g3);
+                }
+                double q = fastSumWithStickyBit(g1, g0);
+                q = fastSumWithStickyBit(g2, q);
+                return g4 + fastSumWithStickyBit(g3, q);
+            }
+
+            /**
+             * Compute the summation of the parts using a fast-two-sum. The remainder is
+             * carried into the next part using a sticky bit for the final correctly
+             * rounded result.
+             *
+             * @param g0 Part 0
+             * @param g1 Part 1
+             * @param g2 Part 2
+             * @param g3 Part 3
+             * @return the sum
+             */
+            private static double stickySum(double g0, double g1, double g2, double g3) {
+                if (g3 == 0) {
+                    return stickySum(g0, g1, g2);
+                }
+                final double q = fastSumWithStickyBit(g1, g0);
+                return g3 + fastSumWithStickyBit(g2, q);
+            }
+
+            /**
+             * Compute the summation of the parts using a fast-two-sum. The remainder is
+             * carried into the next part using a sticky bit for the final correctly
+             * rounded result.
+             *
+             * @param g0 Part 0
+             * @param g1 Part 1
+             * @param g2 Part 2
+             * @return the sum
+             */
+            private static double stickySum(double g0, double g1, double g2) {
+                if (g2 == 0) {
+                    // No sticky bit needed
+                    return g1 + g0;
+                }
+                return g2 + fastSumWithStickyBit(g1, g0);
+            }
+
+            /**
+             * Compute the sum of two numbers {@code a} and {@code b} using
+             * Dekker's two-sum algorithm. The values are required to be ordered by magnitude
+             * {@code |a| >= |b|}. The result is adjusted to set the lowest bit as a sticky
+             * bit that summarises the magnitude of the round-off that were lost. The
+             * result is not the correctly rounded result; it is intended the result is to
+             * be used in an addition with a value with a greater magnitude exponent. This
+             * addition will have exact round-to-nearest, ties-to-even rounding taking account
+             * of bits lots in the previous sum.
+             *
+             * <p>The sticky bit computation is adapted from the FreeBSD software implementation
+             * of Fused-Multiply-Add (FMA). The licence is reproduced here:
+             *
+             * <pre>
+             * Copyright (c) 2005-2011 David Schultz <das@FreeBSD.ORG>
+             * All rights reserved.
+             *
+             * Redistribution and use in source and binary forms, with or without
+             * modification, are permitted provided that the following conditions
+             * are met:
+             * 1. Redistributions of source code must retain the above copyright
+             *    notice, this list of conditions and the following disclaimer.
+             * 2. Redistributions in binary form must reproduce the above copyright
+             *    notice, this list of conditions and the following disclaimer in the
+             *    documentation and/or other materials provided with the distribution.
+             *
+             * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+             * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+             * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+             * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+             * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+             * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+             * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+             * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+             * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+             * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+             * SUCH DAMAGE.
+             * </pre>
+             *
+             * @param a First part of sum.
+             * @param b Second part of sum.
+             * @return <code>b - (sum - a)</code>
+             * @see <a href="http://www-2.cs.cmu.edu/afs/cs/project/quake/public/papers/robust-arithmetic.ps">
+             * Shewchuk (1997) Theorum 6</a>
+             * @see <a href="https://github.com/freebsd/freebsd/blob/master/lib/msun/src/s_fma.c">FreeBSD s_fma.c</a>
+             */
+            private static double fastSumWithStickyBit(double a, double b) {
+                double sum = a + b;
+                // bVitual = sum - a
+                // b - bVirtual == b round-off
+                final double r = b - (sum - a);
+                if (r != 0) {
+                    // Bits will be lost.
+                    // In floating-point arithmetic the sticky bit is the bit-wise OR
+                    // of the rest of the binary bits that cannot be stored in the
+                    // preliminary representation of the result:
+                    //
+                    // sgn | exp | V | N | .............. | L | G | R | S
+                    //
+                    // sgn : sign bit
+                    // exp : exponent
+                    // V : overflow for significand field
+                    // N and L : most and least significant bits of the result
+                    // G and R : the two bits beyond
+                    // S : sticky bit, bitwise OR of all bits thereafter
+                    //
+                    // The sticky bit is a flag indicating if there is more magnitude beyond
+                    // the last bits. Here the round-off is signed so we have to consider the
+                    // sign of the sum and round-off together and either add the sticky or
+                    // remove it. The final bit is thus used to push up the next addition using
+                    // the sum to a higher value, or down to a lower value, when tie breaking for
+                    // the correct round-to-nearest, ties-to-even result.
+                    long hi = Double.doubleToRawLongBits(sum);
+                    // Can only set a sticky bit if the bit is not set.
+                    if ((hi & 1) == 0) {
+                        // In a standard extended precision result for (a+b) the bits are extra
+                        // magnitude lost and the sticky bit is positive.
+                        // Here the round-off magnitude (qq) can be negative so the sticky
+                        // bit should be added (same sign) or substracted (different sign).
+                        // if sum > 0:
+                        //    hi += (r > 0) ? 1 : -1
+                        // else:
+                        //    hi += (r < 0) ? 1 : -1
+                        // XOR the signs and if they are different use this to create a 2
+                        // for subtraction.
+                        final long lo = Double.doubleToRawLongBits(r);
+                        hi += 1 - (((hi ^ lo) >>> 62) & 0x2);
+                        sum = Double.longBitsToDouble(hi);
+                    }
+                }
+                return sum;
+            }
+        }
+
+        /** The summation algorithm. */
+        private final ExpansionSum summation;
+
+        /**
+         * Private constructor.
+         *
+         * @param summation The summation algorithm.
+         */
+        private ExtendedPrecision(ExpansionSum summation) {
+            this.summation = summation;
+        }
 
         @Override
         protected double computeValue(double[] a, double[] b) {
@@ -809,8 +1424,12 @@ public final class LinearCombinations {
                 // Ignore zero elimination as the result is now summed.
             }
 
-            // Sum the expansion
-            final double result = sum(e, size);
+            // Final summation.
+            if (size == 0) {
+                return 0.0;
+            }
+
+            final double result = summation.sum(e, size);
             if (!Double.isFinite(result)) {
                 // Either we have split infinite numbers or some coefficients were NaNs,
                 // just rely on the naive implementation and let IEEE754 handle this
@@ -847,7 +1466,7 @@ public final class LinearCombinations {
             e2 = DoublePrecision.twoSumLow(e2, q, e3);
 
             // Final summation
-            return getSum(s, e0 + e1 + e2 + e3);
+            return getSum(s, summation.sum(e0, e1, e2, e3));
         }
 
         @Override
@@ -896,7 +1515,7 @@ public final class LinearCombinations {
 
             // f1 into e
             q = e1 + f1;
-            e0 = DoublePrecision.twoSumLow(e1, f1, q);
+            e1 = DoublePrecision.twoSumLow(e1, f1, q);
             p = e2 + q;
             e2 = DoublePrecision.twoSumLow(e2, q, p);
             q = e3 + p;
@@ -905,7 +1524,7 @@ public final class LinearCombinations {
             e4 = DoublePrecision.twoSumLow(e4, q, e5);
 
             // Final summation
-            return getSum(s, e0 + e1 + e2 + e3 + e4 + e5);
+            return getSum(s, summation.sum(e0, e1, e2, e3, e4, e5));
         }
 
         @Override
@@ -971,7 +1590,7 @@ public final class LinearCombinations {
 
             // f1 into e
             q = e1 + f1;
-            e0 = DoublePrecision.twoSumLow(e1, f1, q);
+            e1 = DoublePrecision.twoSumLow(e1, f1, q);
             p = e2 + q;
             e2 = DoublePrecision.twoSumLow(e2, q, p);
             q = e3 + p;
@@ -1000,7 +1619,7 @@ public final class LinearCombinations {
             e6 = DoublePrecision.twoSumLow(e6, q, e7);
 
             // Final summation
-            return getSum(s, e0 + e1 + e2 + e3 + e4 + e5 + e6 + e7);
+            return getSum(s, summation.sum(e0, e1, e2, e3, e4, e5, e6, e7));
         }
 
         /**
@@ -1102,21 +1721,6 @@ public final class LinearCombinations {
                 }
             }
             return newSize;
-        }
-
-        /**
-         * Sum to the data.
-         *
-         * @param p Data to sum.
-         * @param length Length of the data.
-         * @return the sum
-         */
-        private static double sum(double[] p, int length) {
-            double sum = 0;
-            for (int i = 0; i < length; i++) {
-                sum += p[i];
-            }
-            return sum;
         }
     }
 
