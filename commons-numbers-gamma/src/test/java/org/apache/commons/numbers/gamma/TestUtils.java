@@ -34,6 +34,58 @@ final class TestUtils {
     /** Set this to true to report all deviations to System out when the maximum ULPs is negative. */
     private static boolean reportAllDeviations = false;
 
+    /**
+     * Class to compute the root mean squared error (RMS).
+     *
+     * <p>This class can be used to summary errors if used as the DoubleConsumer
+     * argument to {@link TestUtils#assertEquals(BigDecimal, double, double)}.
+     *
+     * @see <a href="https://en.wikipedia.org/wiki/Root_mean_square">Wikipedia: RMS</a>
+     */
+    static class RMS {
+        private double ss;
+        private double max;
+        private int n;
+
+        /**
+         * @param x Value
+         */
+        void add(double x) {
+            // Overflow is not supported.
+            // Assume the expected and actual are quite close when measuring the RMS.
+            ss += x * x;
+            n++;
+            x = Math.abs(x);
+            max = max < x ? x : max;
+        }
+
+        /**
+         * Gets the maximum error.
+         *
+         * <p>This can be used to set maximum ULP thresholds for test data if the
+         * TestUtils.assertEquals method is used with a large maxUlps to measure the ulp
+         * (and effectively ignore failures) and the maximum reported as the end of
+         * testing.
+         *
+         * @return maximum error
+         */
+        double getMax() {
+            return max;
+        }
+
+        /**
+         * Gets the root mean squared error (RMS).
+         *
+         * <p> Note: If no data has been added this will return 0/0 = nan.
+         * This prevents using in assertions without adding data.
+         *
+         * @return root mean squared error (RMS)
+         */
+        double getRMS() {
+            return Math.sqrt(ss / n);
+        }
+    }
+
     /** Private constructor. */
     private TestUtils() {
         // intentionally empty.
@@ -55,6 +107,25 @@ final class TestUtils {
      */
     static long assertEquals(double expected, double actual, long maxUlps) {
         return assertEquals(expected, actual, maxUlps, null, (Supplier<String>) null);
+    }
+
+    /**
+     * Assert the two numbers are equal within the provided units of least precision.
+     * The maximum count of numbers allowed between the two values is {@code maxUlps - 1}.
+     *
+     * <p>The values -0.0 and 0.0 are considered equal.
+     *
+     * <p>Set {@code maxUlps} to negative to report the ulps to the stdout and ignore
+     * failures.
+     *
+     * @param expected expected value
+     * @param actual actual value
+     * @param maxUlps maximum units of least precision between the two values
+     * @param msg failure message
+     * @return ulp difference between the values (always positive; may be truncated to Long.MAX_VALUE)
+     */
+    static long assertEquals(double expected, double actual, long maxUlps, String msg) {
+        return assertEquals(expected, actual, maxUlps, null, () -> msg);
     }
 
     /**
@@ -159,6 +230,32 @@ final class TestUtils {
      */
     static double assertEquals(BigDecimal expected, double actual, double maxUlps) {
         return assertEquals(expected, actual, maxUlps, null, (Supplier<String>) null);
+    }
+
+    /**
+     * Assert the two numbers are equal within the provided units of least precision.
+     *
+     * <p>This method is for values that can be computed to arbitrary precision.
+     * It raises an exception when the actual value is not finite and the expected value
+     * has a non-infinite representation; or the actual value is finite and the expected
+     * value has a infinite representation. In this case the computed ulp difference
+     * is infinite.
+     *
+     * <p>This method expresses the error relative the units in the last place of the
+     * expected value when converted to a {@code double} type
+     * (see {@link #assertEquals(BigDecimal, double, double, DoubleConsumer, Supplier)} for details).
+     *
+     * <p>Set {@code maxUlps} to negative to report the ulps to the stdout and ignore
+     * failures.
+     *
+     * @param expected expected value
+     * @param actual actual value
+     * @param maxUlps maximum units of least precision between the two values
+     * @param msg failure message
+     * @return ulp difference between the values (always positive)
+     */
+    static double assertEquals(BigDecimal expected, double actual, double maxUlps, String msg) {
+        return assertEquals(expected, actual, maxUlps, null, () -> msg);
     }
 
     /**
