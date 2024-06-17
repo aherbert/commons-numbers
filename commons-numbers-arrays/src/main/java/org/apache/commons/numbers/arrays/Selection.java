@@ -331,4 +331,365 @@ public final class Selection {
             }
         }
     }
+
+    /**
+     * Partition the array such that index {@code k} corresponds to its correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param k Index.
+     * @throws IndexOutOfBoundsException if index {@code k} is not within the
+     * sub-range {@code [0, a.length)}
+     */
+    public static void select(float[] a, int k) {
+        IndexSupport.checkIndex(0, a.length, k);
+        doSelect(a, 0, a.length, k);
+    }
+
+    /**
+     * Partition the array such that indices {@code k} correspond to their correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param k Indices (may be destructively modified).
+     * @throws IndexOutOfBoundsException if any index {@code k} is not within the
+     * sub-range {@code [0, a.length)}
+     */
+    public static void select(float[] a, int[] k) {
+        IndexSupport.checkIndices(0, a.length, k);
+        doSelect(a, 0, a.length, k);
+    }
+
+    /**
+     * Partition the array such that index {@code k} corresponds to its correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param k Index.
+     * @throws IndexOutOfBoundsException if the sub-range {@code [fromIndex, toIndex)} is out of
+     * bounds of range {@code [0, a.length)}; or if index {@code k} is not within the
+     * sub-range {@code [fromIndex, toIndex)}
+     */
+    public static void select(float[] a, int fromIndex, int toIndex, int k) {
+        IndexSupport.checkFromToIndex(fromIndex, toIndex, a.length);
+        IndexSupport.checkIndex(fromIndex, toIndex, k);
+        doSelect(a, fromIndex, toIndex, k);
+    }
+
+    /**
+     * Partition the array such that indices {@code k} correspond to their correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param k Indices (may be destructively modified).
+     * @throws IndexOutOfBoundsException if the sub-range {@code [fromIndex, toIndex)} is out of
+     * bounds of range {@code [0, a.length)}; or if any index {@code k} is not within the
+     * sub-range {@code [fromIndex, toIndex)}
+     */
+    public static void select(float[] a, int fromIndex, int toIndex, int[] k) {
+        IndexSupport.checkFromToIndex(fromIndex, toIndex, a.length);
+        IndexSupport.checkIndices(fromIndex, toIndex, k);
+        doSelect(a, fromIndex, toIndex, k);
+    }
+
+    /**
+     * Partition the array such that index {@code k} corresponds to its correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * <p>This method pre/post-processes the data and indices to respect the ordering
+     * imposed by {@link Float#compare(float, float)}.
+     *
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param a Values.
+     * @param k Index.
+     */
+    private static void doSelect(float[] a, int fromIndex, int toIndex, int k) {
+        if (toIndex - fromIndex <= 1) {
+            return;
+        }
+        // Sort NaN / count signed zeros.
+        // Caution: This loop contributes significantly to the runtime.
+        int cn = 0;
+        int end = toIndex;
+        for (int i = toIndex; --i >= fromIndex;) {
+            final float v = a[i];
+            // Count negative zeros using a sign bit check
+            if (Float.floatToRawIntBits(v) == Integer.MIN_VALUE) {
+                cn++;
+                // Change to positive zero.
+                // Data must be repaired after selection.
+                a[i] = 0.0f;
+            } else if (v != v) {
+                // Move NaN to end
+                a[i] = a[--end];
+                a[end] = v;
+            }
+        }
+
+        // Partition
+        if (end - fromIndex > 1 && k < end) {
+            QuickSelect.select(a, fromIndex, end - 1, k);
+        }
+
+        // Restore signed zeros
+        if (cn != 0) {
+            // Use partition index below zero to fast-forward to zero as much as possible
+            for (int j = a[k] < 0 ? k : -1;;) {
+                if (a[++j] == 0) {
+                    a[j] = -0.0f;
+                    if (--cn == 0) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Partition the array such that indices {@code k} correspond to their correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * <p>This method pre/post-processes the data and indices to respect the ordering
+     * imposed by {@link Float#compare(float, float)}.
+     *
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param a Values.
+     * @param k Indices (may be destructively modified).
+     */
+    private static void doSelect(float[] a, int fromIndex, int toIndex, int[] k) {
+        if (k.length == 0 || toIndex - fromIndex <= 1) {
+            return;
+        }
+        // Sort NaN / count signed zeros.
+        // Caution: This loop contributes significantly to the runtime for single indices.
+        int cn = 0;
+        int end = toIndex;
+        for (int i = toIndex; --i >= fromIndex;) {
+            final float v = a[i];
+            // Count negative zeros using a sign bit check
+            if (Float.floatToRawIntBits(v) == Integer.MIN_VALUE) {
+                cn++;
+                // Change to positive zero.
+                // Data must be repaired after selection.
+                a[i] = 0.0f;
+            } else if (v != v) {
+                // Move NaN to end
+                a[i] = a[--end];
+                a[end] = v;
+            }
+        }
+
+        // Partition
+        int n = 0;
+        if (end - fromIndex > 1) {
+            n = k.length;
+            // Filter indices invalidated by NaN check
+            if (end < toIndex) {
+                for (int i = n; --i >= 0;) {
+                    final int index = k[i];
+                    if (index >= end) {
+                        // Move to end
+                        k[i] = k[--n];
+                        k[n] = index;
+                    }
+                }
+            }
+            // Return n, the count of used indices in k.
+            // Use this to post-process zeros.
+            n = QuickSelect.select(a, fromIndex, end - 1, k, n);
+        }
+
+        // Restore signed zeros
+        if (cn != 0) {
+            // Use partition indices below zero to fast-forward to zero as much as possible
+            int j = -1;
+            if (n < 0) {
+                // Binary search on -n sorted indices: hi = (-n) - 1
+                int lo = 0;
+                int hi = ~n;
+                while (lo <= hi) {
+                    final int mid = (lo + hi) >>> 1;
+                    if (a[k[mid]] < 0) {
+                        j = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+            } else {
+                // Unsorted, process all indices
+                for (int i = n; --i >= 0;) {
+                    if (a[k[i]] < 0) {
+                        j = k[i];
+                    }
+                }
+            }
+            for (;;) {
+                if (a[++j] == 0) {
+                    a[j] = -0.0f;
+                    if (--cn == 0) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Partition the array such that index {@code k} corresponds to its correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param k Index.
+     * @throws IndexOutOfBoundsException if index {@code k} is not within the
+     * sub-range {@code [0, a.length)}
+     */
+    public static void select(int[] a, int k) {
+        IndexSupport.checkIndex(0, a.length, k);
+        if (a.length <= 1) {
+            return;
+        }
+        QuickSelect.select(a, 0, a.length - 1, k);
+    }
+
+    /**
+     * Partition the array such that indices {@code k} correspond to their correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param k Indices (may be destructively modified).
+     * @throws IndexOutOfBoundsException if any index {@code k} is not within the
+     * sub-range {@code [0, a.length)}
+     */
+    public static void select(int[] a, int[] k) {
+        IndexSupport.checkIndices(0, a.length, k);
+        if (k.length == 0 || a.length <= 1) {
+            return;
+        }
+        QuickSelect.select(a, 0, a.length - 1, k, k.length);
+    }
+
+    /**
+     * Partition the array such that index {@code k} corresponds to its correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param k Index.
+     * @throws IndexOutOfBoundsException if the sub-range {@code [fromIndex, toIndex)} is out of
+     * bounds of range {@code [0, a.length)}; or if index {@code k} is not within the
+     * sub-range {@code [fromIndex, toIndex)}
+     */
+    public static void select(int[] a, int fromIndex, int toIndex, int k) {
+        IndexSupport.checkFromToIndex(fromIndex, toIndex, a.length);
+        IndexSupport.checkIndex(fromIndex, toIndex, k);
+        if (toIndex - fromIndex <= 1) {
+            return;
+        }
+        QuickSelect.select(a, fromIndex, toIndex - 1, k);
+    }
+
+    /**
+     * Partition the array such that indices {@code k} correspond to their correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param k Indices (may be destructively modified).
+     * @throws IndexOutOfBoundsException if the sub-range {@code [fromIndex, toIndex)} is out of
+     * bounds of range {@code [0, a.length)}; or if any index {@code k} is not within the
+     * sub-range {@code [fromIndex, toIndex)}
+     */
+    public static void select(int[] a, int fromIndex, int toIndex, int[] k) {
+        IndexSupport.checkFromToIndex(fromIndex, toIndex, a.length);
+        IndexSupport.checkIndices(fromIndex, toIndex, k);
+        if (k.length == 0 || toIndex - fromIndex <= 1) {
+            return;
+        }
+        QuickSelect.select(a, fromIndex, toIndex - 1, k, k.length);
+    }
+
+    /**
+     * Partition the array such that index {@code k} corresponds to its correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param k Index.
+     * @throws IndexOutOfBoundsException if index {@code k} is not within the
+     * sub-range {@code [0, a.length)}
+     */
+    public static void select(long[] a, int k) {
+        IndexSupport.checkIndex(0, a.length, k);
+        if (a.length <= 1) {
+            return;
+        }
+        QuickSelect.select(a, 0, a.length - 1, k);
+    }
+
+    /**
+     * Partition the array such that indices {@code k} correspond to their correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param k Indices (may be destructively modified).
+     * @throws IndexOutOfBoundsException if any index {@code k} is not within the
+     * sub-range {@code [0, a.length)}
+     */
+    public static void select(long[] a, int[] k) {
+        IndexSupport.checkIndices(0, a.length, k);
+        if (k.length == 0 || a.length <= 1) {
+            return;
+        }
+        QuickSelect.select(a, 0, a.length - 1, k, k.length);
+    }
+
+    /**
+     * Partition the array such that index {@code k} corresponds to its correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param k Index.
+     * @throws IndexOutOfBoundsException if the sub-range {@code [fromIndex, toIndex)} is out of
+     * bounds of range {@code [0, a.length)}; or if index {@code k} is not within the
+     * sub-range {@code [fromIndex, toIndex)}
+     */
+    public static void select(long[] a, int fromIndex, int toIndex, int k) {
+        IndexSupport.checkFromToIndex(fromIndex, toIndex, a.length);
+        IndexSupport.checkIndex(fromIndex, toIndex, k);
+        if (toIndex - fromIndex <= 1) {
+            return;
+        }
+        QuickSelect.select(a, fromIndex, toIndex - 1, k);
+    }
+
+    /**
+     * Partition the array such that indices {@code k} correspond to their correctly
+     * sorted value in the equivalent fully sorted array.
+     *
+     * @param a Values.
+     * @param fromIndex Index of the first element (inclusive).
+     * @param toIndex Index of the last element (exclusive).
+     * @param k Indices (may be destructively modified).
+     * @throws IndexOutOfBoundsException if the sub-range {@code [fromIndex, toIndex)} is out of
+     * bounds of range {@code [0, a.length)}; or if any index {@code k} is not within the
+     * sub-range {@code [fromIndex, toIndex)}
+     */
+    public static void select(long[] a, int fromIndex, int toIndex, int[] k) {
+        IndexSupport.checkFromToIndex(fromIndex, toIndex, a.length);
+        IndexSupport.checkIndices(fromIndex, toIndex, k);
+        if (k.length == 0 || toIndex - fromIndex <= 1) {
+            return;
+        }
+        QuickSelect.select(a, fromIndex, toIndex - 1, k, k.length);
+    }
 }
