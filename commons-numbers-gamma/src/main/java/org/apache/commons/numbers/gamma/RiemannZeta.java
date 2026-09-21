@@ -46,7 +46,14 @@ public final class RiemannZeta {
     /**
      * Computes the value of \( \zeta(s) \).
      *
-     * <p>Returns positive infinity if {@code s == 1}.
+     * <p>Special cases:
+     * <ul>
+     * <li>If the argument is 1, then the result is positive infinity.</li>
+     * <li>If the argument is a negative even integer, then the result is 0.</li>
+     * <li>If the argument is positive infinity, then the result is 1.</li>
+     * <li>If the argument is negative infinity, then the result is nan.</li>
+     * <li>If the argument is nan, then the result is nan.</li>
+     * </ul>
      *
      * @param s Argument.
      * @return \( \zeta(s) \)
