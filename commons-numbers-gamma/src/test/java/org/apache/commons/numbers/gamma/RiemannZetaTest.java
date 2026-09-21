@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.fraction.BigFraction;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -120,7 +121,19 @@ class RiemannZetaTest {
         // s in (1, 32)
         BORWEIN_ZETA_ABOVE1(RiemannZetaTest::borweinZeta, "zeta_above1.csv", 2.8, 0.66),
         HURWITZ_ZETA_ABOVE1(s -> HurwitzZeta.value(s, 1), "zeta_above1.csv", 1.68, 0.5),
-        ZETA_ABOVE1(RiemannZeta::value, "zeta_above1.csv", 1.46, 0.34);
+        ZETA_ABOVE1(RiemannZeta::value, "zeta_above1.csv", 1.46, 0.34),
+        BORWEIN_ZETA_0_1(RiemannZetaTest::borweinZeta, "zeta_0_1.csv", 4.05, 1.28),
+        HURWITZ_ZETA_0_1(s -> HurwitzZeta.value(s, 1), "zeta_0_1.csv", 19.5, 4.10),
+        ZETA_0_1(RiemannZeta::value, "zeta_0_1.csv", 1.79, 0.69),
+        ;
+
+     // Temurin 25.492-b09
+//        BORWEIN_ZETA_ABOVE1                   max    2.76154   RMS   0.641891   mean       0.311163  n 8827
+//        HURWITZ_ZETA_ABOVE1                   max    1.66474   RMS   0.486392   mean    -0.00900755  n 8827
+//        ZETA_ABOVE1                           max    1.44866   RMS   0.329523   mean    -0.00187909  n 8827
+//        BORWEIN_ZETA_0_1                      max    3.99744   RMS    1.26149   mean      -0.463086  n  500
+//        HURWITZ_ZETA_0_1                      max    19.0470   RMS    4.07605   mean      0.0769531  n  500
+//        ZETA_0_1                              max    1.77152   RMS   0.679988   mean      0.0238564  n  500
 
         /** The function. */
         private final DoubleUnaryOperator fun;
@@ -372,12 +385,11 @@ class RiemannZetaTest {
         "55, 1.0000000000000000277555756213612417258163245385407",
     })
     void testZetaOddInteger(int s, double z) {
-        // This uses pre-computed values
+        // Boost uses pre-computed values
         // "as these are of great benefit to some infinite series calculations".
+        // Check this is exact.
         assertClose(RiemannZeta::value, s, z, 0);
-        // Check the function is monotonic in s.
-        // The rational function is exact for all odd integer s except s=53.
-        // Since [1.0 < zeta(53) < nextUp(1.0)] the function remains monotonic.
+        // Check the function is monotonic in s (relevant when precomputed values are used).
         Assertions.assertTrue(z >= RiemannZeta.value(Math.nextUp((double) s)));
         Assertions.assertTrue(z <= RiemannZeta.value(Math.nextDown((double) s)));
     }
@@ -474,6 +486,9 @@ class RiemannZetaTest {
             Arguments.of(50.2342, 1.00000000000000075509047585184, 0),
             Arguments.of(51.2342, 1.00000000000000037754523774643, 0),
             Arguments.of(52.2342, 1.00000000000000018877261881338, 0),
+            Arguments.of(53.0000000001, 1.00000000000000011102230250641, 0),
+            // Effectively 1.0
+            Arguments.of(53.000000001, 1.00000000000000011102230243715, 0),
             Arguments.of(53.2342, 1.00000000000000009438630938675, 0),
             Arguments.of(59.67, 1.00000000000000000109028530523, 0),
             Arguments.of(69.67, 1.00000000000000000000106473174, 0),
@@ -568,10 +583,38 @@ class RiemannZetaTest {
         }
         System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d%n",
             name, maxAbsUlp, rmsUlp, meanUlp, size);
+        // CHECKSTYLE: resume regexp
     }
 
-//    @Test
-    void testSample() throws IOException {
+    /**
+     * Create test data for {@code s in [0, 1)}. Note that the zeta function is easily
+     * computed for {@code s -> 0} so using dyadic rationals in [0, 1) is sufficient.
+     *
+     * @throws IOException Signals that an I/O exception has occurred.
+     */
+    @Test
+    @Disabled("Used to generate test data")
+    void testSample01() throws IOException {
+        final double[] sample = new SplittableRandom().doubles(500).toArray();
+        Arrays.sort(sample);
+        try (PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("target", "zeta_0_1.txt")))) {
+            out.printf("# Dyadic doubles in [0, 1) : [%s, %s] n=%d%n",
+                sample[0], sample[sample.length - 1], sample.length);
+            for (double s : sample) {
+                out.println(s);
+            }
+        }
+    }
+
+    /**
+     * Create test data for {@code s in (1, 32)}. Note that the zeta function is easily
+     * computed for {@code s > 32} using 3^-s + 2^-s + 1.
+     *
+     * @throws IOException Signals that an I/O exception has occurred.
+     */
+    @Test
+    @Disabled("Used to generate test data")
+    void testSampleAbove1() throws IOException {
         SplittableRandom rng = new SplittableRandom();
         // Create node points using 1 + 2^-b
         // Final node point is large s.
@@ -585,7 +628,7 @@ class RiemannZetaTest {
         int[] size = new int[nodes.length - 1];
         Arrays.fill(size, 10000 / size.length);
 
-        try (PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("zeta.txt")))) {
+        try (PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("target", "zeta_above1.txt")))) {
             for (int j = 0; j < nodes.length - 1; j++) {
                 sample(rng, size[j], nodes[j], nodes[j + 1], out);
             }
