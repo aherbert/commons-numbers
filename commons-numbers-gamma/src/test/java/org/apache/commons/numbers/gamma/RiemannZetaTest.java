@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -40,10 +40,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Test the {@link HurwitzZeta} function when {@code a=1}, i.e. the Riemann zeta function.
+ * Test the {@link RiemannZeta} function.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class ZetaTest {
+class RiemannZetaTest {
     /** Flag set when the JVM version is printed. Used for testing. */
     private static boolean jvm = false;
 
@@ -115,11 +115,10 @@ class ZetaTest {
      * @see <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/pol_tutorial/policy_tut_defaults.html">Policy defaults</a>
      */
     private enum TestCase implements TestError {
-        // s in (1, 32); a in [1, 2^31)
-        BORWEIN_ZETA_INT(ZetaTest::borweinZeta, "zeta.csv", 2.8, 0.66),
-        HZETA_INT(s -> HurwitzZeta.value(s, 1), "zeta.csv", 1.68, 0.5),
-        ZETA_INT(ZetaTest::zeta_imp_prec, "zeta.csv", 1.5, 0.34)
-        ;
+        // s in (1, 32)
+        BORWEIN_ZETA_ABOVE1(RiemannZetaTest::borweinZeta, "zeta_above1.csv", 2.8, 0.66),
+        HURWITZ_ZETA_ABOVE1(s -> HurwitzZeta.value(s, 1), "zeta_above1.csv", 1.68, 0.5),
+        ZETA_ABOVE1(RiemannZeta::value, "zeta_above1.csv", 1.46, 0.34);
 
         /** The function. */
         private final DoubleUnaryOperator fun;
@@ -243,255 +242,6 @@ class ZetaTest {
         return sum.divide(-Math.expm1(LN2 * (1 - s))).hi();
     }
 
-    static double zeta_polynomial_series(double s) // , double sc)
-    {
-        //
-        // This is algorithm 3 from:
-        //
-        // "An Efficient Algorithm for the Riemann Zeta Function", P. Borwein,
-        // Canadian Mathematical Society, Conference Proceedings.
-        // See: http://www.cecm.sfu.ca/personal/pborwein/PAPERS/P155.pdf
-        //
-        int n = 18; // itrunc(T(log(boost::math::tools::epsilon<T>()) / -2));
-        double sum = 0;
-        double two_n = Math.scalb(1, n); // ldexp(T(1), n);
-        int ej_sign = 1;
-        for (int j = 0; j < n; ++j) {
-            sum += ej_sign * -two_n / Math.pow(j + 1, s);
-            ej_sign = -ej_sign;
-        }
-        double ej_sum = 1;
-        double ej_term = 1;
-        for (int j = n; j <= 2 * n - 1; ++j) {
-            // XXX: These could be precomputed.
-            // Do not know what they are.
-            sum += ej_sign * (ej_sum - two_n) / Math.pow(j + 1, s);
-            ej_sign = -ej_sign;
-            ej_term *= 2 * n - j;
-            ej_term /= j - n + 1;
-            ej_sum += ej_term;
-        }
-
-//        // No difference
-//        BigFraction ej_sum = BigFraction.ONE;
-//        BigFraction ej_term = BigFraction.ONE;
-//        BigFraction two_nf = BigFraction.from(two_n);
-//        for (int j = n; j <= 2 * n - 1; ++j) {
-//            sum += ej_sign * ej_sum.subtract(two_nf).doubleValue() / Math.pow(j + 1, s);
-//            ej_sign = -ej_sign;
-//            ej_term = ej_term.multiply(BigFraction.of(2 * n - j, j - n + 1));
-//            ej_sum = ej_sum.add(ej_term);
-//        }
-
-        // return -sum / (two_n * (-powm1(T(2), sc)));
-        return -sum / (two_n * (-Math.expm1(LN2 * (1 - s))));
-    }
-
-    static double zeta_imp_prec(double s) {
-        return zeta_imp_prec(s, 1-s);
-    }
-
-    static double zeta_imp_prec(double s, double sc)
-    {
-       double result;
-       if(s < 1)
-       {
-          // Rational Approximation
-          // Maximum Deviation Found:                     2.020e-18
-          // Expected Error Term:                         -2.020e-18
-          // Max error found at double precision:         3.994987e-17
-          // LCOV_EXCL_START
-          double[] P = {
-             (0.24339294433593750202),
-             (-0.49092470516353571651),
-             (0.0557616214776046784287),
-             (-0.00320912498879085894856),
-             (0.000451534528645796438704),
-             (-0.933241270357061460782e-5),
-            };
-          double[] Q = {
-             (1),
-             (-0.279960334310344432495),
-             (0.0419676223309986037706),
-             (-0.00413421406552171059003),
-             (0.00024978985622317935355),
-             (-0.101855788418564031874e-4),
-          };
-          // LCOV_EXCL_STOP
-          result = evaluatePolynomial(P, sc) / evaluatePolynomial(Q, sc);
-          result -= 1.2433929443359375F;
-          result += (sc);
-          result /= (sc);
-       }
-       else if(s <= 2)
-       {
-          // Maximum Deviation Found:        9.007e-20
-          // Expected Error Term:            9.007e-20
-          // LCOV_EXCL_START
-          double[] P = {
-             (0.577215664901532860516),
-             (0.243210646940107164097),
-             (0.0417364673988216497593),
-             (0.00390252087072843288378),
-             (0.000249606367151877175456),
-             (0.110108440976732897969e-4),
-          };
-          double[] Q = {
-             (1.0),
-             (0.295201277126631761737),
-             (0.043460910607305495864),
-             (0.00434930582085826330659),
-             (0.000255784226140488490982),
-             (0.10991819782396112081e-4),
-          };
-          // LCOV_EXCL_STOP
-          result = evaluatePolynomial(P, (-sc)) / evaluatePolynomial(Q, (-sc));
-          result += 1 / (-sc);
-       }
-       else if(s <= 4)
-       {
-          // Maximum Deviation Found:          5.946e-22
-          // Expected Error Term:              -5.946e-22
-          // LCOV_EXCL_START
-          double Y = 0.6986598968505859375;
-          double[] P = {
-             (-0.0537258300023595030676),
-             (0.0445163473292365591906),
-             (0.0128677673534519952905),
-             (0.00097541770457391752726),
-             (0.769875101573654070925e-4),
-             (0.328032510000383084155e-5),
-          };
-          double[] Q = {
-             1.0f,
-             (0.33383194553034051422),
-             (0.0487798431291407621462),
-             (0.00479039708573558490716),
-             (0.000270776703956336357707),
-             (0.106951867532057341359e-4),
-             (0.236276623974978646399e-7),
-          };
-          // LCOV_EXCL_STOP
-          result = evaluatePolynomial(P, (s - 2)) / evaluatePolynomial(Q, (s - 2));
-          result += Y + 1 / (-sc);
-       }
-       else if(s <= 7)
-       {
-          // Maximum Deviation Found:                     2.955e-17
-          // Expected Error Term:                         2.955e-17
-          // Max error found at double precision:         2.009135e-16
-          // LCOV_EXCL_START
-          double[] P = {
-             (-2.49710190602259410021),
-             (-2.60013301809475665334),
-             (-0.939260435377109939261),
-             (-0.138448617995741530935),
-             (-0.00701721240549802377623),
-             (-0.229257310594893932383e-4),
-          };
-          double[] Q = {
-             1.0f,
-             (0.706039025937745133628),
-             (0.15739599649558626358),
-             (0.0106117950976845084417),
-             (-0.36910273311764618902e-4),
-             (0.493409563927590008943e-5),
-             (-0.234055487025287216506e-6),
-             (0.718833729365459760664e-8),
-             (-0.1129200113474947419e-9),
-          };
-          // LCOV_EXCL_STOP
-          result = evaluatePolynomial(P, (s - 4)) / evaluatePolynomial(Q, (s - 4));
-          result = 1 + Math.exp(result);
-       }
-       else if(s < 15)
-       {
-          // Maximum Deviation Found:                     7.117e-16
-          // Expected Error Term:                         7.117e-16
-          // Max error found at double precision:         9.387771e-16
-          // LCOV_EXCL_START
-          double[] P = {
-             (-4.78558028495135619286),
-             (-1.89197364881972536382),
-             (-0.211407134874412820099),
-             (-0.000189204758260076688518),
-             (0.00115140923889178742086),
-             (0.639949204213164496988e-4),
-             (0.139348932445324888343e-5),
-            };
-          double[] Q = {
-             1.0f,
-             (0.244345337378188557777),
-             (0.00873370754492288653669),
-             (-0.00117592765334434471562),
-             (-0.743743682899933180415e-4),
-             (-0.21750464515767984778e-5),
-             (0.471001264003076486547e-8),
-             (-0.833378440625385520576e-10),
-             (0.699841545204845636531e-12),
-            };
-          // LCOV_EXCL_STOP
-          result = evaluatePolynomial(P, (s - 7)) / evaluatePolynomial(Q, (s - 7));
-          result = 1 + Math.exp(result);
-       }
-       else if(s < 36)
-       {
-          // Max error in interpolated form:             1.668e-17
-          // Max error found at long double precision:   1.669714e-17
-          // LCOV_EXCL_START
-          double[] P = {
-             (-10.3948950573308896825),
-             (-2.85827219671106697179),
-             (-0.347728266539245787271),
-             (-0.0251156064655346341766),
-             (-0.00119459173416968685689),
-             (-0.382529323507967522614e-4),
-             (-0.785523633796723466968e-6),
-             (-0.821465709095465524192e-8),
-          };
-          double[] Q = {
-             1.0f,
-             (0.208196333572671890965),
-             (0.0195687657317205033485),
-             (0.00111079638102485921877),
-             (0.408507746266039256231e-4),
-             (0.955561123065693483991e-6),
-             (0.118507153474022900583e-7),
-             (0.222609483627352615142e-14),
-          };
-          // LCOV_EXCL_STOP
-          result = evaluatePolynomial(P, (s - 15)) / evaluatePolynomial(Q, (s - 15));
-          result = 1 + Math.exp(result);
-       }
-       else
-       {
-          result = 1 + Math.pow(2, -s);
-       }
-       return result;
-    }
-
-    /**
-     * Evaluate the polynomial using Horner's method.
-     * The coefficients are used in descending order, for example a polynomial of order
-     * 3 requires 4 coefficients:
-     * <pre>
-     * f(x) = c[3] * x^3 + c[2] * x^2 + c[1] * x + c[0]
-     * </pre>
-     *
-     * @param c Polynomial coefficients (must have {@code length > 0})
-     * @param x Argument x
-     * @return polynomial value
-     */
-    static double evaluatePolynomial(double[] c, double x) {
-        final int count = c.length;
-        double sum = c[count - 1];
-        for (int i = count - 2; i >= 0; --i) {
-            sum *= x;
-            sum += c[i];
-        }
-        return sum;
-    }
-
     @Test
     void testK() {
         // Require n ~ 1.3d terms for d digits of precision
@@ -518,18 +268,14 @@ class ZetaTest {
                 sum = sum.add(term);
             }
             dk[k] = sum.multiply(n);
-            // The n factor cancels
-            //dk[k] = sum;
         }
         // Create the table
         final BigFraction dn = dk[n];
         for (int k = 0; k < n; k++) {
             final double sign = Math.pow(-1, k);
-            final double dn_dk = sign * dn.subtract(dk[k]).divide(dn).doubleValue();
-            //System.out.printf("%s,%n", dn_dk);
-            Assertions.assertEquals(DN_DK[k], dn_dk);
+            final double dndk = sign * dn.subtract(dk[k]).divide(dn).doubleValue();
+            Assertions.assertEquals(DN_DK[k], dndk);
         }
-        //System.out.printf("DN %s%n", dn.doubleValue());
     }
 
     /**
@@ -538,7 +284,7 @@ class ZetaTest {
     @ParameterizedTest
     @MethodSource
     void testZetaSpot(double s, double z, int ulp) {
-        assertClose(ZetaTest::zeta_imp_prec, s, z, ulp);
+        assertClose(RiemannZeta::value, s, z, ulp);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -702,7 +448,7 @@ class ZetaTest {
         // CHECKSTYLE: stop regexp
         if (!jvm) {
             jvm = true;
-                System.out.printf("// %s %s%n",
+            System.out.printf("// %s %s%n",
                 System.getProperty("java.vm.vendor"),
                 System.getProperty("java.vm.version")
             );
