@@ -38,7 +38,7 @@ package org.apache.commons.numbers.gamma;
 public final class BoostZeta {
     /**
      * zeta(s) values for odd integer s excusing s=1. Indexed using (s - 3) / 2.
-     * Length 26; max s = 105. 
+     * Length 26; max s = 105.
      * Adapted from {@code boost::math::special_functions::zeta::zeta_imp_odd_integer}.
      * */
     private static final double[] ZETA_ODD_INTEGER = {
@@ -70,9 +70,8 @@ public final class BoostZeta {
         1.0000000000000001110223025141066134,
     };
 
-    /** Bernoulli numbers for 2n. Computed using mpmath (1.14.1) using bernoulli(2n).
-     * Max n = 129.
-     * TODO: Remove the sign? */
+    /** Bernoulli numbers for 2n. Computed using mpmath (1.14.1) method bernoulli(2n).
+     * Max n = 129. */
     private static final double[] B2N = {
         1.0,
         0.16666666666666666666666666666666666666666666666667,
@@ -240,7 +239,6 @@ public final class BoostZeta {
         if (s > 53.0000000001) {
             return 1;
         }
-        double result;
         //
         // Start by seeing if we have a simple closed form for integer s:
         //
@@ -260,11 +258,7 @@ public final class BoostZeta {
                     // Negative odd integer
                     int n = (1 - v) / 2;
                     if (n < B2N.length) {
-                        return 
-                            // Original code
-                            //((-v & 1) == 1 ? -1 : 1) * 
-                            ((n & 1) == 0 ? -1 : 1) *
-                            B2N[n] / (1 - v);
+                        return -B2N[n] / (1 - v);
                     }
                 // Note:
                 // Change from the Boost implementation to remove positive even integer case:
@@ -278,8 +272,8 @@ public final class BoostZeta {
 //                    if (s < 3) {
 //                        int n = v / 2;
 //                        // This is always within the max B2N and factorial
-//                        return 
-//                            // (((n - 1) & 1) == 1 ? -1 : 1) * 
+//                        return
+//                            // (((n - 1) & 1) == 1 ? -1 : 1) *
 //                            ((n & 1) == 0 ? -1 : 1) *
 //                            Math.scalb(1.0, v - 1) *
 //                            Math.pow(Math.PI, v) * B2N[n] / BoostGamma.uncheckedFactorial(v);
@@ -296,38 +290,34 @@ public final class BoostZeta {
             }
         }
 
+        double result;
         if (Math.abs(s) < BoostGamma.ROOT_EPSILON) {
-            result = -0.5f - BoostGamma.LOG_ROOT_TWO_PI * s;
+            result = -0.5 - BoostGamma.LOG_ROOT_TWO_PI * s;
         } else if (s < 0) {
+            // Negative odd integer (all negative even integers handled above).
             // Swap: s is now positive; sc = 1 - s
             double tmp = s;
             s = sc;
             sc = tmp;
-            if (Math.floor(sc * 0.5) == sc * 0.5) {
-                // Negative even integer
-                result = 0;
+            if (s > BoostGamma.MAX_FACTORIAL) {
+                // This has been simplified from the Boost implementation which will
+                // catch overflow conditions when compiled with an appropriate evaluation
+                // policy and return signed infinity, or raise an error. Java floating-point
+                // arithmetic does not create overflow exceptions and will return infinity.
+                double mult = BoostGamma.sinp(0.5 * sc) * 2 * zetaImp53(s, sc);
+                result = LogGamma.value(s);
+                result -= s * Math.log(2 * Math.PI);
+                // Possible overflow if result > 709
+                result = Math.exp(result);
+                // Possible overflow.
+                // Needs result to be just on the verge of overflow when /s/ is
+                // very close to a half integer.
+                result *= mult;
             } else {
-                result = 0;
-                if (s > BoostGamma.MAX_FACTORIAL) {
-                    // This has been simplified from the Boost implementation which will
-                    // catch overflow conditions when compiled with an appropriate evaluation
-                    // policy and return signed infinity, or raise an error. Java floating-point
-                    // arithmetic does not create overflow exceptions and will return infinity.
-                    double mult = BoostGamma.sinp(0.5 * sc) * 2 * zetaImp53(s, sc);
-                    result = LogGamma.value(s);
-                    result -= s * Math.log(2 * Math.PI);
-                    // Possible overflow if result > 709
-                    result = Math.exp(result);
-                    // Possible overflow.
-                    // Needs result to be just on the verge of overflow when /s/ is
-                    // very close to a half integer.
-                    result *= mult;
-                } else {
-                    result = BoostGamma.sinp(0.5 * sc) *
-                        2 * Math.pow(2 * Math.PI, -s) *
-                        Gamma.value(s) *
-                        zetaImp53(s, sc);
-                }
+                result = BoostGamma.sinp(0.5 * sc) *
+                    2 * Math.pow(2 * Math.PI, -s) *
+                    Gamma.value(s) *
+                    zetaImp53(s, sc);
             }
         } else {
             result = zetaImp53(s, sc);

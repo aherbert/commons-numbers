@@ -798,7 +798,7 @@ class HurwitzZetaTest {
         // CHECKSTYLE: stop regexp
         if (!jvm) {
             jvm = true;
-            System.out.printf("// %s %s%n",
+            System.out.printf("JDK %s %s%n",
                 System.getProperty("java.vm.vendor"),
                 System.getProperty("java.vm.version")
             );

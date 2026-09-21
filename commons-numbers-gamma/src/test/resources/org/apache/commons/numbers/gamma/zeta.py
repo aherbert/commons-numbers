@@ -18,6 +18,7 @@ import os
 from mpmath import mp, zeta, __version__ as version
 parser = argparse.ArgumentParser(description="Program to compute zeta(s).")
 parser.add_argument("data", type=str, help="s values")
+parser.add_argument("--negate", default=False, action=argparse.BooleanOptionalAction, help="negate s")
 args = parser.parse_args()
 mp.dps = 36
 mp.pretty = True
@@ -40,4 +41,6 @@ with open(args.data) as f:
       print(line, end='')
       continue
     s = float(line)
+    if args.negate:
+      s = -s
     print(f'{s}, {zeta(s)}')
