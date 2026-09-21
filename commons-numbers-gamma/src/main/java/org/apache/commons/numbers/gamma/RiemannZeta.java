@@ -23,19 +23,24 @@ package org.apache.commons.numbers.gamma;
  * <p>\[ \zeta(s) = \sum_{k=1}^\infty \frac{1}{k^s} = \frac{1}{1^s} + \frac{1}{2^s} + \frac{1}{3^s} + \cdots \]
  *
  * <p>The function is formally defined for complex variable {@code s} with {@code Re(s) > 1},
- * and its analytic continuation elsewhere.
- *
- * <p>This implementation uses real-valued {@code s != 1}.
+ * and its analytic continuation elsewhere. This implementation uses real-valued {@code s}.
  *
  * <p>The implementation uses the reflection formula when {@code s < 0}.
  *
- * <p>TODO - add reflection formula
+ * <p>\[ \zeta(1 - s) = 2 \sin(\pi \frac{1-s}{2}) (2\pi)^{-s} \Gamma(s) \zeta(s) \]
  *
- * <p>References
- * <ol>
- * <li><a href="https://en.wikipedia.org/wiki/Riemann_zeta_function">Riemann zeta function (Wikipedia)</a></li>
- * </ol>
+ * <p>where \( \Gamma(s) \) is the {@link Gamma} function. Negative arguments may be
+ * increasingly inaccurate as the magnitude of {@code -s} becomes large.
  *
+ * <p>This code has been adapted from:
+ * <ul>
+ *  <li>The <a href="https://www.boost.org/">Boost</a>
+ *      {@code c++} implementation {@code <boost/math/special_functions/zeta.hpp>}.</li>
+ * </ul>
+ *
+ * @see
+ * <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/zetas/zeta.html">
+ * Boost C++ Riemann Zeta Function</a>
  * @since 1.4
  */
 public final class RiemannZeta {

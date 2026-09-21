@@ -36,40 +36,6 @@ package org.apache.commons.numbers.gamma;
  * Boost C++ Riemann Zeta Function</a>
  */
 public final class BoostZeta {
-    /**
-     * zeta(s) values for odd integer s excusing s=1. Indexed using (s - 3) / 2.
-     * Length 26; max s = 105.
-     * Adapted from {@code boost::math::special_functions::zeta::zeta_imp_odd_integer}.
-     * */
-    private static final double[] ZETA_ODD_INTEGER = {
-        1.2020569031595942853997381615114500,
-        1.0369277551433699263313654864570342,
-        1.0083492773819228268397975498497968,
-        1.0020083928260822144178527692324121,
-        1.0004941886041194645587022825264699,
-        1.0001227133475784891467518365263574,
-        1.0000305882363070204935517285106451,
-        1.0000076371976378997622736002935630,
-        1.0000019082127165539389256569577951,
-        1.0000004769329867878064631167196044,
-        1.0000001192199259653110730677887189,
-        1.0000000298035035146522801860637051,
-        1.0000000074507117898354294919810042,
-        1.0000000018626597235130490064039099,
-        1.0000000004656629065033784072989233,
-        1.0000000001164155017270051977592974,
-        1.0000000000291038504449709968692943,
-        1.0000000000072759598350574810145209,
-        1.0000000000018189896503070659475848,
-        1.0000000000004547473783042154026799,
-        1.0000000000001136868407680227849349,
-        1.0000000000000284217097688930185546,
-        1.0000000000000071054273952108527129,
-        1.0000000000000017763568435791203275,
-        1.0000000000000004440892103143813364,
-        1.0000000000000001110223025141066134,
-    };
-
     /** Bernoulli numbers for 2n. Computed using mpmath (1.14.1) method bernoulli(2n).
      * Max n = 129. */
     private static final double[] B2N = {
@@ -235,6 +201,7 @@ public final class BoostZeta {
         }
         //
         // Trivial case:
+        // Changed threshold from 53 to a higher value where the extended precision result is 1.0.
         //
         if (s > 53.0000000001) {
             return 1;
@@ -244,7 +211,7 @@ public final class BoostZeta {
         //
         if (Math.floor(s) == s) {
             // Change from Boost implementation.
-            // Handle any negative even integer. Values below -(2^63) are clipped
+            // Handle any negative even integer. Finite values below -(2^63) are clipped
             // to -(2^63) and will be even.
             if (s < 0 && ((long) s & 1) == 0) {
                 // Negative even integer
@@ -252,40 +219,22 @@ public final class BoostZeta {
             }
 
             // Special handling for small integer s
+            // Note: Change from the Boost implementation:
+            //
+            // Remove positive even integer case:
+            //   2^(v-1) * pow(pi, v) * abs(B2N[v/2]) / v!
+            // Code to handle positive even integers is less accurate than the rational
+            // function approximation. zetaImp53 is exact except for 1 ULP at s=2.
+            //
+            // Remove positive odd integer case:
+            // For odd integers zetaImp53 is exact except for 1 ULP at s=53. This
+            // is exact if the asymptote uses pow(3, -s).
             int v = (int) s;
-            if (v == s) {
-                if (v < 0) {
-                    // Negative odd integer
-                    int n = (1 - v) / 2;
-                    if (n < B2N.length) {
-                        return -B2N[n] / (1 - v);
-                    }
-                // Note:
-                // Change from the Boost implementation to remove positive even integer case:
-                //   2^(v-1) * pow(pi, v) * abs(B2N[v/2]) / v!
-                // Code to handle positive even integers is less accurate than the rational
-                // function approximation. zetaImp53 is exact except for 1 ULP at s=2.
-//                } else if ((v & 1) == 0) {
-//                    // Positive even integer.
-//                    // This is inaccurate as s increases in size due to pow(pi, v).
-//                    // When s >= 34 then zeta = 1 + 2^-s (as 3^-s is below machine epsilon).
-//                    if (s < 3) {
-//                        int n = v / 2;
-//                        // This is always within the max B2N and factorial
-//                        return
-//                            // (((n - 1) & 1) == 1 ? -1 : 1) *
-//                            ((n & 1) == 0 ? -1 : 1) *
-//                            Math.scalb(1.0, v - 1) *
-//                            Math.pow(Math.PI, v) * B2N[n] / BoostGamma.uncheckedFactorial(v);
-//                    }
-//                } else if ((v & 1) == 1) {
-//                    // Positive odd integer with s != 1.
-//                    // For odd integers zetaImp53 is exact except for 1 ULP at s=53. The exact
-//                    // values are included here as the documentation notes:
-//                    // "as these are of great benefit to some infinite series calculations".
-//                    // The function remains monototic for zeta(s) at s=53.
-//                    final int i = (v - 3) / 2;
-//                    return i < ZETA_ODD_INTEGER.length ? ZETA_ODD_INTEGER[i] : 1;
+            if (v == s && v < 0) {
+                // Negative odd integer
+                int n = (1 - v) / 2;
+                if (n < B2N.length) {
+                    return -B2N[n] / (1 - v);
                 }
             }
         }
@@ -332,7 +281,7 @@ public final class BoostZeta {
      *
      * <p>This is package private to allow usage from the {@link HurwitzZeta} function.
      *
-     * @param s Argument (assumed to be positive).
+     * @param s Argument (assumed to be positive finite).
      * @param sc Complement argument (1 - s).
      * @return zeta(s)
      */
