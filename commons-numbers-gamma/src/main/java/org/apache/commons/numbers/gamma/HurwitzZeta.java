@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -30,6 +30,9 @@ package org.apache.commons.numbers.gamma;
  * <p>The function is formally defined for complex variable {@code s} with {@code Re(s) > 1}
  * and real {@code a != 0, -1, -2, ...}. This series is absolutely convergent for the given
  * values of {@code s} and {@code a}. Note the special case zeta(s, 1) is the Riemann zeta function.
+ *
+ * <p>TODO: Update this to use Mathjax. Alter the domain of a. Add a note about long runtime
+ * for negative a.
  *
  * <p>This implementation uses real-valued {@code s > 1} and {@code a >= 1}.
  * Specialisation to a smaller domain than any finite {@code a} allows optimisation for
