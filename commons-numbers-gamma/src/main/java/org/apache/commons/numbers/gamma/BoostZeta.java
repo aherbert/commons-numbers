@@ -237,7 +237,7 @@ public final class BoostZeta {
         //
         // Trivial case:
         //
-        if (s > 53) {
+        if (s > 53.0000000001) {
             return 1;
         }
         double result;
@@ -284,14 +284,14 @@ public final class BoostZeta {
 //                            Math.scalb(1.0, v - 1) *
 //                            Math.pow(Math.PI, v) * B2N[n] / BoostGamma.uncheckedFactorial(v);
 //                    }
-                } else if ((v & 1) == 1) {
-                    // Positive odd integer with s != 1.
-                    // For odd integers zetaImp53 is exact except for 1 ULP at s=53. The exact
-                    // values are included here as the documentation notes:
-                    // "as these are of great benefit to some infinite series calculations".
-                    // The function remains monototic for zeta(s) at s=53.
-                    final int i = (v - 3) / 2;
-                    return i < ZETA_ODD_INTEGER.length ? ZETA_ODD_INTEGER[i] : 1;
+//                } else if ((v & 1) == 1) {
+//                    // Positive odd integer with s != 1.
+//                    // For odd integers zetaImp53 is exact except for 1 ULP at s=53. The exact
+//                    // values are included here as the documentation notes:
+//                    // "as these are of great benefit to some infinite series calculations".
+//                    // The function remains monototic for zeta(s) at s=53.
+//                    final int i = (v - 3) / 2;
+//                    return i < ZETA_ODD_INTEGER.length ? ZETA_ODD_INTEGER[i] : 1;
                 }
             }
         }
@@ -353,7 +353,6 @@ public final class BoostZeta {
             // Maximum Deviation Found:                     2.020e-18
             // Expected Error Term:                        -2.020e-18
             // Max error found at double precision:         3.994987e-17
-            // LCOV_EXCL_START
             double[] P = {
                 0.24339294433593750202,
                 -0.49092470516353571651,
@@ -370,7 +369,6 @@ public final class BoostZeta {
                 0.00024978985622317935355,
                 -0.101855788418564031874e-4,
             };
-            // LCOV_EXCL_STOP
             result = evaluatePolynomial(P, sc) / evaluatePolynomial(Q, sc);
             result -= 1.2433929443359375F;
             result += sc;
@@ -378,7 +376,6 @@ public final class BoostZeta {
         } else if (s <= 2) {
             // Maximum Deviation Found:                     9.007e-20
             // Expected Error Term:                         9.007e-20
-            // LCOV_EXCL_START
             double[] P = {
                 0.577215664901532860516,
                 0.243210646940107164097,
@@ -395,13 +392,11 @@ public final class BoostZeta {
                 0.000255784226140488490982,
                 0.10991819782396112081e-4,
             };
-            // LCOV_EXCL_STOP
             result = evaluatePolynomial(P, -sc) / evaluatePolynomial(Q, -sc);
             result += 1 / -sc;
         } else if (s <= 4) {
             // Maximum Deviation Found:                     5.946e-22
             // Expected Error Term:                        -5.946e-22
-            // LCOV_EXCL_START
             double Y = 0.6986598968505859375;
             double[] P = {
                 -0.0537258300023595030676,
@@ -420,14 +415,12 @@ public final class BoostZeta {
                 0.106951867532057341359e-4,
                 0.236276623974978646399e-7,
             };
-            // LCOV_EXCL_STOP
             result = evaluatePolynomial(P, s - 2) / evaluatePolynomial(Q, s - 2);
             result += Y + 1 / -sc;
         } else if (s <= 7) {
             // Maximum Deviation Found:                     2.955e-17
             // Expected Error Term:                         2.955e-17
             // Max error found at double precision:         2.009135e-16
-            // LCOV_EXCL_START
             double[] P = {
                 -2.49710190602259410021,
                 -2.60013301809475665334,
@@ -447,14 +440,12 @@ public final class BoostZeta {
                 0.718833729365459760664e-8,
                 -0.1129200113474947419e-9,
             };
-            // LCOV_EXCL_STOP
             result = evaluatePolynomial(P, s - 4) / evaluatePolynomial(Q, s - 4);
             result = 1 + Math.exp(result);
         } else if (s < 15) {
             // Maximum Deviation Found:                     7.117e-16
             // Expected Error Term:                         7.117e-16
             // Max error found at double precision:         9.387771e-16
-            // LCOV_EXCL_START
             double[] P = {
                 -4.78558028495135619286,
                 -1.89197364881972536382,
@@ -475,13 +466,11 @@ public final class BoostZeta {
                 -0.833378440625385520576e-10,
                 0.699841545204845636531e-12,
             };
-            // LCOV_EXCL_STOP
             result = evaluatePolynomial(P, s - 7) / evaluatePolynomial(Q, s - 7);
             result = 1 + Math.exp(result);
         } else if (s < 36) {
             // Max error in interpolated form:              1.668e-17
             // Max error found at long double precision:    1.669714e-17
-            // LCOV_EXCL_START
             double[] P = {
                 -10.3948950573308896825,
                 -2.85827219671106697179,
@@ -502,11 +491,12 @@ public final class BoostZeta {
                 0.118507153474022900583e-7,
                 0.222609483627352615142e-14,
             };
-            // LCOV_EXCL_STOP
             result = evaluatePolynomial(P, s - 15) / evaluatePolynomial(Q, s - 15);
             result = 1 + Math.exp(result);
         } else {
-            result = 1 + Math.pow(2, -s);
+            //result = 1 + Math.pow(2, -s);
+            // Adding 3^-s increases ULP accuracy as the result approaches 1.0
+            result = Math.pow(3, -s) + Math.pow(2, -s) + 1;
         }
         return result;
     }
