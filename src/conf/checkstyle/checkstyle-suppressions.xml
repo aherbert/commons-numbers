@@ -31,11 +31,13 @@
   <suppress checks="MethodLength" files=".*[/\\]BoostErf\.java" />
   <suppress checks="MethodLength" files=".*[/\\]BoostGamma\.java" />
   <suppress checks="MethodLength" files=".*[/\\]BoostBeta\.java" />
+  <suppress checks="MethodLength" files=".*[/\\]BoostZeta\.java" />
   <suppress checks="FileLengthCheck" files=".*[/\\]BoostGamma\.java" />
   <suppress checks="LocalVariableName" files=".*[/\\]BoostErf\.java" />
   <suppress checks="LocalFinalVariableName" files=".*[/\\]BoostErf\.java" />
   <suppress checks="LocalVariableName" files=".*[/\\]BoostGamma\.java" />
   <suppress checks="LocalFinalVariableName" files=".*[/\\]BoostGamma\.java" />
+  <suppress checks="LocalVariableName" files=".*[/\\]BoostZeta\.java" />
   <suppress checks="ParameterNumber" files=".*[/\\]BoostBeta\.java" />
   <!-- Method "hashCode()" is defined in the "Angle" parent class; subclasses have no additional fields to include in the hash. -->
   <suppress checks="EqualsHashCode" files=".*[/\\]Angle\.java" />

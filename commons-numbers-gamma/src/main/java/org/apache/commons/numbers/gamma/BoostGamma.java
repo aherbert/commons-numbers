@@ -86,29 +86,30 @@ final class BoostGamma {
     // errors from the power terms and improve accuracy on the current test data.
     // In the interest of performance the Dfp class is not used in this version.
 
-    /** Default epsilon value for relative error.
-     * This is equal to the Boost constant {@code boost::math::tools::epsilon<double>()}. */
-    private static final double EPSILON = 0x1.0p-52;
+    /** The largest factorial that can be represented as a double.
+     * This is equal to the Boost constant {@code boost::math::max_factorial<double>::value}. */
+    static final int MAX_FACTORIAL = 170;
     /** Value for the sqrt of the epsilon for relative error.
      * This is equal to the Boost constant {@code boost::math::tools::root_epsilon<double>()}. */
-    private static final double ROOT_EPSILON = 1.4901161193847656E-8;
+    static final double ROOT_EPSILON = 1.4901161193847656E-8;
+    /** ln(sqrt(2 pi)). Computed to 25-digits precision. */
+    static final double LOG_ROOT_TWO_PI = 0.9189385332046727417803297;
     /** Approximate value for ln(Double.MAX_VALUE).
      * This is equal to the Boost constant {@code boost::math::tools::log_max_value<double>()}.
      * No term {@code x} should be used in {@code exp(x)} if {@code x > LOG_MAX_VALUE} to avoid
      * overflow. */
-    private static final int LOG_MAX_VALUE = 709;
+    static final int LOG_MAX_VALUE = 709;
+
+    /** Default epsilon value for relative error.
+     * This is equal to the Boost constant {@code boost::math::tools::epsilon<double>()}. */
+    private static final double EPSILON = 0x1.0p-52;
     /** Approximate value for ln(Double.MIN_VALUE).
      * This is equal to the Boost constant {@code boost::math::tools::log_min_value<double>()}.
      * No term {@code x} should be used in {@code exp(x)} if {@code x < LOG_MIN_VALUE} to avoid
      * underflow to sub-normal or zero. */
     private static final int LOG_MIN_VALUE = -708;
-    /** The largest factorial that can be represented as a double.
-     * This is equal to the Boost constant {@code boost::math::max_factorial<double>::value}. */
-    private static final int MAX_FACTORIAL = 170;
     /** The largest integer value for gamma(z) that can be represented as a double. */
     private static final int MAX_GAMMA_Z = MAX_FACTORIAL + 1;
-    /** ln(sqrt(2 pi)). Computed to 25-digits precision. */
-    private static final double LOG_ROOT_TWO_PI = 0.9189385332046727417803297;
     /** ln(pi). Computed to 25-digits precision. */
     private static final double LOG_PI = 1.144729885849400174143427;
     /** Euler's constant. */
@@ -697,6 +698,17 @@ final class BoostGamma {
      * @return x * sin(pi * x)
      */
     static double sinpx(double x) {
+        return x * sinp(x);
+    }
+
+    /**
+     * Ad hoc function calculates sin(pi * x), taking extra care near when x is
+     * near a whole number.
+     *
+     * @param x Value (assumed to be negative)
+     * @return sin(pi * x)
+     */
+    static double sinp(double x) {
         int sign = 1;
         // This is always called with a negative
         // if (x < 0)
@@ -714,7 +726,7 @@ final class BoostGamma {
             dist = 1 - dist;
         }
         final double result = Math.sin(dist * Math.PI);
-        return sign * x * result;
+        return sign * result;
     }
 
     /**
