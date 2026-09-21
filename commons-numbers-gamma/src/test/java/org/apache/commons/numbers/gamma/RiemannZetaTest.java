@@ -118,22 +118,34 @@ class RiemannZetaTest {
      * @see <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/pol_tutorial/policy_tut_defaults.html">Policy defaults</a>
      */
     private enum TestCase implements TestError {
-        // s in (1, 32)
-        BORWEIN_ZETA_ABOVE1(RiemannZetaTest::borweinZeta, "zeta_above1.csv", 2.8, 0.66),
-        HURWITZ_ZETA_ABOVE1(s -> HurwitzZeta.value(s, 1), "zeta_above1.csv", 1.68, 0.5),
-        ZETA_ABOVE1(RiemannZeta::value, "zeta_above1.csv", 1.46, 0.34),
-        BORWEIN_ZETA_0_1(RiemannZetaTest::borweinZeta, "zeta_0_1.csv", 4.05, 1.28),
-        HURWITZ_ZETA_0_1(s -> HurwitzZeta.value(s, 1), "zeta_0_1.csv", 19.5, 4.10),
-        ZETA_0_1(RiemannZeta::value, "zeta_0_1.csv", 1.79, 0.69),
-        ;
+        // Hurwitz zeta is accurate for all s including s -> 1
+        HURWITZ_ZETA_1_32(s -> HurwitzZeta.value(s, 1), "zeta_1_32.csv", 1.68, 0.5),
+        // Borwein zeta has no support for negative s using reflection
+        // It is worse than BoostZeta
+        BORWEIN_ZETA_1_32(RiemannZetaTest::borweinZeta, "zeta_1_32.csv", 2.8, 0.66),
+        BORWEIN_ZETA_0_1(RiemannZetaTest::borweinZeta, "zeta_0_1.csv", 7, 1.3),
+        // BoostZeta is better than Hurwitz zeta for the domain s in (1, 32)
+        ZETA_1_32(RiemannZeta::value, "zeta_1_32.csv", 1.5, 0.34),
+        ZETA_0_1(RiemannZeta::value, "zeta_0_1.csv", 2.32, 0.69),
+        // The Boost method has increasing error with larger negative s.
+        ZETA_N_0_1(RiemannZeta::value, "zeta_N_0_1.csv", 6, 1.5),
+        // s in -[1, 4)
+        ZETA_N_1_4(RiemannZeta::value, "zeta_N_1_4.csv", 7, 1.6),
+        // s in -[4, 16)
+        ZETA_N_4_16(RiemannZeta::value, "zeta_N_4_16.csv", 22, 3.62),
+        // s in -[16, 64)
+        ZETA_N_16_64(RiemannZeta::value, "zeta_N_16_64.csv", 162, 15.5);
 
-     // Temurin 25.492-b09
-//        BORWEIN_ZETA_ABOVE1                   max    2.76154   RMS   0.641891   mean       0.311163  n 8827
-//        HURWITZ_ZETA_ABOVE1                   max    1.66474   RMS   0.486392   mean    -0.00900755  n 8827
-//        ZETA_ABOVE1                           max    1.44866   RMS   0.329523   mean    -0.00187909  n 8827
-//        BORWEIN_ZETA_0_1                      max    3.99744   RMS    1.26149   mean      -0.463086  n  500
-//        HURWITZ_ZETA_0_1                      max    19.0470   RMS    4.07605   mean      0.0769531  n  500
-//        ZETA_0_1                              max    1.77152   RMS   0.679988   mean      0.0238564  n  500
+//        JDK Temurin 25.492-b09
+//        HURWITZ_ZETA_1_32                     max    1.66474   RMS   0.486392   mean    -0.00900755  n 8827
+//        BORWEIN_ZETA_1_32                     max    2.76154   RMS   0.641891   mean       0.311163  n 8827
+//        BORWEIN_ZETA_0_1                      max    5.92608   RMS    1.24058   mean      -0.482044  n 2000
+//        ZETA_1_32                             max    1.44866   RMS   0.329523   mean    -0.00187909  n 8827
+//        ZETA_0_1                              max    2.29206   RMS   0.672252   mean      0.0358141  n 2000
+//        ZETA_N_0_1                            max    5.10307   RMS    1.44338   mean      -0.247624  n 2000
+//        ZETA_N_1_4                            max    5.64490   RMS    1.52401   mean       0.191876  n 2000
+//        ZETA_N_4_16                           max    21.9059   RMS    3.58847   mean       0.259994  n 2000
+//        ZETA_N_16_64                          max    161.222   RMS    15.0401   mean       0.701080  n 2000
 
         /** The function. */
         private final DoubleUnaryOperator fun;
@@ -293,7 +305,6 @@ class RiemannZetaTest {
         }
     }
 
-
     @ParameterizedTest
     @CsvSource({
         "1.0, Infinity",
@@ -403,6 +414,166 @@ class RiemannZetaTest {
         Assertions.assertEquals(0.0, RiemannZeta.value(s));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        // Created using mpmath (1.14.1) zeta
+        // from mpmath import zeta, mp
+        // mp.pretty = True
+        // for i in range(1, 131): # double limit of Bernoulli B_2n
+        //   print(f'"{-2*i+1}, {zeta(-2*i+1)}",')
+        "-1, -0.0833333333333333333333333333333",
+        "-3, 0.00833333333333333333333333333333",
+        "-5, -0.00396825396825396825396825396825",
+        "-7, 0.00416666666666666666666666666667",
+        "-9, -0.00757575757575757575757575757576",
+        "-11, 0.0210927960927960927960927960928",
+        "-13, -0.0833333333333333333333333333333",
+        "-15, 0.443259803921568627450980392157",
+        "-17, -3.05395433027011974380395433027",
+        "-19, 26.4562121212121212121212121212",
+        "-21, -281.460144927536231884057971014",
+        "-23, 3607.5105463980463980463980464",
+        "-25, -54827.5833333333333333333333333",
+        "-27, 974936.82385057471264367816092",
+        "-29, -20052695.7966880789461434622725",
+        "-31, 472384867.721629901960784313725",
+        "-33, -12635724795.9166666666666666667",
+        "-35, 380879311252.453688115530220793",
+        "-37, -12850850499305.0833333333333333",
+        "-39, 482414483548501.703715816703622",
+        "-41, -20040310656516252.7381084216632",
+        "-43, 916774360319533077.569927536232",
+        "-45, -45979888343656503490.4379432624",
+        "-47, 2518047192145109569708.90233202",
+        "-49, -150017334921539287337114.401515",
+        "-51, 9689957887463594065649794.28946",
+        "-53, -676458823792928209909452423.018",
+        "-55, 50890659468662289689766332915.9",
+        "-57, -4.11472887925579786976654860676e+30",
+        "-59, 3.56665820953755561096845746087e+32",
+        "-61, -3.30660898765775767256802146704e+34",
+        "-63, 3.27156342364787162642112270157e+36",
+        "-65, -3.447378255827805387825645508e+38",
+        "-67, 3.86142798327052588930927202002e+40",
+        "-69, -4.58929744324543321688639890061e+42",
+        "-71, 5.77753863427704318248848256879e+44",
+        "-73, -7.69198587595071351674100759718e+46",
+        "-75, 1.08136354499716546963540333511e+49",
+        "-77, -1.60293645220089654060671023458e+51",
+        "-79, 2.50194790415604628436566614985e+53",
+        "-81, -4.10670523358102124797520450041e+55",
+        "-83, 7.07987744084945806174529724334e+57",
+        "-85, -1.28045468879395087901908497563e+60",
+        "-87, 2.42673403923335240780208920671e+62",
+        "-89, -4.8143218874045769355129570066e+64",
+        "-91, 9.98755741757275306806527774082e+66",
+        "-93, -2.16456348684351856313351361598e+69",
+        "-95, 4.89623270396205532068492245156e+71",
+        "-97, -1.15490239239635196639542716916e+74",
+        "-99, 2.83822495706937069592641563365e+76",
+        "-101, -7.26120088036067163036772815107e+78",
+        "-103, 1.93235142334198120033323266084e+81",
+        "-105, -5.34501604252886240053956094628e+83",
+        "-107, 1.53560288464224230702071420133e+86",
+        "-109, -4.57898726822657976538994744683e+88",
+        "-111, 1.41620252121948092583601799759e+91",
+        "-113, -4.54006522960926552491870532303e+93",
+        "-115, 1.50766567588078597755948498945e+96",
+        "-117, -5.18309491482645637761224790375e+98",
+        "-119, 1.84356474272565291185736028806e+101",
+        "-121, -6.78055547530909588969025102131e+103",
+        "-123, 2.577332670275460450289647933e+106",
+        "-125, -1.0119112875704597605007955796e+109",
+        "-127, 4.10163461615422921089084567379e+111",
+        "-129, -1.71552445340320193922071524606e+114",
+        "-131, 7.40034257052690942716920556053e+116",
+        "-133, -3.29092253570544434867706140857e+119",
+        "-135, 1.50798315341647712056833365644e+122",
+        "-137, -7.11698791882545486286760649291e+124",
+        "-139, 3.45804291415777717919922833643e+127",
+        "-141, -1.72909076066767483167489207071e+130",
+        "-143, 8.89369916950329690887674533236e+132",
+        "-145, -4.7038470619636014515138279862e+135",
+        "-147, 2.55719382310602058749858077138e+138",
+        "-149, -1.42840675004435277005808820901e+141",
+        "-151, 8.1952152218313782940918703695e+143",
+        "-153, -4.82764854227273717816101742819e+146",
+        "-155, 2.91896123747703236500405982201e+149",
+        "-157, -1.81089321625689040160530678804e+152",
+        "-159, 1.15235772200211685798051266585e+155",
+        "-161, -7.51923119519817697500081265839e+157",
+        "-163, 5.02940165764110497246840522742e+160",
+        "-165, -3.4473420444477676704609427599e+163",
+        "-167, 2.42074586458685147183142674899e+166",
+        "-169, -1.74094659203776765075736879892e+169",
+        "-171, 1.28194898634822427378088228066e+172",
+        "-173, -9.66241211085609184243169684778e+174",
+        "-175, 7.45269103043008957309390945203e+177",
+        "-177, -5.8808393311674371248220704455e+180",
+        "-179, 4.74627186549076153992212525722e+183",
+        "-181, -3.91691325947728254682903333391e+186",
+        "-183, 3.30450714432260322283069086243e+189",
+        "-185, -2.84928905509945827581152102174e+192",
+        "-187, 2.51033293450775865129599057986e+195",
+        "-189, -2.25939019954752532049562261337e+198",
+        "-191, 2.07691380042876080434623778929e+201",
+        "-193, -1.94947321749272591308734114001e+204",
+        "-195, 1.86807314712659138998396980689e+207",
+        "-197, -1.8270752662814576943866394409e+210",
+        "-199, 1.82353863225956771810691544328e+213",
+        "-201, -1.85686908101259450981907133715e+216",
+        "-203, 1.92871898511956020928868278693e+219",
+        "-205, -2.04311704602864475750762704423e+222",
+        "-207, 2.20684116445278455076828336814e+225",
+        "-209, -2.4300821796490274251390389767e+228",
+        "-211, 2.72748878790834695290272297756e+231",
+        "-213, -3.11974215737550845945157847856e+234",
+        "-215, 3.63589387242826001493479749833e+237",
+        "-217, -4.31683000307608832681396003788e+240",
+        "-219, 5.22042448793871999720448178213e+243",
+        "-221, -6.42926069497693048519893333726e+246",
+        "-223, 8.06230338701308438135204143382e+249",
+        "-225, -1.02927147379030111575795568666e+253",
+        "-227, 1.33753296997805240211378429501e+256",
+        "-229, -1.76894809027973797575657445272e+259",
+        "-231, 2.38064790180923972522551743144e+262",
+        "-233, -3.2597127947194184823502123513e+265",
+        "-235, 4.54049623716012131918616627123e+268",
+        "-237, -6.43285751931478506106894605686e+271",
+        "-239, 9.26870486757493111152509786938e+274",
+        "-241, -1.35796195002851814738921378693e+278",
+        "-243, 2.02278397360493216811767187783e+281",
+        "-245, -3.06299069922083360655392703162e+284",
+        "-247, 4.71430853007426521282616631982e+287",
+        "-249, -7.37410458713557576506584806391e+290",
+        "-251, 1.17209627670508265765085284663e+294",
+        "-253, -1.89288666446856573885385316552e+297",
+        "-255, 3.10555175960489268960251418622e+300",
+        "-257, -5.1754977470366797965163888379e+303",
+        // B_2n for n=130 is not a double
+        // "-259, 8.76015634462292151490407301349e+306",
+    })
+    void testZetaNegativeOddInteger(int s, double z) {
+        // Uses the Bernoulli numbers divided by an integer
+        assertClose(RiemannZeta::value, s, z, 1);
+        // Check the function is monotonic in s (relevant when precomputed values are used).
+        // This works for close s but not next s
+        double zl;
+        double zu;
+        // ULP  Fails
+        // 3    -7
+        // 2    -5, -7, -225, -227, -251
+        // 3    16 cases
+        zl = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) + 4));
+        zu = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) - 4));
+        // Values alternate sign so test [zl, zu] contains z
+        if (z <= zu) {
+            Assertions.assertTrue(z >= zl, () -> String.format("%s, %s, %s", zl, z, zu));
+        } else {
+            Assertions.assertTrue(z <= zl, () -> String.format("%s, %s, %s", zl, z, zu));
+        }
+    }
+
     /**
      * Spot tests for the zeta function to check various points in the domain and extreme values.
      */
@@ -497,7 +668,13 @@ class RiemannZetaTest {
             // s -> large, a == 1
             Arguments.of(1001, 1.0, 0),
             Arguments.of(1e+18, 1.0, 0),
-            Arguments.of(1e+19, 1.0, 0)
+            Arguments.of(1e+19, 1.0, 0),
+
+            // First negative odd integer where the Bernoulli number B_2n is not a double
+            Arguments.of(-259, 8.76015634462292151490407301349e+306, 230),
+            // Large integer that is not an int:
+            //Arguments.of(-2147483649.0, -9.10272023221439406602025581451e+17393448289, 0)
+            Arguments.of(-2147483649.0, Double.NEGATIVE_INFINITY, 0)
         );
     }
 
@@ -576,7 +753,7 @@ class RiemannZetaTest {
         // CHECKSTYLE: stop regexp
         if (!jvm) {
             jvm = true;
-            System.out.printf("// %s %s%n",
+            System.out.printf("JDK %s %s%n",
                 System.getProperty("java.vm.vendor"),
                 System.getProperty("java.vm.version")
             );
@@ -594,8 +771,8 @@ class RiemannZetaTest {
      */
     @Test
     @Disabled("Used to generate test data")
-    void testSample01() throws IOException {
-        final double[] sample = new SplittableRandom().doubles(500).toArray();
+    void testSample0to1() throws IOException {
+        final double[] sample = new SplittableRandom().doubles(2000).toArray();
         Arrays.sort(sample);
         try (PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("target", "zeta_0_1.txt")))) {
             out.printf("# Dyadic doubles in [0, 1) : [%s, %s] n=%d%n",
@@ -610,11 +787,13 @@ class RiemannZetaTest {
      * Create test data for {@code s in (1, 32)}. Note that the zeta function is easily
      * computed for {@code s > 32} using 3^-s + 2^-s + 1.
      *
+     * <p>Samples are biased towards 1 to approach the pole at s=1.
+     *
      * @throws IOException Signals that an I/O exception has occurred.
      */
     @Test
     @Disabled("Used to generate test data")
-    void testSampleAbove1() throws IOException {
+    void testSample1to32() throws IOException {
         SplittableRandom rng = new SplittableRandom();
         // Create node points using 1 + 2^-b
         // Final node point is large s.
@@ -628,7 +807,43 @@ class RiemannZetaTest {
         int[] size = new int[nodes.length - 1];
         Arrays.fill(size, 10000 / size.length);
 
-        try (PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("target", "zeta_above1.txt")))) {
+        try (PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("target", "zeta_1_32.txt")))) {
+            for (int j = 0; j < nodes.length - 1; j++) {
+                sample(rng, size[j], nodes[j], nodes[j + 1], out);
+            }
+        }
+    }
+
+    /**
+     * Create test data for {@code s in [2^lb, 2^ub)}.
+     *
+     * @throws IOException Signals that an I/O exception has occurred.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "0, 2",
+        "2, 4",
+        "4, 6",
+    })
+    @Disabled("Used to generate test data")
+    void testSampleNegative(int lb, int ub) throws IOException {
+        SplittableRandom rng = new SplittableRandom();
+        // Create node points using 2^b
+        // Final node point is large s.
+        double[] nodes = new double[ub - lb + 1];
+        double b = Math.scalb(1, lb);
+        int lower = (int) b;
+        for (int i = 0; i < nodes.length; i++) {
+            nodes[i] = b;
+            b *= 2;
+        }
+        int upper = (int) (b / 2);
+
+        int[] size = new int[nodes.length - 1];
+        Arrays.fill(size, 2000 / size.length);
+
+        try (PrintStream out = new PrintStream(Files.newOutputStream(
+            Paths.get("target", String.format("zeta_%d_%d.txt", lower, upper))))) {
             for (int j = 0; j < nodes.length - 1; j++) {
                 sample(rng, size[j], nodes[j], nodes[j + 1], out);
             }

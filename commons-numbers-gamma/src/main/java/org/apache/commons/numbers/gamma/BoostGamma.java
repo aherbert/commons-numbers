@@ -709,9 +709,8 @@ final class BoostGamma {
      * @return sin(pi * x)
      */
     static double sinp(double x) {
-        int sign = 1;
         // This is always called with a negative
-        // if (x < 0)
+        int sign = -1;
         x = -x;
         double fl = Math.floor(x);
         double dist;
