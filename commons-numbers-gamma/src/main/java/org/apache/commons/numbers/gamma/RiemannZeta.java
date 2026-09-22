@@ -38,6 +38,7 @@ package org.apache.commons.numbers.gamma;
  *      {@code c++} implementation {@code <boost/math/special_functions/zeta.hpp>}.</li>
  * </ul>
  *
+ * @see HurwitzZeta
  * @see
  * <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/zetas/zeta.html">
  * Boost C++ Riemann Zeta Function</a>
