@@ -253,7 +253,7 @@ public final class BoostZeta {
                 // catch overflow conditions when compiled with an appropriate evaluation
                 // policy and return signed infinity, or raise an error. Java floating-point
                 // arithmetic does not create overflow exceptions and will return infinity.
-                double mult = BoostGamma.sinp(0.5 * sc) * 2 * zetaImp53(s, sc);
+                double mult = BoostGamma.sinp(0.5 * sc) * 2 * zetaImp(s, sc);
                 result = LogGamma.value(s);
                 result -= s * Math.log(2 * Math.PI);
                 // Possible overflow if result > 709
@@ -266,7 +266,7 @@ public final class BoostZeta {
                 result = BoostGamma.sinp(0.5 * sc) *
                     2 * Math.pow(2 * Math.PI, -s) *
                     Gamma.value(s) *
-                    zetaImp53(s, sc);
+                    zetaImp(s, sc);
             }
         } else {
             result = zetaImp53(s, sc);
