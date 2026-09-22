@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -339,6 +340,7 @@ class HurwitzZetaTest {
         ZETA_10_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 10, 15), "hurwitzzeta.csv", 3.5, 0.60),
         ZETA_11_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), "hurwitzzeta.csv", 3.8, 0.60),
         ZETA_12_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), "hurwitzzeta.csv", 3.8, 0.60),
+        CEPHES_INT(HurwitzZetaTest::zetaCephes, "hurwitzzeta.csv", 4.7, 1.0),
         ZETA_INT(HurwitzZeta::value, "hurwitzzeta.csv", 3.5, 0.60);
 
         /** The function. */
@@ -516,6 +518,85 @@ class HurwitzZetaTest {
         return sum + tsum;
     }
 
+    static double zetaCephes(double x, double q) {
+        int i;
+        double a;
+        double b;
+        double k;
+        double s;
+        double t;
+        double w;
+
+        if (x == 1.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        if (x < 1.0) {
+            return Double.NaN;
+        }
+
+        if (q <= 0.0) {
+            if (q == Math.floor(q)) {
+                return Double.POSITIVE_INFINITY;
+            }
+            if (x != Math.floor(x)) {
+                /* because q^-x not defined */
+                return Double.NaN;
+            }
+        }
+
+        /* Asymptotic expansion
+         * https://dlmf.nist.gov/25.11#E43
+         */
+        if (q > 1e15) {
+            return (1 / (x - 1) + 1 / (2 * q)) * Math.pow(q, 1 - x);
+        }
+
+        /* Euler-Maclaurin summation formula */
+
+        /* Permit negative q but continue sum until n+q > +9 .
+         * This case should be handled by a reflection formula.
+         * If q<0 and x is an integer, there is a relation to
+         * the polyGamma function.
+         */
+        s = Math.pow(q, -x);
+        a = q;
+        i = 0;
+        b = 0.0;
+        while (i < 9 || a <= 9.0) {
+            i += 1;
+            a += 1.0;
+            b = Math.pow(a, -x);
+            s += b;
+            // abs required for convergence of negative q ???
+            if (Math.abs(b / s) < 0x1.0p-53) {
+                return s;
+            }
+        }
+
+        // w = q + n
+        w = a;
+        s += b * w / (x - 1.0);
+        s -= 0.5 * b;
+        a = 1.0;
+        k = 0.0;
+        for (i = 0; i < 12; i++) {
+            a *= x + k;
+            b /= w;
+            t = a * b / F[i];
+            s = s + t;
+            t = Math.abs(t / s);
+            if (t < 0x1.0p-53) {
+                return s;
+            }
+            k += 1.0;
+            a *= x + k;
+            b /= w;
+            k += 1.0;
+        }
+        return s;
+    }
+
     /**
      * Test the factors required for the tail sum. These are computed from the numerator
      * and denominator of the Bernoulli numbers, and the factorial of 2k. The test asserts
@@ -574,6 +655,34 @@ class HurwitzZetaTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        // s = 1 : infinity
+        "1.0, 1.0, Infinity",
+        "1.0, 345.6, Infinity",
+        "1.0, -345.6, Infinity",
+        // s < 1 : not convergent so unsupported (nan)
+        "0.23, 1.0, NaN",
+        "-1.23, 1.0, NaN",
+        "-Infinity, 1.0, NaN",
+        // a = negative integer or 0 : infinity
+        "1.23, 0.0, Infinity",
+        "1.23, -1.0, Infinity",
+        "1.23, -1e300, Infinity",
+        // a <= 0 not integer; s != integer : complex result (nan)
+        "1.23, -0.5, NaN",
+        "1.23, -1.5, NaN",
+        // a = -infinity : nan
+        "2.0, -Infinity, NaN",
+        // nan arguments : nan
+        "2.0, NaN, NaN",
+        "NaN, 1.0, NaN",
+        "NaN, NaN, NaN",
+    })
+    void testZetaSpecial(double s, double a, double z) {
+        Assertions.assertEquals(z, HurwitzZeta.value(s, a));
+    }
+
     /**
      * Spot tests for the zeta function to check various points in the domain and extreme values.
      */
@@ -581,9 +690,11 @@ class HurwitzZetaTest {
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
         assertClose(HurwitzZeta::value, s, a, z, ulp);
+//        assertClose(HurwitzZetaTest::zetaCephes, s, a, z, 2);
     }
 
     static Stream<Arguments> testZetaSpot() {
+        final double inf = Double.POSITIVE_INFINITY;
         return Stream.of(
             // Reference values from mpmath version 1.4.1.
             // from mpmath import mp, zeta
@@ -669,6 +780,41 @@ class HurwitzZetaTest {
             Arguments.of(59.67, 1, 1.00000000000000000109028530523, 0),
             Arguments.of(69.67, 1, 1.00000000000000000000106473174, 0),
             Arguments.of(89.67, 1, 1.00000000000000000000000000102, 0),
+
+            // a in [0, 1]
+            Arguments.of(1.5, 0.5, 4.77653794755483324857662766936, 1),
+            Arguments.of(1.5, 0.1, 34.0529755150756003469433380579, 0),
+            Arguments.of(1.5, 0.9, 2.83731486390441065293824846471, 0),
+            Arguments.of(1.234, 0.9, 5.06661932437970945786497350413, 0),
+            Arguments.of(1.234, 0.567, 6.18461364443178731103712531596, 1),
+            Arguments.of(1.234, 0.1567, 14.4639283884787232559726455653, 0),
+
+            // a < 0 (non-integer) and s is a positive integer
+            Arguments.of(2, -0.1567, 42.8461979972498360068058012169, 1),
+            Arguments.of(3, -0.1567, -257.977656635792432293119990256, 0),
+            Arguments.of(4, -0.1567, 1660.62037088089365709488623999, 1),
+            Arguments.of(2, -5.1567, 44.004434644084193441570355425, 1),
+            Arguments.of(3, -5.1567, -258.776505481263060632140556707, 0),
+            Arguments.of(4, -5.1567, 1661.24004757051316284917148769, 1),
+
+            Arguments.of(2, -1.00000000001567, 4072555449182211754851.99822909, 0),
+            Arguments.of(3, -1.00000000001567, -2.59896546788095560752643092304e+32, 0),
+            Arguments.of(2, -1.0000000000000002, 2.0282409603651670423947251286e+31, 0),
+
+            // Overflow the sum of the series with a < 0
+            Arguments.of(18, -1.0000000000000002, 5.8086597987413400890549316334e+281, 0),
+            Arguments.of(19, -1.0000000000000002, -2.61598781051334795153424084243e+297, 0),
+            Arguments.of(20, -1.0000000000000002, inf, 0),
+            Arguments.of(21, -1.0000000000000002, -inf, 0),
+
+            // Overflow the sum of the series with a > 0
+            Arguments.of(18, 2e-16, 3.81469726562500143524108492804e+282, 0),
+            Arguments.of(19, 2e-16, 1.90734863281250075748835037869e+298, 0),
+            Arguments.of(20, 2e-16, inf, 0),
+
+            Arguments.of(18, -0.9999999999999998, 5.8086597987413400890549316334e+281, 0),
+            Arguments.of(19, -0.9999999999999998, 2.61598781051334795153424084243e+297, 0),
+            Arguments.of(20, -0.9999999999999998, inf, 0),
 
             // -------
 
