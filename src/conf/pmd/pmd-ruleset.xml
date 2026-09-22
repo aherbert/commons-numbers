@@ -72,7 +72,8 @@
       <property name="violationSuppressXPath"
         value="./ancestor-or-self::ClassDeclaration[@SimpleName='BoostErf'
                or @SimpleName='BoostGamma'
-               or @SimpleName='BoostBeta']"/>
+               or @SimpleName='BoostBeta'
+               or @SimpleName='BoostZeta']"/>
     </properties>
   </rule>
 
@@ -98,7 +99,8 @@
     <properties>
       <!-- Naming conventions preserved from the original Boost C++ code -->
       <property name="violationSuppressXPath"
-        value="./ancestor-or-self::ClassDeclaration[@SimpleName='BoostErf' or @SimpleName='BoostGamma']"/>
+        value="./ancestor-or-self::ClassDeclaration[@SimpleName='BoostErf' or @SimpleName='BoostGamma'
+           or @SimpleName='BoostZeta']"/>
     </properties>
   </rule>
   <rule ref="category/java/codestyle.xml/ConfusingTernary">
@@ -137,7 +139,8 @@
       <property name="reportLevel" value="20"/>
       <property name="violationSuppressXPath"
         value="./ancestor-or-self::ClassDeclaration[@SimpleName='QuickSelect'
-               or @SimpleName='Selection']"/>
+               or @SimpleName='Selection'
+               or @SimpleName='BoostZeta']"/>
     </properties>
   </rule>
   <rule ref="category/java/design.xml/NPathComplexity">
@@ -178,6 +181,7 @@
                or @SimpleName='BoostErf'
                or @SimpleName='BoostGamma'
                or @SimpleName='BoostBeta'
+               or @SimpleName='BoostZeta'
                or @SimpleName='InvGamma1pm1'
                or @SimpleName='BrentSolver'
                or @SimpleName='DDMath'
@@ -212,6 +216,7 @@
                or @SimpleName='BoostErf'
                or @SimpleName='BoostGamma'
                or @SimpleName='BoostBeta'
+               or @SimpleName='BoostZeta'
                or @SimpleName='BoostTools'
                or @SimpleName='BoostMath'] | ./ancestor-or-self::MethodDeclaration[@Image='ldexp']"/>
     </properties>

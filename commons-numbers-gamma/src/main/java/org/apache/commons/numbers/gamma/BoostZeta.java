@@ -229,10 +229,10 @@ public final class BoostZeta {
             // Remove positive odd integer case:
             // For odd integers zetaImp53 is exact except for 1 ULP at s=53. This
             // is exact if the asymptote uses pow(3, -s).
-            int v = (int) s;
+            final int v = (int) s;
             if (v == s && v < 0) {
                 // Negative odd integer
-                int n = (1 - v) / 2;
+                final int n = (1 - v) / 2;
                 if (n < B2N.length) {
                     return -B2N[n] / (1 - v);
                 }
@@ -245,7 +245,7 @@ public final class BoostZeta {
         } else if (s < 0) {
             // Negative odd integer (all negative even integers handled above).
             // Swap: s is now positive; sc = 1 - s
-            double tmp = s;
+            final double tmp = s;
             s = sc;
             sc = tmp;
             if (s > BoostGamma.MAX_FACTORIAL) {
@@ -253,7 +253,7 @@ public final class BoostZeta {
                 // catch overflow conditions when compiled with an appropriate evaluation
                 // policy and return signed infinity, or raise an error. Java floating-point
                 // arithmetic does not create overflow exceptions and will return infinity.
-                double mult = BoostGamma.sinp(0.5 * sc) * 2 * zetaImp(s, sc);
+                final double mult = BoostGamma.sinp(0.5 * sc) * 2 * zetaImp(s, sc);
                 result = LogGamma.value(s);
                 result -= s * Math.log(2 * Math.PI);
                 // Possible overflow if result > 709
@@ -332,8 +332,8 @@ public final class BoostZeta {
         } else if (s <= 4) {
             // Maximum Deviation Found:                     5.946e-22
             // Expected Error Term:                        -5.946e-22
-            double Y = 0.6986598968505859375;
-            double x = s - 2;
+            final double Y = 0.6986598968505859375;
+            final double x = s - 2;
             double P;
             P = 0.328032510000383084155e-5;
             P = 0.769875101573654070925e-4 + P * x;
@@ -355,7 +355,7 @@ public final class BoostZeta {
             // Maximum Deviation Found:                     2.955e-17
             // Expected Error Term:                         2.955e-17
             // Max error found at double precision:         2.009135e-16
-            double x = s - 4;
+            final double x = s - 4;
             double P;
             P = -0.229257310594893932383e-4;
             P =  -0.00701721240549802377623 + P * x;
@@ -379,7 +379,7 @@ public final class BoostZeta {
             // Maximum Deviation Found:                     7.117e-16
             // Expected Error Term:                         7.117e-16
             // Max error found at double precision:         9.387771e-16
-            double x = s - 7;
+            final double x = s - 7;
             double P;
             P =  0.139348932445324888343e-5;
             P =  0.639949204213164496988e-4 + P * x;
@@ -403,7 +403,7 @@ public final class BoostZeta {
         } else if (s < 36) {
             // Max error in interpolated form:              1.668e-17
             // Max error found at long double precision:    1.669714e-17
-            double x = s - 15;
+            final double x = s - 15;
             double P;
             P = -0.821465709095465524192e-8;
             P = -0.785523633796723466968e-6 + P * x;
