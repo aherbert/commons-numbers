@@ -73,6 +73,8 @@ public final class HurwitzZeta {
     private static final double EPS = 0x1.0p-53;
     /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not exact. */
     private static final double LARGE_A = (1L << 53) - N;
+    /** 0.5. */
+    private static final double HALF = 0.5;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
@@ -132,7 +134,8 @@ public final class HurwitzZeta {
             return Double.POSITIVE_INFINITY;
         }
         if (a <= 0) {
-            if (Math.floor(a) == a) {
+            final double fa = Math.floor(a);
+            if (fa == a) {
                 // The term 0^-s is infinity
                 return Double.POSITIVE_INFINITY;
             }
@@ -144,23 +147,39 @@ public final class HurwitzZeta {
 
             // TODO: Test if this is best way to handle negative a.
 
+            // if s is odd then pre-compute zeta.
+            // sum series until the sum is above zeta.
+            // add zeta -> cancellation to zero.
+            // sum remaining series.
+
             // Sum the series until a is positive.
             // Warning: Max terms ~ 2^53.
             // Terms are ascending magnitude.
             // If s is odd then the sum will be negative and the
-            // addition of zeta(s, x) has cancellation.
+            // addition of zeta(s, x) has cancellation. This is largest when
+            // a is close to half-integer (.5 fraction part).
+
+            // Case of total cancellation
+            if (a - fa == HALF && ((long) s & 1) == 1) {
+                return zetaImp(s, 1 - a);
+            }
+
             // Sum in extended precision. Use a standard sum to catch infinity.
             double sum = 0;
             DD ss = DD.ZERO;
             double x = a;
             double t;
-            while (x < 0) {
+            // This can stop at any 0 < x < infinity.
+            // Summing additional positive x terms more accurately handles
+            // the cancellation case since the two opposing terms around x = 0
+            // are of similar magnitude when cancellation is worst.
+            while (x < 2) {
                 t = Math.pow(x, -s);
                 sum += t;
                 ss = ss.add(t);
                 x += 1.0;
             }
-            // When a is very close to integer the last term can create overflow.
+            // When a is very close to integer the x~0 term can create overflow.
             // Check the extended precision sum is valid or return the IEEE result.
             if (!ss.isFinite()) {
                 return sum;
@@ -168,6 +187,9 @@ public final class HurwitzZeta {
             // Add the remaining series zeta(s, x) for x > 0
             final double z = zetaImp(s, x);
             ss = ss.add(z);
+            // Overflow here requires the sum to be very close to max value
+            // after computing into x > 0. It is unlikely additional terms
+            // can be added in double precision to cause overflow.
             return ss.isFinite() ? ss.hi() : sum + z;
         }
         // Use the more accurate Riemann zeta function.
