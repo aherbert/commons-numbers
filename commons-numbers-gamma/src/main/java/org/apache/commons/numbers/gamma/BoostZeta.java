@@ -425,7 +425,7 @@ public final class BoostZeta {
             result = P / Q;
             result = 1 + Math.exp(result);
         } else {
-            //result = 1 + Math.pow(2, -s);
+            // Change from: 1 + Math.pow(2, -s);
             // Adding 3^-s increases ULP accuracy as the result approaches 1.0
             result = Math.pow(3, -s) + Math.pow(2, -s) + 1;
         }
