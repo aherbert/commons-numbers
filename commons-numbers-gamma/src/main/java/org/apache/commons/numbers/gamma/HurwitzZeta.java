@@ -20,61 +20,34 @@ package org.apache.commons.numbers.gamma;
  * <a href="https://en.wikipedia.org/wiki/Hurwitz_zeta_function">
  * Hurwitz zeta</a> function.
  *
- * <pre>
- *                 oo    1
- * zeta(s, a) = sum    ------
- *                 k=0      s
- *                     (k+a)
- * </pre>
+ * <p>\[ \zeta(s, a) = \sum_{k=0}^\infty \frac{1}{(k+a)^s} \]
  *
- * <p>The function is formally defined for complex variable {@code s} with {@code Re(s) > 1}
- * and real {@code a != 0, -1, -2, ...}. This series is absolutely convergent for the given
- * values of {@code s} and {@code a}. Note the special case zeta(s, 1) is the Riemann zeta function.
- *
- * <p>TODO: Update this to use Mathjax. Alter the domain of a. Add a note about long runtime
- * for negative a.
- *
- * <p>This implementation uses real-valued {@code s > 1} and {@code a >= 1}.
- * Specialisation to a smaller domain than any finite {@code a} allows optimisation for
- * a {@code double} precision result.
+ * <p>The function is formally defined for complex variable \( s \) with \( \mathrm{Re}(s) \gt 1 \)
+ * and real \( a \ne 0, -1, -2, \cdots \). This series is absolutely convergent for the given
+ * values of \( s \) and \( a \). Note the special case \( zeta(s, 1) \) is the
+ * {@link RiemannZeta Riemann zeta} function. This implementation uses real-valued \( s \gt 1 \).
  *
  * <p>The implementation is performed by spitting the integral into two parts and using
- * the Euler-Maclaurin formula to approximate the second integral {@code I + T + R}
- * with a continuous integral {@code I}, a tail {@code T}, and a residual error term
- * {@code R} (not computed).
+ * the Euler-Maclaurin formula to approximate the second integral \( \mathrm{I} + \mathrm{T} + \mathrm{R} \)
+ * with a continuous integral \( \mathrm{I} \), a tail \( \mathrm{T} \), and a residual error term
+ * \( \mathrm{R} \) (not computed).
  *
- * <pre>
- *                 N-1           oo
- * zeta(s, a) = sum    f(k) + sum    f(k) = S + I + T + R
- *                 k=0           k=N
+ * <p>\[ \begin{aligned}
+ * \zeta(s, a) &amp;= \sum_{k=0}^{N-1} \frac{1}{(k+a)^s} + \sum_{k=N}^\infty \frac{1}{(k+a)^s} = \mathrm{S} + \mathrm{I} + \mathrm{T} + \mathrm{R} \\
+ * \mathrm{I} &amp;= \int_N^\infty \frac{1}{(a+t)^s} dt = \frac{(a+N)^{1-s}}{s-1} \\
+ * \mathrm{T} &amp;= \frac{1}{(a+N)^s} \left( \frac{1}{2} + \sum_{k=1}^M \frac{B_{2k}}{2k!} \frac{(s)_{2k-1}}{(a+N)^{2k-1}} \right) \\
+ * \mathrm{R} &amp;= - \int_N^\infty \frac{\tilde{B}_{2M}(t)}{2M!} \frac{(s)_{2M}}{(a+t)^{s+2M}} dt \end{aligned} \]
  *
- *          1
- * f(k) = ------
- *             s
- *        (a+k)
+ * <p>\( B_{2k} \) is a Bernoulli number; \( \tilde{B}_{2M}(t) \) is a generalized Bernoulli number;
+ * and \( (s)_n \) is the rising factorial Pochammer function:
  *
- *                            1-s
- *      ,-oo   1         (a+N)
- * I =  |    ------ dt = --------
- *     -' N       s        s-1
- *           (a+t)
+ * <p>\[ (s)_n = \prod_{i=0}^{n-1} (s+i) \]
  *
- *            /             B     (s)      \
- *       1    | 1      M     2k      2k-1  |
- * T = ------ | - + sum    ----- --------- |
- *          s | 2      k=1 (2k)!      2k-1 |
- *     (a+N)  \                  (a+N)     /
+ * <p>These formulas for the real-valued \( s \) are provided in Johansson (2015) as
+ * equations 5-9. The implementation omits the residual term \( \mathrm{R} \).
  *
- * B   = Bernoulli number
- *  2k
- *
- *           ___n-1
- * (s)     = | |    (x+i)    (rising factorial Pochhammer function)
- *    n      | |i=0
- * </pre>
- *
- * <p>These formulas for the real-valued {@code s} are provided in Johansson (2015) as
- * equations 5-9. The implementation omits the residual term {@code R}.
+ * <p>The integrals are well defined when \( a + N \gt 0 \). Negative \( a \) requires the
+ * sum \( S \) of a large number of terms \( N \) with potentially very long runtime times.
  *
  * <p>References
  * <ol>
@@ -82,12 +55,12 @@ package org.apache.commons.numbers.gamma;
  * Rigorous high-precision computation of the Hurwitz zeta function and its derivatives
  * <a href="https://link.springer.com/article/10.1007/s11075-014-9893-1">Numerical Algorithms (69) 253–270</a></li>
  * <li><a href="https://en.wikipedia.org/wiki/Hurwitz_zeta_function">Hurwitz zeta function (Wikipedia)</a></li>
- * <li><a href="https://en.wikipedia.org/wiki/Riemann_zeta_function">Riemann zeta function (Wikipedia)</a></li>
  * <li><a href="https://en.wikipedia.org/wiki/Euler%E2%80%93Maclaurin_formula">Euler–Maclaurin formula (Wikipedia)</a></li>
  * <li><a href="https://en.wikipedia.org/wiki/Bernoulli_number">Bernoulli number (Wikipedia)</a></li>
  * <li><a href="https://en.wikipedia.org/wiki/Falling_and_rising_factorials">Rising and falling factorials (Wikipedia)</a></li>
  * </ol>
  *
+ * @see RiemannZeta
  * @since 1.4
  */
 public final class HurwitzZeta {
@@ -123,6 +96,32 @@ public final class HurwitzZeta {
     private HurwitzZeta() {}
 
     /**
+     * Computes the value of \( \zeta(s, a) \).
+     *
+     * <p>Special cases: TODO
+     * <ul>
+     * <li>If the argument \( s \) is 1, then the result is positive infinity.</li>
+     * <li>If the argument \( s \) is a negative even integer, then the result is XXX.</li>
+     * <li>If the argument \( s \) is positive infinity, then the result is XXX.</li>
+     * <li>If the argument \( a \) is a negative even integer, then the result is nan.</li>
+     * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
+     * <li>If either argument is nan, then the result is nan.</li>
+     * </ul>
+     * 
+     * <p><strong>Warning</strong>
+     *
+     * <p>Negative \( a \) will have increasing runtime as the magnitude of \( a \) increases,
+     * with potentially very long runtimes.
+     *
+     * @param s Argument.
+     * @param a Argument.
+     * @return \( \zeta(s, a) \)
+     */
+    public static double value(double s, double a) {
+        return zetaImp(s, a);
+    }
+
+    /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
      *
      * <pre>
@@ -133,13 +132,13 @@ public final class HurwitzZeta {
      * </pre>
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
-     * The domain of {@code a} is expected to be a positive integer {@code [1, 2^31)}.
+     * The domain of {@code a} is expected to be positive.
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a >= 1}
      * @return zeta(s, a)
      */
-    public static double value(double s, double a) {
+    private static double zetaImp(double s, double a) {
         final double apn = a + N;
         double p = Math.pow(apn, -s);
 
