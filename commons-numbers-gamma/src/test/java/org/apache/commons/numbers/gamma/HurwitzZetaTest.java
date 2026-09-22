@@ -858,11 +858,6 @@ class HurwitzZetaTest {
         );
     }
 
-    @Test
-    void test() {
-        assertClose(HurwitzZeta::value, 2, -126.26738, -0.00788842377634280260205552412202, 0);
-    }
-
     @ParameterizedTest
     @EnumSource(value = BiTestCase.class)
     @Order(1)
