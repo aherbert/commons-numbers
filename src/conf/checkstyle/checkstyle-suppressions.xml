@@ -38,6 +38,7 @@
   <suppress checks="LocalVariableName" files=".*[/\\]BoostGamma\.java" />
   <suppress checks="LocalFinalVariableName" files=".*[/\\]BoostGamma\.java" />
   <suppress checks="LocalVariableName" files=".*[/\\]BoostZeta\.java" />
+  <suppress checks="LocalFinalVariableName" files=".*[/\\]BoostZeta\.java" />
   <suppress checks="ParameterNumber" files=".*[/\\]BoostBeta\.java" />
   <!-- Method "hashCode()" is defined in the "Angle" parent class; subclasses have no additional fields to include in the hash. -->
   <suppress checks="EqualsHashCode" files=".*[/\\]Angle\.java" />
@@ -81,4 +82,5 @@
   <suppress checks="FileLength" files=".*[/\\]jmh[/\\]arrays[/\\]PartitionTest.java" />
   <suppress checks="UnnecessaryParentheses" files=".*[/\\]jmh[/\\]arrays[/\\]PartitionTest.java" />
   <suppress checks="ParameterNumber" files=".*[/\\]jmh[/\\]arrays[/\\]PartitionTest.java" />
+  <suppress checks="MethodLength" files=".*[/\\]gamma[/\\]HurwitzZetaTest.java" />
 </suppressions>
