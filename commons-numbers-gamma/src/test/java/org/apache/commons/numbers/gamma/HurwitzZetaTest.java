@@ -690,7 +690,6 @@ class HurwitzZetaTest {
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
         assertClose(HurwitzZeta::value, s, a, z, ulp);
-//        assertClose(HurwitzZetaTest::zetaCephes, s, a, z, 2);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -816,12 +815,27 @@ class HurwitzZetaTest {
             Arguments.of(19, -0.9999999999999998, 2.61598781051334795153424084243e+297, 0),
             Arguments.of(20, -0.9999999999999998, inf, 0),
 
+            // Note: large negative a can be evaluated as complex using mpmath.
+            // To obtain a real result requires the digits of precision (dps)
+            // to be set above |a|. Larger a are tested using Matlab.
+            // mp.dps = 70
+            Arguments.of(2, -66.26738, 17.78437226907544744370996767080669047664124490204306137519070727420819, 0),
+            Arguments.of(3, -66.26738, -50.12250472489562851240391661869509127911964240532672215389564430564016, 0),
+
             // -------
 
             // Reference values using Matlab R2026a Symbolic Math Toolbox
             //   vpa(hurwitzZeta(sym(s, 'f'), sym(a, 'f')))
             // Note: The use of 'f' uses the floating-point conversion as N * 2^e
             // where N is the mantissa and e is the exponent.
+
+            // large negative a
+            Arguments.of(2, -126.26738, 17.791460939023473438160367544592, 0),
+            Arguments.of(3, -126.26738, -50.122585766014119719214807501752, 0),
+            Arguments.of(2, -12326.26738, 17.79926823859865890222951879278, 0),
+            Arguments.of(3, -12326.26738, -50.122616876585709689690102522698, 0),
+            Arguments.of(2, -12326.06738, 223.58067369905866158686397531508, 0),
+            Arguments.of(3, -12326.06738, -3268.4963860622797455849029641482, 0),
 
             Arguments.of(1.5, 4789, 0.0289021565574206125831622859402, 0),
             Arguments.of(2.345, 12.789, 0.0254390524135780630410689989495, 1),
@@ -842,6 +856,11 @@ class HurwitzZetaTest {
             Arguments.of(1.0000000000000002, 1.789, 4503599627370495.72314713725233, 0),
             Arguments.of(1.0000000000000002, 1278562927.89, 4503599627370475.03099742881301, 0)
         );
+    }
+
+    @Test
+    void test() {
+        assertClose(HurwitzZeta::value, 2, -126.26738, -0.00788842377634280260205552412202, 0);
     }
 
     @ParameterizedTest
@@ -952,4 +971,7 @@ class HurwitzZetaTest {
         System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d%n",
             name, maxAbsUlp, rmsUlp, meanUlp, size);
     }
+
+    // TODO
+    // Create method to generated test data
 }
