@@ -690,6 +690,7 @@ class HurwitzZetaTest {
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
         assertClose(HurwitzZeta::value, s, a, z, ulp);
+//        assertClose(HurwitzZetaTest::zetaCephes, s, a, z, 5);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -799,6 +800,25 @@ class HurwitzZetaTest {
             Arguments.of(2, -1.00000000001567, 4072555449182211754851.99822909, 0),
             Arguments.of(3, -1.00000000001567, -2.59896546788095560752643092304e+32, 0),
             Arguments.of(2, -1.0000000000000002, 2.0282409603651670423947251286e+31, 0),
+
+            // a close to half integer
+            Arguments.of(2, -11.499, 9.7864096532064037170689523814012513283574378908625, 0),
+            Arguments.of(2, -21.499, 9.8242530207688014634659878248899978896965690833573, 0),
+
+            // a is odd has cancellation
+            Arguments.of(3, -21.499, -0.09637775418460447271221850760411324846873791133448, 37),
+            Arguments.of(3, -21.501, 0.098442803974649377073746600966748291488497220978961, 41),
+            Arguments.of(5, -21.499, -0.64094298652061283507484770384318604647832428321319, 30),
+            Arguments.of(5, -21.501, 0.64094511727200934057870930923285174211166495014722, 16),
+            Arguments.of(3, -7.5000000001, 0.007782265638668063994730919817396152634504258389332, 10),
+            Arguments.of(3, -7.4999999999, 0.0077822461572358593294768713462220939956242365981849, 11),
+
+            // s is odd and a is half-integer -> total cancellation
+            Arguments.of(3, -12.5, 0.0029542182928941203954486528445780501312428003881805, 0),
+            Arguments.of(5, -23.5, 7.5243259573223049042413305168073933156343070954263e-07, 1),
+            // s is even and a is half-integer -> no cancellation (sum below 0 is mirrored above 0)
+            Arguments.of(2, -12.5, 9.792719176487780248390899866936566735096179245964, 0),
+            Arguments.of(4, -23.5, 32.469672919579233053403733014746340086149182248433, 0),
 
             // Overflow the sum of the series with a < 0
             Arguments.of(18, -1.0000000000000002, 5.8086597987413400890549316334e+281, 0),
@@ -968,5 +988,16 @@ class HurwitzZetaTest {
     }
 
     // TODO
-    // Create method to generated test data
+    // Create method to generated test data all with various s:
+    // a positive and close to integer
+    // a negative and close to integer
+    // a in [0, 1]
+    // a in [-1, 0]
+    // a in [1, 10]
+    // a in [10, 2^31]
+    // a in [-10, -1]
+    // a in [-100, -10]
+    // a in [-1000, -100]
+    // Create script to read the data in Matlab and output the result.
+    // Try the test implementation with different n on these data.
 }
