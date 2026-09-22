@@ -17,20 +17,20 @@
 package org.apache.commons.numbers.gamma;
 
 /**
- * <a href="https://en.wikipedia.org/wiki/Riemann_zeta_function">
+ * <a href="https://mathworld.wolfram.com/RiemannZetaFunction.html">
  * Riemann zeta</a> function.
  *
  * <p>\[ \zeta(s) = \sum_{k=1}^\infty \frac{1}{k^s} = \frac{1}{1^s} + \frac{1}{2^s} + \frac{1}{3^s} + \cdots \]
  *
- * <p>The function is formally defined for complex variable {@code s} with {@code Re(s) > 1},
- * and its analytic continuation elsewhere. This implementation uses real-valued {@code s}.
+ * <p>The function is formally defined for complex variable \( s \) with \( \mathrm{Re}(s) \gt 1 \),
+ * and its analytic continuation elsewhere. This implementation uses real-valued \( s \).
  *
- * <p>The implementation uses the reflection formula when {@code s < 0}.
+ * <p>The reflection formula is used to map \( s \) to the positive domain:
  *
  * <p>\[ \zeta(1 - s) = 2 \sin(\pi \frac{1-s}{2}) (2\pi)^{-s} \Gamma(s) \zeta(s) \]
  *
  * <p>where \( \Gamma(s) \) is the {@link Gamma} function. Negative arguments may be
- * increasingly inaccurate as the magnitude of {@code -s} becomes large.
+ * increasingly inaccurate as the magnitude of \( -s \) becomes large.
  *
  * <p>This code has been adapted from:
  * <ul>
