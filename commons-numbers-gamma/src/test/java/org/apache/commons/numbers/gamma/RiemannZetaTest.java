@@ -122,20 +122,22 @@ class RiemannZetaTest {
     private enum TestCase implements TestError {
         // Hurwitz zeta is accurate for all s including s -> 1
         HURWITZ_ZETA_1_32(s -> HurwitzZeta.value(s, 1), "zeta_1_32.csv", 1.62, 0.43),
-        // Borwein zeta has no support for negative s using reflection
+        HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.value(s, 1), "zeta_above1.csv", 1.7, 0.52),
+        // Borwein zeta has no support for negative s using reflection.
         // It is worse than BoostZeta
         BORWEIN_ZETA_1_32(RiemannZetaTest::borweinZeta, "zeta_1_32.csv", 2.7, 0.4),
+        BORWEIN_ZETA_ABOVE_1(RiemannZetaTest::borweinZeta, "zeta_above1.csv", 2.7, 0.71),
+        BORWEIN_ZETA_BELOW_1(RiemannZetaTest::borweinZeta, "zeta_below1.csv", 3.35, 0.72),
         BORWEIN_ZETA_0_1(RiemannZetaTest::borweinZeta, "zeta_0_1.csv", 6, 1.2),
-        // BoostZeta is better than Hurwitz zeta for the domain s in (1, 32)
+        // BoostZeta is better than Hurwitz zeta for the domain s in (1, 32).
+        // The method has increasing error with larger negative s.
         ZETA_1_32(RiemannZeta::value, "zeta_1_32.csv", 1.5, 0.27),
+        ZETA_ABOVE_1(RiemannZeta::value, "zeta_above1.csv", 1.0, 0.34),
+        ZETA_BELOW_1(RiemannZeta::value, "zeta_below1.csv", 1.48, 0.46),
         ZETA_0_1(RiemannZeta::value, "zeta_0_1.csv", 2.32, 0.69),
-        // The Boost method has increasing error with larger negative s.
         ZETA_N_0_1(RiemannZeta::value, "zeta_N_0_1.csv", 6, 1.5),
-        // s in -[1, 4)
         ZETA_N_1_4(RiemannZeta::value, "zeta_N_1_4.csv", 7, 1.6),
-        // s in -[4, 16)
         ZETA_N_4_16(RiemannZeta::value, "zeta_N_4_16.csv", 23, 3.6),
-        // s in -[16, 64)
         ZETA_N_16_64(RiemannZeta::value, "zeta_N_16_64.csv", 170, 15.5);
 
 //        JDK Temurin 25.492-b09
@@ -768,60 +770,72 @@ class RiemannZetaTest {
     /**
      * Create test data for {@code s in [0, 1)}. Note that the zeta function is easily
      * computed for {@code s -> 0} so using dyadic rationals in [0, 1) is sufficient.
-     *
-     * @throws IOException Signals that an I/O exception has occurred.
      */
     @Test
     @Disabled("Used to generate test data")
-    void testSample0to1() throws IOException {
+    void testDataSample0to1() throws IOException {
         final double[] sample = new SplittableRandom(SEED).doubles(2000).toArray();
         Arrays.sort(sample);
         try (PrintStream out = getPrintStream("zeta_0_1.txt")) {
             out.printf("# Dyadic doubles in [0, 1) : [%s, %s] n=%d%n",
                 sample[0], sample[sample.length - 1], sample.length);
-            for (double s : sample) {
+            for (final double s : sample) {
                 out.println(s);
             }
         }
     }
 
     /**
-     * Create test data for {@code s in (1, 32)}. Note that the zeta function is easily
-     * computed for {@code s > 32} using 3^-s + 2^-s + 1.
-     *
-     * <p>Samples are biased towards 1 to approach the pole at s=1.
-     *
-     * @throws IOException Signals that an I/O exception has occurred.
+     * Create test data for close to and above 1.
      */
     @Test
     @Disabled("Used to generate test data")
-    // TODO - update to target close to and above 1
-    // Create method to create close to and below 1
-    void testSampleCloseAbove1() throws IOException {
-        SplittableRandom rng = new SplittableRandom(SEED);
+    void testDataSampleCloseAbove1() throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
         // Create node points using 1 + 2^-b
-        // Final node point is large s.
-        double[] nodes = new double[58];
+        final double[] nodes = new double[42];
         double b = 0x1p-52;
         for (int i = 0; i < nodes.length; i++) {
             nodes[i] = 1 + b;
             b *= 2;
         }
 
-        int[] size = new int[nodes.length - 1];
-        Arrays.fill(size, 10000 / size.length);
-
-        try (PrintStream out = getPrintStream("zeta_1_32.txt")) {
+        final int size = 3000 / (nodes.length - 1);
+        try (PrintStream out = getPrintStream("zeta_above1.txt")) {
             for (int j = 0; j < nodes.length - 1; j++) {
-                sample(rng, size[j], nodes[j], nodes[j + 1], out);
+                sample(rng, size, nodes[j], nodes[j + 1], out);
+            }
+        }
+    }
+
+    /**
+     * Create test data for close to and below 1.
+     */
+    @Test
+    @Disabled("Used to generate test data")
+    void testDataSampleCloseBelow1() throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Create node points using 1 - 2^-b
+        final double[] nodes = new double[42];
+        double b = 0x1p-53;
+        // Nodes must be ascending magnitude so fill from the end.
+        // This is an exclusive upper bound.
+        nodes[nodes.length - 1] = 1;
+        for (int i = 1; i < nodes.length; i++) {
+            nodes[nodes.length - i - 1] = 1 - b;
+            b *= 2;
+        }
+
+        final int size = 3000 / (nodes.length - 1);
+        try (PrintStream out = getPrintStream("zeta_below1.txt")) {
+            for (int j = 0; j < nodes.length - 1; j++) {
+                sample(rng, size, nodes[j], nodes[j + 1], out);
             }
         }
     }
 
     /**
      * Create test data for {@code s in [2^lb, 2^ub)}.
-     *
-     * @throws IOException Signals that an I/O exception has occurred.
      */
     @ParameterizedTest
     @CsvSource({
@@ -830,28 +844,27 @@ class RiemannZetaTest {
         "2, 4",
         "4, 6",
         // For positive s in [1, 32)
+        // Note that the zeta function is easily
+        // computed for {@code s > 32} using 3^-s + 2^-s + 1.
         "0, 5",
     })
     @Disabled("Used to generate test data")
-    void testSamplePowerOf2(int lb, int ub) throws IOException {
-        SplittableRandom rng = new SplittableRandom(SEED);
+    void testDataSamplePowerOf2(int lb, int ub) throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
         // Create node points using 2^b
-        // Final node point is large s.
-        double[] nodes = new double[ub - lb + 1];
+        final double[] nodes = new double[ub - lb + 1];
         double b = Math.scalb(1, lb);
-        int lower = (int) b;
+        final int lower = (int) b;
         for (int i = 0; i < nodes.length; i++) {
             nodes[i] = b;
             b *= 2;
         }
-        int upper = (int) (b / 2);
+        final int upper = (int) (b / 2);
 
-        int[] size = new int[nodes.length - 1];
-        Arrays.fill(size, 3000 / size.length);
-
+        final int size = 3000 / (nodes.length - 1);
         try (PrintStream out = getPrintStream(String.format("zeta_%d_%d.txt", lower, upper))) {
             for (int j = 0; j < nodes.length - 1; j++) {
-                sample(rng, size[j], nodes[j], nodes[j + 1], out);
+                sample(rng, size, nodes[j], nodes[j + 1], out);
             }
         }
     }
@@ -864,15 +877,15 @@ class RiemannZetaTest {
      * @param rng the source of randomness
      * @param n the maximum number of samples
      * @param lo the low bound (inclusive)
-     * @param hi the hi bound (exclusive)
+     * @param hi the high bound (exclusive)
      */
     private static void sample(SplittableRandom rng, int n, double lo, double hi,
             PrintStream out) {
         assert lo >= 0;
         assert hi > lo;
-        long lb = Double.doubleToRawLongBits(lo);
-        long hb = Double.doubleToRawLongBits(hi);
-        long range = hb - lb;
+        final long lb = Double.doubleToRawLongBits(lo);
+        final long hb = Double.doubleToRawLongBits(hi);
+        final long range = hb - lb;
         if (range < n) {
             out.printf("# [%s, %s) %d / %d%n", lo, hi, range, range);
             for (int i = 0; i < range; i++) {
@@ -880,21 +893,21 @@ class RiemannZetaTest {
             }
             return;
         }
-        long[] s = new long[n];
+        final long[] s = new long[n];
         boolean check = true;
         if (range < Integer.MAX_VALUE) {
-            int m = (int) range;
+            final int m = (int) range;
             if (range < 20L * n) {
-                // Avoid duplicates
+                // Avoid duplicates when sampling a small range
                 check = false;
-                int[] natural = IntStream.range(0, m).toArray();
+                final int[] natural = IntStream.range(0, m).toArray();
                 // Partial Fisher-Yates shuffle
                 for (int i = 0; i < n; i++) {
                     // Index into the remaining array length
-                    int k = m - i - 1;
+                    final int k = m - i - 1;
                     // Swap index k with any position down to 0 (including itself)
-                    int j = rng.nextInt(k + 1);
-                    int t = natural[j];
+                    final int j = rng.nextInt(k + 1);
+                    final int t = natural[j];
                     natural[j] = natural[k];
                     // No required: natural[k] = t
                     s[i] = lb + t;
@@ -928,6 +941,13 @@ class RiemannZetaTest {
         }
     }
 
+    /**
+     * Gets the prints the stream.
+     * Adds a header line to the output indicating how the data was created.
+     *
+     * @param filename the filename
+     * @return the stream
+     */
     private PrintStream getPrintStream(String filename) throws IOException {
         final PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("target", filename)));
         out.printf("# Generated by %s%n", getClass().getSimpleName());
