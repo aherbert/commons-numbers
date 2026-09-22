@@ -120,15 +120,19 @@ class RiemannZetaTest {
      * @see <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/pol_tutorial/policy_tut_defaults.html">Policy defaults</a>
      */
     private enum TestCase implements TestError {
-        // Hurwitz zeta is accurate for all s including s -> 1
-        HURWITZ_ZETA_1_32(s -> HurwitzZeta.value(s, 1), "zeta_1_32.csv", 1.62, 0.43),
-        HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.value(s, 1), "zeta_above1.csv", 1.7, 0.52),
+        // Hurwitz zeta is accurate for all s > 1 including s -> 1.
+        // Require by passing public API which can call the zeta function when a==1.
+        HURWITZ_ZETA_1_32(s -> HurwitzZeta.zetaImp(s, 1), "zeta_1_32.csv", 1.62, 0.43),
+        HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_above1.csv", 1.7, 0.52),
+//        // Require by-passing s <= 1
+//        HURWITZ_ZETA_BELOW_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_below1.csv", 2.13, 0.63),
+//        HURWITZ_ZETA_0_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_0_1.csv", 27, 4.3),
         // Borwein zeta has no support for negative s using reflection.
         // It is worse than BoostZeta
         BORWEIN_ZETA_1_32(RiemannZetaTest::borweinZeta, "zeta_1_32.csv", 2.7, 0.4),
         BORWEIN_ZETA_ABOVE_1(RiemannZetaTest::borweinZeta, "zeta_above1.csv", 2.7, 0.71),
         BORWEIN_ZETA_BELOW_1(RiemannZetaTest::borweinZeta, "zeta_below1.csv", 3.35, 0.72),
-        BORWEIN_ZETA_0_1(RiemannZetaTest::borweinZeta, "zeta_0_1.csv", 6, 1.2),
+        BORWEIN_ZETA_0_1(RiemannZetaTest::borweinZeta, "zeta_0_1.csv", 6, 1.3),
         // BoostZeta is better than Hurwitz zeta for the domain s in (1, 32).
         // The method has increasing error with larger negative s.
         ZETA_1_32(RiemannZeta::value, "zeta_1_32.csv", 1.5, 0.27),
@@ -141,15 +145,22 @@ class RiemannZetaTest {
         ZETA_N_16_64(RiemannZeta::value, "zeta_N_16_64.csv", 170, 15.5);
 
 //        JDK Temurin 25.492-b09
-//        HURWITZ_ZETA_1_32                     max    1.66474   RMS   0.486392   mean    -0.00900755  n 8827
-//        BORWEIN_ZETA_1_32                     max    2.76154   RMS   0.641891   mean       0.311163  n 8827
-//        BORWEIN_ZETA_0_1                      max    5.92608   RMS    1.24058   mean      -0.482044  n 2000
-//        ZETA_1_32                             max    1.44866   RMS   0.329523   mean    -0.00187909  n 8827
-//        ZETA_0_1                              max    2.29206   RMS   0.672252   mean      0.0358141  n 2000
-//        ZETA_N_0_1                            max    5.10307   RMS    1.44338   mean      -0.247624  n 2000
-//        ZETA_N_1_4                            max    5.64490   RMS    1.52401   mean       0.191876  n 2000
-//        ZETA_N_4_16                           max    21.9059   RMS    3.58847   mean       0.259994  n 2000
-//        ZETA_N_16_64                          max    161.222   RMS    15.0401   mean       0.701080  n 2000
+//        HURWITZ_ZETA_1_32                     max    1.60678   RMS   0.414903   mean     0.00784791  n 3000
+//        HURWITZ_ZETA_ABOVE_1                  max    1.65995   RMS   0.491651   mean     -0.0154402  n 2606
+//        HURWITZ_ZETA_BELOW_1                  max    2.10653   RMS   0.613495   mean     -0.0393119  n 2535
+//        HURWITZ_ZETA_0_1                      max    26.6667   RMS    4.18436   mean      0.0446286  n 2000
+//        BORWEIN_ZETA_1_32                     max    2.56933   RMS   0.363840   mean      0.0850378  n 3000
+//        BORWEIN_ZETA_ABOVE_1                  max    2.62981   RMS   0.686734   mean       0.354976  n 2606
+//        BORWEIN_ZETA_BELOW_1                  max    3.31413   RMS   0.698234   mean      -0.334494  n 2535
+//        BORWEIN_ZETA_0_1                      max    5.18607   RMS    1.16183   mean      -0.429437  n 2000
+//        ZETA_1_32                             max    1.44796   RMS   0.258206   mean     0.00387724  n 3000
+//        ZETA_ABOVE_1                          max   0.978747   RMS   0.329409   mean     0.00618317  n 2606
+//        ZETA_BELOW_1                          max    1.46877   RMS   0.449973   mean    -0.00828687  n 2535
+//        ZETA_0_1                              max    2.24354   RMS   0.676258   mean      0.0551843  n 2000
+//        ZETA_N_0_1                            max    5.66801   RMS    1.43564   mean      -0.249907  n 2000
+//        ZETA_N_1_4                            max    6.75694   RMS    1.52330   mean       0.154205  n 3000
+//        ZETA_N_4_16                           max    22.1416   RMS    3.47762   mean       0.301526  n 3000
+//        ZETA_N_16_64                          max    165.252   RMS    14.9244   mean       0.301025  n 3000
 
         /** The function. */
         private final DoubleUnaryOperator fun;

@@ -16,6 +16,8 @@
  */
 package org.apache.commons.numbers.gamma;
 
+import org.apache.commons.numbers.core.DD;
+
 /**
  * <a href="https://en.wikipedia.org/wiki/Hurwitz_zeta_function">
  * Hurwitz zeta</a> function.
@@ -69,6 +71,8 @@ public final class HurwitzZeta {
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. */
     private static final double EPS = 0x1.0p-53;
+    /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not exact. */
+    private static final double LARGE_A = (1L << 53) - N;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
@@ -98,16 +102,16 @@ public final class HurwitzZeta {
     /**
      * Computes the value of \( \zeta(s, a) \).
      *
-     * <p>Special cases: TODO
+     * <p>Special cases:
      * <ul>
      * <li>If the argument \( s \) is 1, then the result is positive infinity.</li>
-     * <li>If the argument \( s \) is a negative even integer, then the result is XXX.</li>
-     * <li>If the argument \( s \) is positive infinity, then the result is XXX.</li>
-     * <li>If the argument \( a \) is a negative even integer, then the result is nan.</li>
+     * <li>If the argument \( s \lt 1 \), then the result is nan.</li>
+     * <li>If the argument \( a \le 0 \) and is an integer, then the result is positive infinity.</li>
+     * <li>If the argument \( a \le 0 \) and \( s \) is not an integer, then the result is nan.</li>
      * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
      * <li>If either argument is nan, then the result is nan.</li>
      * </ul>
-     * 
+     *
      * <p><strong>Warning</strong>
      *
      * <p>Negative \( a \) will have increasing runtime as the magnitude of \( a \) increases,
@@ -118,18 +122,64 @@ public final class HurwitzZeta {
      * @return \( \zeta(s, a) \)
      */
     public static double value(double s, double a) {
+        if (Double.isNaN(s) || Double.isNaN(a) || s < 1 || a == Double.NEGATIVE_INFINITY) {
+            return Double.NaN;
+        }
+        // s > 1
+        // a > -infinity
+        // Check special cases
+        if (s == 1) {
+            return Double.POSITIVE_INFINITY;
+        }
+        if (a <= 0) {
+            if (Math.floor(a) == a) {
+                // The term 0^-s is infinity
+                return Double.POSITIVE_INFINITY;
+            }
+            if (Math.floor(s) != s) {
+                // pow(a, -s) is not defined for negative a when s is non-integer
+                return Double.NaN;
+            }
+            // a < 0 (non-integer) and s is a positive integer.
+
+            // TODO: Test if this is best way to handle negative a.
+
+            // Sum the series until a is positive.
+            // Warning: Max terms ~ 2^53.
+            // Terms are ascending magnitude.
+            // If s is odd then the sum will be negative and the
+            // addition of zeta(s, x) has cancellation.
+            // Sum in extended precision. Use a standard sum to catch infinity.
+            double sum = 0;
+            DD ss = DD.ZERO;
+            double x = a;
+            double t;
+            while (x < 0) {
+                t = Math.pow(x, -s);
+                sum += t;
+                ss = ss.add(t);
+                x += 1.0;
+            }
+            // When a is very close to integer the last term can create overflow.
+            // Check the extended precision sum is valid or return the IEEE result.
+            if (!ss.isFinite()) {
+                return sum;
+            }
+            // Add the remaining series zeta(s, x) for x > 0
+            final double z = zetaImp(s, x);
+            ss = ss.add(z);
+            return ss.isFinite() ? ss.hi() : sum + z;
+        }
+        // Use the more accurate Riemann zeta function.
+        // This is done after domain validation.
+        if (a == 1) {
+            return RiemannZeta.value(s);
+        }
         return zetaImp(s, a);
     }
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
-     *
-     * <pre>
-     *                 oo    1
-     * zeta(s, a) = sum    ------
-     *                 k=0      s
-     *                     (k+a)
-     * </pre>
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
@@ -138,7 +188,15 @@ public final class HurwitzZeta {
      * @param a Argument {@code a >= 1}
      * @return zeta(s, a)
      */
-    private static double zetaImp(double s, double a) {
+    static double zetaImp(double s, double a) {
+        // Asymptotic Behavior as a -> inf
+        // https://dlmf.nist.gov/25.11#E43
+        // When a is large the series cannot use a+k.
+        // This reduces to N=0, the I term and the first term of T.
+        if (a > LARGE_A) {
+            return Math.pow(a, 1 - s) / (s - 1) + Math.pow(a, -s) * 0.5;
+        }
+
         final double apn = a + N;
         double p = Math.pow(apn, -s);
 
