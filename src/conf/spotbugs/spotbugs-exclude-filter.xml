@@ -79,6 +79,11 @@
     <Method name="log1pmx"/>
     <BugPattern name="FE_FLOATING_POINT_EQUALITY"/>
   </Match>
+  <Match>
+    <Class name="org.apache.commons.numbers.gamma.HurwitzZeta"/>
+    <Method name="value"/>
+    <BugPattern name="FE_FLOATING_POINT_EQUALITY"/>
+  </Match>
 
   <Match>
     <Or>

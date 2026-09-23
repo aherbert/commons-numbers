@@ -155,13 +155,14 @@ public final class HurwitzZeta {
                 return Double.NaN;
             }
             // a < 0 (non-integer) and s is a positive integer.
-            // If s is odd then the sum will be negative and the
-            // addition of zeta(s, x > 0) has cancellation.
+            // If s is odd then the negative series sum will be negative
+            // and the addition of zeta(s, x > 0) has cancellation.
             // This is largest when a is close to half-integer.
 
             // Case of total cancellation
             final boolean odd = ((long) s & 1) == 1;
             final double xn = a - ca;
+            // Intentional float comparison
             if (odd && xn == -HALF) {
                 return zetaImp(s, 1 - a);
             }
@@ -172,7 +173,7 @@ public final class HurwitzZeta {
             final double sp = Math.pow(xp, -s);
             final double sn = Math.pow(xn, -s);
             // Add in extended precision to handle cancellation
-            final DD sum  = DD.ofSum(sp, sn);
+            final DD sum = DD.ofSum(sp, sn);
             // Check for overflow or return the IEEE result
             if (!sum.isFinite()) {
                 return odd && Math.abs(xn) < xp ?
