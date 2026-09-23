@@ -792,7 +792,7 @@ class HurwitzZetaTest {
             // a < 0 (non-integer) and s is a positive integer
             Arguments.of(2, -0.1567, 42.8461979972498360068058012169, 1),
             Arguments.of(3, -0.1567, -257.977656635792432293119990256, 0),
-            Arguments.of(4, -0.1567, 1660.62037088089365709488623999, 1),
+            Arguments.of(4, -0.1567, 1660.62037088089365709488623999, 0),
             Arguments.of(2, -5.1567, 44.004434644084193441570355425, 1),
             Arguments.of(3, -5.1567, -258.776505481263060632140556707, 0),
             Arguments.of(4, -5.1567, 1661.24004757051316284917148769, 1),
@@ -803,7 +803,13 @@ class HurwitzZetaTest {
 
             // a close to half integer
             Arguments.of(2, -11.499, 9.7864096532064037170689523814012513283574378908625, 0),
-            Arguments.of(2, -21.499, 9.8242530207688014634659878248899978896965690833573, 0),
+            Arguments.of(2, -21.499, 9.8242530207688014634659878248899978896965690833573, 1),
+
+            // -0.5 < a < 0 ; 1 + a may be inexact ; s is large : a -> -0.5
+            Arguments.of(26, -0.49999999999999994, 134217728.00002640146373806618122596018906243147027, 0),
+            // This has very large cancellation of terms either side of 0.
+            // Computed with Math.pow(x, -s) + Math.pow(1+x, -s) the relative error is 0.023.
+            Arguments.of(27, -0.49999999999999994, 1.6796301108582691430718404414343395058370129217631e-05, 5),
 
             // a is odd has cancellation.
             // ULP tolerance is very dependent on the JDK pow implementation.
@@ -826,18 +832,21 @@ class HurwitzZetaTest {
             // Overflow the sum of the series with a < 0
             Arguments.of(18, -1.0000000000000002, 5.8086597987413400890549316334e+281, 0),
             Arguments.of(19, -1.0000000000000002, -2.61598781051334795153424084243e+297, 0),
-            Arguments.of(20, -1.0000000000000002, inf, 0),
-            Arguments.of(21, -1.0000000000000002, -inf, 0),
+            Arguments.of(20, -1.0000000000000002, inf, 0), // 1.18e313
+            Arguments.of(21, -1.0000000000000002, -inf, 0), // -5.31e328
 
             // Overflow the sum of the series with a > 0
             Arguments.of(18, 2e-16, 3.81469726562500143524108492804e+282, 0),
             Arguments.of(19, 2e-16, 1.90734863281250075748835037869e+298, 0),
-            Arguments.of(20, 2e-16, inf, 0),
+            Arguments.of(20, 2e-16, inf, 0), // 9.54e313
 
             Arguments.of(18, -0.9999999999999998, 5.8086597987413400890549316334e+281, 0),
             Arguments.of(19, -0.9999999999999998, 2.61598781051334795153424084243e+297, 0),
-            Arguments.of(20, -0.9999999999999998, inf, 0),
-            Arguments.of(21, -0.9999999999999998, inf, 0),
+            Arguments.of(20, -0.9999999999999998, inf, 0), // 1.178e313
+            Arguments.of(21, -0.9999999999999998, inf, 0), // 5.31e328
+            // 0.5^-s overflows
+            Arguments.of(1024, -1.75, inf, 0), // 3.23e616
+            Arguments.of(1025, -1.25, -inf, 0), // -1.29e617
 
             // Note: large negative a can be evaluated as complex using mpmath.
             // To obtain a real result requires the digits of precision (dps)

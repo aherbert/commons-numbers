@@ -81,7 +81,10 @@
   </Match>
   <Match>
     <Class name="org.apache.commons.numbers.gamma.HurwitzZeta"/>
-    <Method name="value"/>
+    <Or>
+      <Method name="value"/>
+      <Method name="zetaNegativeImp"/>
+    </Or>
     <BugPattern name="FE_FLOATING_POINT_EQUALITY"/>
   </Match>
 

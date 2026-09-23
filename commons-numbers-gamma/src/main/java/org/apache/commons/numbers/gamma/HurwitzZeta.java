@@ -17,6 +17,7 @@
 package org.apache.commons.numbers.gamma;
 
 import org.apache.commons.numbers.core.DD;
+import org.apache.commons.numbers.core.DDMath;
 
 /**
  * <a href="https://en.wikipedia.org/wiki/Hurwitz_zeta_function">
@@ -86,6 +87,10 @@ public final class HurwitzZeta {
     private static final double LARGE_A = (1L << 53) - N;
     /** 0.5. */
     private static final double HALF = 0.5;
+    /** Maximum exponent above which 0.5^-s will be infinity. */
+    private static final double MAX_S = 1024;
+    /** double-double NaN. */
+    private static final DD DD_NAN = DD.of(Double.NaN);
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
@@ -154,43 +159,9 @@ public final class HurwitzZeta {
                 // pow(a, -s) is not defined for negative a when s is non-integer
                 return Double.NaN;
             }
-            // a < 0 (non-integer) and s is a positive integer.
-            // If s is odd then the negative series sum will be negative
-            // and the addition of zeta(s, x > 0) has cancellation.
-            // This is largest when a is close to half-integer.
-
-            // Case of total cancellation
-            final boolean odd = ((long) s & 1) == 1;
-            final double xn = a - ca;
-            // Intentional float comparison
-            if (odd && xn == -HALF) {
-                return zetaImp(s, 1 - a);
-            }
-
-            // Compute the two terms either side of zero:
-            // -1 < xn < 0 < xp < 1
-            final double xp = xn + 1;
-            final double sp = Math.pow(xp, -s);
-            final double sn = Math.pow(xn, -s);
-            // Add in extended precision to handle cancellation
-            final DD sum = DD.ofSum(sp, sn);
-            // Check for overflow or return the IEEE result
-            if (!sum.isFinite()) {
-                return odd && Math.abs(xn) < xp ?
-                    Double.NEGATIVE_INFINITY :
-                    Double.POSITIVE_INFINITY;
-            }
-
-            // Compute the remaining terms
-            final double sn1 = negativeSeriesSum(a, xn, s);
-            final double sp1 = zetaImp(s, 1 + xp);
-
-            // The terms sp1 and sn1 are effectively both zeta evaluations
-            // with zeta(s >= 2, a > 1). This is always < 2.
-            // Adding (sp1 + sn1) cannot trigger overflow.
-            return sum.add(DD.ofSum(sp1, sn1)).hi();
+            return zetaNegativeImp(s, a, ca);
         }
-        // Use the more accurate Riemann zeta function if applicable.
+        // Use the faster and more accurate Riemann zeta function if applicable.
         // Done after domain validation, e.g.
         // this function will return NaN for s < 1 even when a==1.
         if (a == 1) {
@@ -203,10 +174,81 @@ public final class HurwitzZeta {
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
+     * The domain of {@code a} is expected to be negative.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a < 0}
+     * @param ca Ceil(a)
+     * @return zeta(s, a)
+     */
+    static double zetaNegativeImp(double s, double a, double ca) {
+        // a < 0 (non-integer) and s is a positive integer.
+        // If s is odd then the negative series sum will be negative
+        // and the addition of zeta(s, x > 0) has cancellation.
+        // This is largest when a is close to half-integer.
+
+        // Case of total cancellation
+        final boolean odd = ((long) s & 1) == 1;
+        final double xn = a - ca;
+        // Intentional float comparison
+        if (odd && xn == -HALF) {
+            return zetaImp(s, 1 - a);
+        }
+
+        // Compute the two terms either side of zero:
+        // -1 < xn < 0 < xn + 1 < 1
+        // These are the largest terms and contain most of the error of the function.
+        // One term is < 0.5: 0.5^-s overflows when s >= 1024.
+        DD sum = DD_NAN;
+        if (s < MAX_S) {
+            final int n = (int) -s;
+            DD pn = DD.of(xn);
+            DD pp = DD.ONE.add(xn);
+            // Avoid overflow issues using scaling
+            final long[] expn = {0};
+            final long[] expp = {0};
+            if (odd) {
+                // Compute accurately in extended precision to handle cancellation.
+                // The double-double result is +/- 1 ULP (105 bit precision).
+                pn = DDMath.pow(pn, n, expn);
+                pp = DDMath.pow(pp, n, expp);
+            } else {
+                // Power terms accurate to at least double precision.
+                pn = pn.pow(n, expn);
+                pp = pp.pow(n, expp);
+            }
+            // If re-scaling and addition create infinity we exit with the IEEE result.
+            // Note: if one side overflows then it is unlikely the other side will
+            // bring it back to finite and we do not check.
+            pn = pn.scalb((int) expn[0]);
+            pp = pp.scalb((int) expp[0]);
+            sum = pn.add(pp);
+        }
+        // Check for overflow or return the IEEE result
+        if (!sum.isFinite()) {
+            return odd && Math.abs(xn) < xn + 1 ?
+                Double.NEGATIVE_INFINITY :
+                Double.POSITIVE_INFINITY;
+        }
+
+        // Compute the remaining terms
+        final double sn1 = negativeSeriesSum(a, xn, s);
+        final double sp1 = zetaImp(s, 2 + xn);
+
+        // The terms sp1 and sn1 are effectively both zeta evaluations
+        // with zeta(s >= 2, a > 1). This is always < 2.
+        // Adding (sp1 + sn1) to the existing finite sum cannot trigger overflow.
+        return sum.add(DD.ofSum(sp1, sn1)).hi();
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
      *
      * @param s Argument {@code s > 1}
-     * @param a Argument {@code a >= 1}
+     * @param a Argument {@code a > 0}
      * @return zeta(s, a)
      */
     static double zetaImp(double s, double a) {
@@ -276,8 +318,8 @@ public final class HurwitzZeta {
      *      k=a  k^m
      * </pre>
      *
-     * <p>Assumes {@code a} and @ {@code b} are negative; and {@code exponent > 1} to
-     * arrange the terms to sum from small to large.
+     * <p>Assumes {@code a} and {@code b} are negative and separated by an integer
+     * distance; and {@code exponent >= 2} and integer.
      *
      * <p>Large ranges are evaluated using a difference of zeta functions.
      *
@@ -299,6 +341,7 @@ public final class HurwitzZeta {
             return sign * (zetaImp(s, 1 - b) - zetaImp(s, 1 - a));
         }
 
+        // Sum terms in ascending order of magnitude
         double sum = 0;
         double x = a;
         double t;
