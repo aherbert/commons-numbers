@@ -19,6 +19,9 @@ package org.apache.commons.numbers.gamma;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.file.Files;
@@ -142,7 +145,12 @@ class RiemannZetaTest {
         ZETA_N_0_1(RiemannZeta::value, "zeta_N_0_1.csv", 6, 1.5),
         ZETA_N_1_4(RiemannZeta::value, "zeta_N_1_4.csv", 7, 1.6),
         ZETA_N_4_16(RiemannZeta::value, "zeta_N_4_16.csv", 23, 3.6),
-        ZETA_N_16_64(RiemannZeta::value, "zeta_N_16_64.csv", 170, 15.5);
+        ZETA_N_16_64(RiemannZeta::value, "zeta_N_16_64.csv", 170, 15.5),
+        // Test FMA support
+        ZETA_FMA_1_32(RiemannZetaTest::zetaImp53fma, "zeta_1_32.csv", 1.5, 0.27),
+        ZETA_FMA_ABOVE_1(RiemannZetaTest::zetaImp53fma, "zeta_above1.csv", 1.0, 0.34),
+        ZETA_FMA_BELOW_1(RiemannZetaTest::zetaImp53fma, "zeta_below1.csv", 1.48, 0.46),
+        ZETA_FMA_0_1(RiemannZetaTest::zetaImp53fma, "zeta_0_1.csv", 2.32, 0.69);
 
 //        JDK Temurin 25.492-b09
 //        HURWITZ_ZETA_1_32                     max    1.60678   RMS   0.414903   mean     0.00784791  n 3000
@@ -237,6 +245,121 @@ class RiemannZetaTest {
             return rmsUlp;
         }
     }
+    /**
+     * Utility support for the fused-mutiply-add (FMA).
+     */
+    private static final class MathExt {
+        /**
+         * Method to compute fused-multiply-add.
+         * <ul>
+         * <li>{@code java.lang.Math.fma} if Java 9
+         * <li>otherwise a default implementation.
+         * </ul>
+         */
+        private static final FMAOperator FUN;
+
+        static {
+            // Note:
+            // This uses the public lookup mechanism for static methods to find methods
+            // added to java.lang.Math since java 8 to make them available in java 8.
+            // For simplicity the lookup is always attempted rather than checking the
+            // the java version from System.getProperty("java.version").
+            final FMAOperator op = getMathFMA();
+            FUN = testFMA(op) ? op : (a, b, c) -> a * b + c;
+        }
+
+        @FunctionalInterface
+        interface FMAOperator {
+            /**
+             * Compute {@code a * b + c}.
+             *
+             * @param a Argument.
+             * @param b Argument.
+             * @param c Argument.
+             * @return the result
+             */
+            double fma(double a, double b, double c);
+        }
+
+        /** No instances. */
+        private MathExt() {}
+
+        /**
+         * Gets a method to compute the high 64-bits of an unsigned 64-bit multiplication
+         * using the Math unsignedMultiplyHigh method from JDK 18.
+         *
+         * @return the method, or null
+         */
+        private static FMAOperator getMathFMA() {
+            try {
+                // JDK 18 method
+                final MethodHandle mh = getMathMethod("fma");
+                return (a, b, c) -> {
+                    try {
+                        return (double) mh.invokeExact(a, b, c);
+                    } catch (Throwable ignored) {
+                        throw new IllegalStateException("Cannot invoke Math.fma");
+                    }
+                };
+            } catch (NoSuchMethodException | IllegalAccessException ignored) {
+                return null;
+            }
+        }
+
+        /**
+         * Gets the named method from the {@link Math} class.
+         *
+         * <p>The look-up assumes the named method accepts two long arguments and returns
+         * a long.
+         *
+         * @param methodName Method name.
+         * @return the method
+         * @throws NoSuchMethodException if the method does not exist
+         * @throws IllegalAccessException if the method cannot be accessed
+         */
+        static MethodHandle getMathMethod(String methodName) throws NoSuchMethodException, IllegalAccessException {
+            return MethodHandles.publicLookup()
+                .findStatic(Math.class,
+                            methodName,
+                            MethodType.methodType(double.class, double.class, double.class, double.class));
+        }
+
+        /**
+         * Test the implementation of unsigned multiply high.
+         * It is assumed the invocation of the method may raise an {@link IllegalStateException}
+         * if it cannot be invoked.
+         *
+         * @param op Method implementation.
+         * @return True if the method can be called to generate the expected result
+         */
+        static boolean testFMA(FMAOperator op) {
+            try {
+                // Test a result that will overflow without FMA support
+                return op != null && op.fma(Double.MAX_VALUE, 2, -Double.MAX_VALUE) == Double.MAX_VALUE;
+            } catch (IllegalStateException ignored) {
+                return false;
+            }
+        }
+
+        /**
+         * Compute {@code a * b + c}.
+         *
+         * <p>This method uses a {@link MethodHandle} to call Java functions added since
+         * Java 8 to the {@link Math} class:
+         * <ul>
+         * <li>{@code java.lang.Math.fma} if Java 9
+         * <li>otherwise a default implementation.
+         * </ul>
+         *
+         * @param a Argument.
+         * @param b Argument.
+         * @param c Argument.
+         * @return the high 64-bits of the 128-bit result
+         */
+        static double fma(double a, double b, double c) {
+            return FUN.fma(a, b, c);
+        }
+    }
 
     // Test zeta implementation
 
@@ -282,6 +405,161 @@ class RiemannZetaTest {
         // Normalise by 1 / (d_n * (1 - 2^(1-s)))
         // The d_n factor has been incorporated into the coefficients
         return sum.divide(-Math.expm1(LN2 * (1 - s))).hi();
+    }
+
+    /**
+     * Implementation for the zeta function.
+     * Copied from {@link BoostZeta} and modified to use FMA.
+     *
+     * @param s Argument (assumed to be positive finite).
+     * @return zeta(s)
+     */
+    static double zetaImp53fma(double s) {
+        double sc = 1 - s;
+        double result;
+        if (s < 1) {
+            // Rational Approximation
+            // Maximum Deviation Found:                     2.020e-18
+            // Expected Error Term:                        -2.020e-18
+            // Max error found at double precision:         3.994987e-17
+            double P;
+            P = -0.933241270357061460782e-5;
+            P =  MathExt.fma(P, sc, 0.000451534528645796438704);
+            P =  MathExt.fma(P, sc, -0.00320912498879085894856);
+            P =    MathExt.fma(P, sc, 0.0557616214776046784287);
+            P =     MathExt.fma(P, sc, -0.49092470516353571651);
+            P =      MathExt.fma(P, sc, 0.24339294433593750202);
+            double Q;
+            Q = -0.101855788418564031874e-4;
+            Q =   MathExt.fma(Q, sc, 0.00024978985622317935355);
+            Q =  MathExt.fma(Q, sc, -0.00413421406552171059003);
+            Q =    MathExt.fma(Q, sc, 0.0419676223309986037706);
+            Q =    MathExt.fma(Q, sc, -0.279960334310344432495);
+            Q =                           MathExt.fma(Q, sc, 1);
+            result = P / Q;
+            result -= 1.2433929443359375F;
+            result += sc;
+            result /= sc;
+        } else if (s <= 2) {
+            // Maximum Deviation Found:                     9.007e-20
+            // Expected Error Term:                         9.007e-20
+            double P;
+            P = 0.110108440976732897969e-4;
+            P = MathExt.fma(P, -sc, 0.000249606367151877175456);
+            P =  MathExt.fma(P, -sc, 0.00390252087072843288378);
+            P =   MathExt.fma(P, -sc, 0.0417364673988216497593);
+            P =    MathExt.fma(P, -sc, 0.243210646940107164097);
+            P =    MathExt.fma(P, -sc, 0.577215664901532860516);
+            double Q;
+            Q =  0.10991819782396112081e-4;
+            Q = MathExt.fma(Q, -sc, 0.000255784226140488490982);
+            Q =  MathExt.fma(Q, -sc, 0.00434930582085826330659);
+            Q =    MathExt.fma(Q, -sc, 0.043460910607305495864);
+            Q =    MathExt.fma(Q, -sc, 0.295201277126631761737);
+            Q =                        MathExt.fma(Q, -sc, 1.0);
+            result = P / Q;
+            result += 1 / -sc;
+        } else if (s <= 4) {
+            // Maximum Deviation Found:                     5.946e-22
+            // Expected Error Term:                        -5.946e-22
+            final double Y = 0.6986598968505859375;
+            final double x = s - 2;
+            double P;
+            P = 0.328032510000383084155e-5;
+            P = MathExt.fma(P, x, 0.769875101573654070925e-4);
+            P =  MathExt.fma(P, x, 0.00097541770457391752726);
+            P =   MathExt.fma(P, x, 0.0128677673534519952905);
+            P =   MathExt.fma(P, x, 0.0445163473292365591906);
+            P =  MathExt.fma(P, x, -0.0537258300023595030676);
+            double Q;
+            Q = 0.236276623974978646399e-7;
+            Q = MathExt.fma(Q, x, 0.106951867532057341359e-4);
+            Q = MathExt.fma(Q, x, 0.000270776703956336357707);
+            Q =  MathExt.fma(Q, x, 0.00479039708573558490716);
+            Q =   MathExt.fma(Q, x, 0.0487798431291407621462);
+            Q =     MathExt.fma(Q, x, 0.33383194553034051422);
+            Q =                        MathExt.fma(Q, x, 1.0);
+            result = P / Q;
+            result += Y + 1 / -sc;
+        } else if (s <= 7) {
+            // Maximum Deviation Found:                     2.955e-17
+            // Expected Error Term:                         2.955e-17
+            // Max error found at double precision:         2.009135e-16
+            final double x = s - 4;
+            double P;
+            P = -0.229257310594893932383e-4;
+            P =  MathExt.fma(P, x, -0.00701721240549802377623);
+            P =    MathExt.fma(P, x, -0.138448617995741530935);
+            P =    MathExt.fma(P, x, -0.939260435377109939261);
+            P =     MathExt.fma(P, x, -2.60013301809475665334);
+            P =     MathExt.fma(P, x, -2.49710190602259410021);
+            double Q;
+            Q =   -0.1129200113474947419e-9;
+            Q =  MathExt.fma(Q, x, 0.718833729365459760664e-8);
+            Q = MathExt.fma(Q, x, -0.234055487025287216506e-6);
+            Q =  MathExt.fma(Q, x, 0.493409563927590008943e-5);
+            Q =  MathExt.fma(Q, x, -0.36910273311764618902e-4);
+            Q =    MathExt.fma(Q, x, 0.0106117950976845084417);
+            Q =      MathExt.fma(Q, x, 0.15739599649558626358);
+            Q =     MathExt.fma(Q, x, 0.706039025937745133628);
+            Q =                         MathExt.fma(Q, x, 1.0);
+            result = P / Q;
+            result = 1 + Math.exp(result);
+        } else if (s < 15) {
+            // Maximum Deviation Found:                     7.117e-16
+            // Expected Error Term:                         7.117e-16
+            // Max error found at double precision:         9.387771e-16
+            final double x = s - 7;
+            double P;
+            P =  0.139348932445324888343e-5;
+            P =  MathExt.fma(P, x, 0.639949204213164496988e-4);
+            P =   MathExt.fma(P, x, 0.00115140923889178742086);
+            P = MathExt.fma(P, x, -0.000189204758260076688518);
+            P =    MathExt.fma(P, x, -0.211407134874412820099);
+            P =     MathExt.fma(P, x, -1.89197364881972536382);
+            P =     MathExt.fma(P, x, -4.78558028495135619286);
+            double Q;
+            Q =  0.699841545204845636531e-12;
+            Q = MathExt.fma(Q, x, -0.833378440625385520576e-10);
+            Q =   MathExt.fma(Q, x, 0.471001264003076486547e-8);
+            Q =   MathExt.fma(Q, x, -0.21750464515767984778e-5);
+            Q =  MathExt.fma(Q, x, -0.743743682899933180415e-4);
+            Q =   MathExt.fma(Q, x, -0.00117592765334434471562);
+            Q =    MathExt.fma(Q, x, 0.00873370754492288653669);
+            Q =      MathExt.fma(Q, x, 0.244345337378188557777);
+            Q =                          MathExt.fma(Q, x, 1.0);
+            result = P / Q;
+            result = 1 + Math.exp(result);
+        } else if (s < 36) {
+            // Max error in interpolated form:              1.668e-17
+            // Max error found at long double precision:    1.669714e-17
+            final double x = s - 15;
+            double P;
+            P = -0.821465709095465524192e-8;
+            P = MathExt.fma(P, x, -0.785523633796723466968e-6);
+            P = MathExt.fma(P, x, -0.382529323507967522614e-4);
+            P =  MathExt.fma(P, x, -0.00119459173416968685689);
+            P =   MathExt.fma(P, x, -0.0251156064655346341766);
+            P =    MathExt.fma(P, x, -0.347728266539245787271);
+            P =     MathExt.fma(P, x, -2.85827219671106697179);
+            P =     MathExt.fma(P, x, -10.3948950573308896825);
+            double Q;
+            Q = 0.222609483627352615142e-14;
+            Q =  MathExt.fma(Q, x, 0.118507153474022900583e-7);
+            Q =  MathExt.fma(Q, x, 0.955561123065693483991e-6);
+            Q =  MathExt.fma(Q, x, 0.408507746266039256231e-4);
+            Q =   MathExt.fma(Q, x, 0.00111079638102485921877);
+            Q =    MathExt.fma(Q, x, 0.0195687657317205033485);
+            Q =     MathExt.fma(Q, x, 0.208196333572671890965);
+            Q =                         MathExt.fma(Q, x, 1.0);
+            result = P / Q;
+            result = 1 + Math.exp(result);
+        } else {
+            // Change from: 1 + Math.pow(2, -s);
+            // Adding 3^-s increases ULP accuracy as the result approaches 1.0
+            result = Math.pow(3, -s) + Math.pow(2, -s) + 1;
+        }
+        return result;
     }
 
     @Test
