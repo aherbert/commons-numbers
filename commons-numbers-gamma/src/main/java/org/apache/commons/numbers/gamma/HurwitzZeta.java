@@ -25,7 +25,7 @@ import org.apache.commons.numbers.core.DD;
  * <p>\[ \zeta(s, a) = \sum_{k=0}^\infty \frac{1}{(k+a)^s} \]
  *
  * <p>The function is formally defined for complex variable \( s \) with \( \mathrm{Re}(s) \gt 1 \)
- * and real \( a \ne 0, -1, -2, \cdots \). This series is absolutely convergent for the given
+ * and real \( a \ne 0, -1, -2, \ldots, -n \). This series is absolutely convergent for the given
  * values of \( s \) and \( a \). Note the special case \( zeta(s, 1) \) is the
  * {@link RiemannZeta Riemann zeta} function. This implementation uses real-valued \( s \gt 1 \).
  *
@@ -35,7 +35,8 @@ import org.apache.commons.numbers.core.DD;
  * \( \mathrm{R} \) (not computed).
  *
  * <p>\[ \begin{aligned}
- * \zeta(s, a) &amp;= \sum_{k=0}^{N-1} \frac{1}{(k+a)^s} + \sum_{k=N}^\infty \frac{1}{(k+a)^s} = \mathrm{S} + \mathrm{I} + \mathrm{T} + \mathrm{R} \\
+ * \zeta(s, a) &amp;= \sum_{k=0}^{N-1} \frac{1}{(k+a)^s} + \sum_{k=N}^\infty \frac{1}{(k+a)^s} \\
+ *            &amp;= \mathrm{S} + \left[ \mathrm{I} + \mathrm{T} + \mathrm{R} \right] \\
  * \mathrm{I} &amp;= \int_N^\infty \frac{1}{(a+t)^s} dt = \frac{(a+N)^{1-s}}{s-1} \\
  * \mathrm{T} &amp;= \frac{1}{(a+N)^s} \left( \frac{1}{2} + \sum_{k=1}^M \frac{B_{2k}}{2k!} \frac{(s)_{2k-1}}{(a+N)^{2k-1}} \right) \\
  * \mathrm{R} &amp;= - \int_N^\infty \frac{\tilde{B}_{2M}(t)}{2M!} \frac{(s)_{2M}}{(a+t)^{s+2M}} dt \end{aligned} \]
@@ -48,8 +49,18 @@ import org.apache.commons.numbers.core.DD;
  * <p>These formulas for the real-valued \( s \) are provided in Johansson (2015) as
  * equations 5-9. The implementation omits the residual term \( \mathrm{R} \).
  *
- * <p>The integrals are well defined when \( a + N \gt 0 \). Negative \( a \) requires the
- * sum \( S \) of a large number of terms \( N \) with potentially very long runtime times.
+ * <p>The integrals are well defined when \( a + N \gt 0 \). Negative \( a \) may require the
+ * sum \( S \) of a large number of terms \( N \). The implementation uses a difference
+ * of zeta evaluations to compute the sum \( S \) over
+ * \( a, a+1, a+2, \cdots, a - \lceil a \rceil  \) to avoid long runtime times.
+ *
+ * <p>Negative \( a \) with an odd integer power \( s \) requires summation of negative and positive
+ * terms and cancellation reduces accuracy as \( a - \lceil a \rceil \to -\frac{1}{2} \).
+ * Total cancellation is handled using the identity:
+ *
+ * <p>\[ \zeta(s, -\frac{1}{2} - n) = \zeta(s, n + \frac{3}{2}) \]
+ *
+ * <p>for \( s = 3, 5, 7, \ldots \) and \( n = 0, -1, -2, \ldots \)
  *
  * <p>References
  * <ol>
@@ -71,7 +82,7 @@ public final class HurwitzZeta {
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. */
     private static final double EPS = 0x1.0p-53;
-    /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not exact. */
+    /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate. */
     private static final double LARGE_A = (1L << 53) - N;
     /** 0.5. */
     private static final double HALF = 0.5;
@@ -102,25 +113,25 @@ public final class HurwitzZeta {
     private HurwitzZeta() {}
 
     /**
-     * Computes the value of \( \zeta(s, a) \).
+     * Computes the value of \( \zeta(s, a) \) over the domain \( s \gt 1 \) and
+     * \( a \ne 0, -1, -2, \ldots, -n \).
+     *
+     * <p>Negative \( a \) is supported when \( s \) is an integer due to the support
+     * for powers of negative real numbers.
      *
      * <p>Special cases:
      * <ul>
      * <li>If the argument \( s \) is 1, then the result is positive infinity.</li>
      * <li>If the argument \( s \lt 1 \), then the result is nan.</li>
      * <li>If the argument \( a \le 0 \) and is an integer, then the result is positive infinity.</li>
-     * <li>If the argument \( a \le 0 \) and \( s \) is not an integer, then the result is nan.</li>
+     * <li>If the argument \( a \lt 0 \) and \( s \) is not an integer, then the result is nan.</li>
      * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
      * <li>If either argument is nan, then the result is nan.</li>
      * </ul>
      *
-     * <p><strong>Warning</strong>
-     *
-     * <p>Negative \( a \) will have increasing runtime as the magnitude of \( a \) increases,
-     * with potentially very long runtimes.
-     *
      * @param s Argument.
      * @param a Argument.
+     * @see Math#pow(double, double)
      * @return \( \zeta(s, a) \)
      */
     public static double value(double s, double a) {
@@ -134,8 +145,8 @@ public final class HurwitzZeta {
             return Double.POSITIVE_INFINITY;
         }
         if (a <= 0) {
-            final double fa = Math.floor(a);
-            if (fa == a) {
+            final double ca = Math.ceil(a);
+            if (ca == a) {
                 // The term 0^-s is infinity
                 return Double.POSITIVE_INFINITY;
             }
@@ -144,56 +155,43 @@ public final class HurwitzZeta {
                 return Double.NaN;
             }
             // a < 0 (non-integer) and s is a positive integer.
-
-            // TODO: Test if this is best way to handle negative a.
-
-            // if s is odd then pre-compute zeta.
-            // sum series until the sum is above zeta.
-            // add zeta -> cancellation to zero.
-            // sum remaining series.
-
-            // Sum the series until a is positive.
-            // Warning: Max terms ~ 2^53.
-            // Terms are ascending magnitude.
             // If s is odd then the sum will be negative and the
-            // addition of zeta(s, x) has cancellation. This is largest when
-            // a is close to half-integer (.5 fraction part).
+            // addition of zeta(s, x > 0) has cancellation.
+            // This is largest when a is close to half-integer.
 
             // Case of total cancellation
-            if (a - fa == HALF && ((long) s & 1) == 1) {
+            final boolean odd = ((long) s & 1) == 1;
+            final double xn = a - ca;
+            if (odd && xn == -HALF) {
                 return zetaImp(s, 1 - a);
             }
 
-            // Sum in extended precision. Use a standard sum to catch infinity.
-            double sum = 0;
-            DD ss = DD.ZERO;
-            double x = a;
-            double t;
-            // This can stop at any 0 < x < infinity.
-            // Summing additional positive x terms more accurately handles
-            // the cancellation case since the two opposing terms around x = 0
-            // are of similar magnitude when cancellation is worst.
-            while (x < 2) {
-                t = Math.pow(x, -s);
-                sum += t;
-                ss = ss.add(t);
-                x += 1.0;
+            // Compute the two terms either side of zero:
+            // -1 < xn < 0 < xp < 1
+            final double xp = xn + 1;
+            final double sp = Math.pow(xp, -s);
+            final double sn = Math.pow(xn, -s);
+            // Add in extended precision to handle cancellation
+            final DD sum  = DD.ofSum(sp, sn);
+            // Check for overflow or return the IEEE result
+            if (!sum.isFinite()) {
+                return odd && Math.abs(xn) < xp ?
+                    Double.NEGATIVE_INFINITY :
+                    Double.POSITIVE_INFINITY;
             }
-            // When a is very close to integer the x~0 term can create overflow.
-            // Check the extended precision sum is valid or return the IEEE result.
-            if (!ss.isFinite()) {
-                return sum;
-            }
-            // Add the remaining series zeta(s, x) for x > 0
-            final double z = zetaImp(s, x);
-            ss = ss.add(z);
-            // Overflow here requires the sum to be very close to max value
-            // after computing into x > 0. It is unlikely additional terms
-            // can be added in double precision to cause overflow.
-            return ss.isFinite() ? ss.hi() : sum + z;
+
+            // Compute the remaining terms
+            final double sn1 = negativeSeriesSum(a, xn, s);
+            final double sp1 = zetaImp(s, 1 + xp);
+
+            // The terms sp1 and sn1 are effectively both zeta evaluations
+            // with zeta(s >= 2, a > 1). This is always < 2.
+            // Adding (sp1 + sn1) cannot trigger overflow.
+            return sum.add(DD.ofSum(sp1, sn1)).hi();
         }
-        // Use the more accurate Riemann zeta function.
-        // This is done after domain validation.
+        // Use the more accurate Riemann zeta function if applicable.
+        // Done after domain validation, e.g.
+        // this function will return NaN for s < 1 even when a==1.
         if (a == 1) {
             return RiemannZeta.value(s);
         }
@@ -266,5 +264,48 @@ public final class HurwitzZeta {
             k2 += 1.0;
         }
         return sum + tsum;
+    }
+
+    /**
+     * Calculates the sum of terms of the power series.
+     *
+     * <pre>
+     *      b-1   1
+     *   sum     ---
+     *      k=a  k^m
+     * </pre>
+     *
+     * <p>Assumes {@code a} and @ {@code b} are negative; and {@code exponent > 1} to
+     * arrange the terms to sum from small to large.
+     *
+     * <p>Large ranges are evaluated using a difference of zeta functions.
+     *
+     * @param a First term in the series to calculate (negative non-integer).
+     * @param b Last term in the series to calculate, exclusive (negative non-integer).
+     * @param s Exponent (positive integer).
+     * @return the sum
+     */
+    private static double negativeSeriesSum(double a, double b, double s) {
+        // This can be computed using a difference of zeta functions.
+        // A single call to zeta uses ~10 pow operations; use zeta when the
+        // sum will use more.
+        // The difference incurs cancellation. However s >= 2 and the series
+        // is strongly converging. In this case the two terms are orders of
+        // magnitude different and the error is limited to the computation of
+        // the larger term.
+        if (b - a > 2 * N) {
+            final int sign = ((long) s & 1) == 1 ? -1 : 1;
+            return sign * (zetaImp(s, 1 - b) - zetaImp(s, 1 - a));
+        }
+
+        double sum = 0;
+        double x = a;
+        double t;
+        while (x < b) {
+            t = Math.pow(x, -s);
+            sum += t;
+            x += 1.0;
+        }
+        return sum;
     }
 }
