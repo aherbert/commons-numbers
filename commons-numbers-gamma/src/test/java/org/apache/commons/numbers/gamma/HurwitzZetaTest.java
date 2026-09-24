@@ -18,14 +18,21 @@
 package org.apache.commons.numbers.gamma;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.SplittableRandom;
 import java.util.function.DoubleBinaryOperator;
+import java.util.function.DoubleSupplier;
+import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 import org.apache.commons.numbers.fraction.BigFraction;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -41,6 +48,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class HurwitzZetaTest {
+    /** Seed for data generation. */
+    private static final long SEED = 6516587940839803692L;
     /** Table used to create a histogram of the number of steps to converge the tail series.
      * Used in the {@link #zeta(double, double, int, int)} implementation. */
     private static final int[] M = new int[53];
@@ -332,16 +341,32 @@ class HurwitzZetaTest {
      */
     private enum BiTestCase implements TestError {
         // s in (1, 32); a in [1, 2^31)
-        ZETA_5_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 5, 15), "hurwitzzeta.csv", 22, 2.5),
-        ZETA_6_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 6, 15), "hurwitzzeta.csv", 3.8, 0.62),
-        ZETA_7_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 7, 15), "hurwitzzeta.csv", 3.75, 0.61),
-        ZETA_8_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 8, 15), "hurwitzzeta.csv", 3.5, 0.60),
-        ZETA_9_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 9, 15), "hurwitzzeta.csv", 3.75, 0.61),
-        ZETA_10_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 10, 15), "hurwitzzeta.csv", 3.5, 0.60),
-        ZETA_11_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), "hurwitzzeta.csv", 3.8, 0.60),
-        ZETA_12_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), "hurwitzzeta.csv", 3.8, 0.60),
-        CEPHES_INT(HurwitzZetaTest::zetaCephes, "hurwitzzeta.csv", 4.7, 1.0),
-        ZETA_INT(HurwitzZeta::value, "hurwitzzeta.csv", 3.5, 0.60);
+//        ZETA_5_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 5, 15), "hurwitzzeta.csv", 22, 2.5),
+//        ZETA_6_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 6, 15), "hurwitzzeta.csv", 3.8, 0.62),
+//        ZETA_7_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 7, 15), "hurwitzzeta.csv", 3.75, 0.61),
+//        ZETA_8_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 8, 15), "hurwitzzeta.csv", 3.5, 0.60),
+//        ZETA_9_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 9, 15), "hurwitzzeta.csv", 3.75, 0.61),
+//        ZETA_10_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 10, 15), "hurwitzzeta.csv", 3.5, 0.60),
+//        ZETA_11_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), "hurwitzzeta.csv", 3.8, 0.60),
+//        ZETA_12_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), "hurwitzzeta.csv", 3.8, 0.60),
+        // TODO - remove after testing
+        CEPHES(HurwitzZetaTest::zetaCephes, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 10001114.7, 111111.0),
+//        ZETA_INT(HurwitzZeta::value, "hurwitzzeta.csv", 3.5, 0.60),
+        ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
+        ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.68),
+        ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
+        ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.9, 0.57),
+        ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.14),
+        ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 3.22, 0.62),
+        ZETA_S2_4_N_A1_7(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-1.csv", 0.66, 0.1),
+        ZETA_S3_5_N_A1_7(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-1.csv", 26.7, 0.77),
+        // Extended precision power is exact on the largest term
+        ZETA_S2_4_N_A1_7_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0x1p-30.csv", 0, 0),
+        ZETA_S3_5_N_A1_7_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0x1p-30.csv", 0, 0),
+        // The method suffers cancellation here
+        ZETA_S2_4_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-30.csv", 0.63, 0.1),
+        ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 10000, 1000),
+        ;
 
         /** The function. */
         private final DoubleBinaryOperator fun;
@@ -683,6 +708,9 @@ class HurwitzZetaTest {
         Assertions.assertEquals(z, HurwitzZeta.value(s, a));
     }
 
+    // TODO: Test function is monotonic at the half-integer negative a.
+    // It may be inaccurate, but is it monotonic?
+
     /**
      * Spot tests for the zeta function to check various points in the domain and extreme values.
      */
@@ -1004,17 +1032,197 @@ class HurwitzZetaTest {
             name, maxAbsUlp, rmsUlp, meanUlp, size);
     }
 
-    // TODO
-    // Create method to generated test data all with various s:
-    // a positive and close to integer
-    // a negative and close to integer
-    // a in [0, 1]
-    // a in [-1, 0]
-    // a in [1, 10]
-    // a in [10, 2^31]
-    // a in [-10, -1]
-    // a in [-100, -10]
-    // a in [-1000, -100]
-    // Create script to read the data in Matlab and output the result.
-    // Try the test implementation with different n on these data.
+    /**
+     * Create test data for {@code s in [ls, us)} and {@code a in [la, ua)}.
+     * Samples can follow a log-uniform limiting distribution with full randomisation
+     * of the 52-bit mantissa.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "1.0000000000000002, 4, false, 1, 8, false",
+        "1.0000000000000002, 4, false, 8, 32, false",
+        "1.0000000000000002, 4, false, 32, 2.147483648E9, true",
+        "1.0000000000000002, 4, false, 0, 1, true",
+        "1.0000000000000002, 4, false, 1e-16, 1e-14, false",
+        "4, 32, true, 1, 8, false",
+    })
+    @Disabled("Used to generate test data")
+    void testDataSample(double ls, double us, boolean uniforms, 
+                        double la, double ua, boolean uniforma) throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Validate arguments
+        Assertions.assertTrue(ls > 1);
+        Assertions.assertTrue(us > ls);
+        Assertions.assertTrue(la >= 0);
+        Assertions.assertTrue(ua > la);
+        // Create samplers
+        final DoubleSupplier s = createSampler(rng, ls, us, uniforms);
+        final DoubleSupplier a = createSampler(rng, la, ua, uniforma);
+
+        final int size = 3000;
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_s%s_%s_a%s_%s.txt", 
+                shortFormat(ls), shortFormat(us), shortFormat(la), shortFormat(ua)))) {
+            for (int i = 0; i < size; i++) {
+                out.printf("%s, %s%n", s.getAsDouble(), a.getAsDouble());
+            }
+        }
+    }
+    /**
+     * Create test data for {@code s in [ls, ls + 2, ..., us - 2, us]}
+     * and {@code a in -( [la, ua] + offset +/- 2^-b )}.
+     *
+     * <p>The parameters for {@code s} create either an even or odd series.
+     *
+     * <p>The parameter {@code a} is a uniform integer sample in a range. This has an
+     * offset applied and a uniform wobble. This allows sampling around the poles
+     * for at integer values, or the location of greatest cancellation when {@code s}
+     * is odd at half-integer values.
+     *
+     * <p>Note: Evaluation of large negative a is not possible using the resource
+     * script {@code hzeta.py}. Use of mpmath returns complex results when abs(a) >> dps
+     * (dps is the mpmath digits of decimal precision).
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // a = -[1.5, 7.5] +/- 0.5
+        "2, 4, 1, 7, 0.5, 1",
+        "3, 5, 1, 7, 0.5, 1",
+        // a = -[1, 7] +/- 9.31e-10
+        // This approaches the pole at a = -1, -2, -3, ... and is easy to compute as
+        // a single term dominates the result
+        "2, 4, 1, 7, 0.0, 30",
+        "3, 5, 1, 7, 0.0, 30",
+        // a = -[1.5, 7.5] +/- 9.31e-10
+        // This creates large cancellation when a ~ half-integer and requires
+        // an extended precision power function to maintain precision over all
+        // terms that cancel. The implementation only uses extended precision on
+        // the most significant terms.
+        "2, 4, 1, 7, 0.5, 30",
+        "3, 5, 1, 7, 0.5, 30",
+    })
+    @Disabled("Used to generate test data")
+    void testDataNegativeASample(int ls, int us,
+                                 int la, int ua, double offset, int b) throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Validate arguments
+        Assertions.assertTrue(ls >= 2);
+        Assertions.assertTrue(us >= ls);
+        Assertions.assertTrue((ls & 1) == (us & 1), "Must be odd or even series");
+        Assertions.assertTrue(la >= 0);
+        Assertions.assertTrue(ua > la);
+        Assertions.assertTrue(b > 0);
+        final double scale = Math.scalb(1, -b);
+        // Check randomness can be added to the smallest a value
+        Assertions.assertTrue(la + offset + 2 * scale != la + offset);
+        // Create samplers
+        // s in [ls, us]
+        final int n = 1 + (us - ls) / 2;
+        final IntSupplier s = () -> ls + 2 * rng.nextInt(n);
+        // Create a signed random value in [-1, 1) and scale down.
+        // signed 53-bits * 2^-53 * scale
+        final double f = 0x1.0p-53 * scale;
+        final int ra = ua - la + 1;
+        final DoubleSupplier a = () -> la + rng.nextInt(ra) + offset + f * (rng.nextLong() >> 11);
+
+        final int size = 3000;
+        final StringBuilder name = new StringBuilder("hzeta_s")
+            .append(ls).append('_').append(us).append("_na")
+            .append(la).append('_').append(ua);
+        if (offset != 0) {
+            name.append("_p").append(shortFormat(offset));
+        }
+        name.append("_p0x1p").append(-b).append(".txt");
+        try (PrintStream out = getPrintStream(name.toString())) {
+            for (int i = 0; i < size; i++) {
+                // skip the unlikely integer values of a
+                final double x = a.getAsDouble();
+                if (Math.rint(x) != x) {
+                    out.printf("%d, %s%n", s.getAsInt(), -x);
+                }
+            }
+        }
+    }
+
+    /**
+     * Creates the sampler. The sample can be log-uniform in the range or uniform.
+     *
+     * @param rng the source of randomness
+     * @param a the lower bound (inclusive)
+     * @param b the upper bound (exclusive)
+     * @param uniform if true sample from a uniform distribution.
+     * @return the double supplier
+     */
+    private static DoubleSupplier createSampler(SplittableRandom rng, double a, double b, boolean uniform) {
+        if (uniform) {
+            final double range = b - a;
+            return () -> a + rng.nextDouble() * range;
+        }
+        // limiting log-uniform distribution
+        final long bits = Double.doubleToLongBits(a);
+        final long range = Double.doubleToLongBits(b) - bits;
+        return () -> Double.longBitsToDouble(bits + rng.nextLong(range));
+    }
+
+    /**
+     * Format the double to a short string. Assumes doubles can be close to integer and
+     * returns an integer representation.
+     *
+     * @param d the double
+     * @return the string
+     */
+    private static String shortFormat(double d) {
+        // Close to integer
+        if (Math.abs(Math.rint(d) - d) < Math.abs(d) * 1e-5) {
+            d = Math.rint(d);
+        }
+        if ((long) d == d) {
+            return Long.toString((long) d);
+        }
+        final String s = Double.toString(d);
+        // Remove trailing zeros for shorter length on integer representations
+        return s.replaceFirst("\\.0$", "").replaceFirst("\\.0E", "E");
+    }
+
+    /**
+     * Gets the prints the stream.
+     * Adds a header line to the output indicating how the data was created.
+     *
+     * @param filename the filename
+     * @return the stream
+     */
+    private PrintStream getPrintStream(String filename) throws IOException {
+        return getPrintStream(filename, getClass().getSimpleName());
+    }
+
+    /**
+     * Gets the prints the stream.
+     * Adds a header line to the output indicating how the data was created.
+     *
+     * @param filename the filename
+     * @param source the source of the data
+     * @return the stream
+     */
+    static PrintStream getPrintStream(String filename, String source) throws IOException {
+        final PrintStream out = new PrintStream(Files.newOutputStream(Paths.get("target", filename)));
+        Stream.of(
+            "# Licensed to the Apache Software Foundation (ASF) under one or more",
+            "# contributor license agreements.  See the NOTICE file distributed with",
+            "# this work for additional information regarding copyright ownership.",
+            "# The ASF licenses this file to You under the Apache License, Version 2.0",
+            "# (the \"License\"); you may not use this file except in compliance with",
+            "# the License.  You may obtain a copy of the License at",
+            "#",
+            "#     https://www.apache.org/licenses/LICENSE-2.0",
+            "#",
+            "# Unless required by applicable law or agreed to in writing, software",
+            "# distributed under the License is distributed on an \"AS IS\" BASIS,",
+            "# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.",
+            "# See the License for the specific language governing permissions and",
+            "# limitations under the License.",
+            "",
+            "# Generated by " + source)
+                .forEach(out::println);
+        return out;
+    }
 }
