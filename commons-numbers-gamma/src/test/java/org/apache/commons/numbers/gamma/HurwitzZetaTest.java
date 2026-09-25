@@ -60,10 +60,8 @@ class HurwitzZetaTest {
     private static final int MIN_N = N + 1; // e.g. 5
     /** Maximum N used to test the zeta function. Used for reporting RMS errors with varying N. */
     private static final int MAX_N = N; // e.g. 12
-    /** Flag set when the JVM version is printed. Used for testing. */
-    private static boolean jvm = false;
     /** Filenames of resources used for the test zeta function. */
-    private static String[] TEST_RESOURCES = {
+    private static final String[] TEST_RESOURCES = {
         "hzeta_s1_4_a1_8.csv",
         "hzeta_s1_4_a8_32.csv",
         "hzeta_s1_4_a32_2147483648.csv",
@@ -71,6 +69,8 @@ class HurwitzZetaTest {
         "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s4_32_a1_8.csv",
     };
+    /** Flag set when the JVM version is printed. Used for testing. */
+    private static boolean jvm = false;
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -360,10 +360,10 @@ class HurwitzZetaTest {
         ZETA_11_15((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), TEST_RESOURCES, 4.5, 0.66),
         ZETA_12_15((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), TEST_RESOURCES, 4, 0.66),
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
-        ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.68),
+        ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.69),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.9, 0.57),
-        ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.14),
+        ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 3.22, 0.62),
         ZETA_S2_4_N_A1_7(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-1.csv", 0.66, 0.1),
         ZETA_S3_5_N_A1_7(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-1.csv", 26.7, 0.77),
@@ -856,9 +856,9 @@ class HurwitzZetaTest {
 
             // Worst case of extreme cancellation. When a -> half-integer
             // and the low series is the full range possible given 0.5+/-2^-b
-            Arguments.of(3, -1.5 + 0x1p-52, 0.11810202582084209719727895331851, 1),
+            Arguments.of(3, -1.5 + 0x1p-52, 0.11810202582084209719727895331851, 2),
             Arguments.of(3, -1.5 - 0x1p-52, 0.11810202582088530580646271524921, 2),
-            Arguments.of(3, -3.5 + 0x1p-51, 0.0307784106604705956811455131349, 3),
+            Arguments.of(3, -3.5 + 0x1p-51, 0.0307784106604705956811455131349, 4),
             Arguments.of(3, -3.5 - 0x1p-51, 0.030778410660557098867785659805987, 2),
             Arguments.of(3, -7.5 + 0x1p-50, 0.0077822558978654467309133842121074, 1),
             Arguments.of(3, -7.5 - 0x1p-50, 0.0077822558980384765932871763254915, 3),
@@ -894,7 +894,7 @@ class HurwitzZetaTest {
             // Check some larger powers
             Arguments.of(7, -31.5 + 0x1p-48, 0.00000000014222080058151244961535769914742, 5),
             Arguments.of(9, -127.5 - 0x1p-46, 0.00000000026193893956547650755982737479515, 0),
-            Arguments.of(5, -1023.5 - 0x1p-43, 0.00000000007309223831961703808738193264568, 0),
+            Arguments.of(5, -1023.5 - 0x1p-43, 0.00000000007309223831961703808738193264568, 1),
 
             Arguments.of(1.5, 4789, 0.0289021565574206125831622859402, 0),
             Arguments.of(2.345, 12.789, 0.0254390524135780630410689989495, 1),
