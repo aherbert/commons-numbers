@@ -856,6 +856,9 @@ class HurwitzZetaTest {
 
             // Worst case of extreme cancellation. When a -> half-integer
             // and the low series is the full range possible given 0.5+/-2^-b
+            Arguments.of(3, -0.5 + 0x1p-54, 0.41439832211715462961751618626938, 1),
+            Arguments.of(3, -0.5 + 0x1p-53, 0.41439832211714926143686524195861, 1),
+            Arguments.of(3, -0.5 - 0x1p-53, 0.41439832211717073415946901920171, 2),
             Arguments.of(3, -1.5 + 0x1p-52, 0.11810202582084209719727895331851, 2),
             Arguments.of(3, -1.5 - 0x1p-52, 0.11810202582088530580646271524921, 2),
             Arguments.of(3, -3.5 + 0x1p-51, 0.0307784106604705956811455131349, 4),
