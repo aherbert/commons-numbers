@@ -363,9 +363,10 @@ class HurwitzZetaTest {
         // Extended precision power is exact on the largest term
         ZETA_S2_4_N_A1_7_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0x1p-30.csv", 0, 0),
         ZETA_S3_5_N_A1_7_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0x1p-30.csv", 0, 0),
-        // The method suffers cancellation here
         ZETA_S2_4_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-30.csv", 0.63, 0.1),
-        ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 10000, 1000),
+        // The method suffers some cancellation here
+        ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6, 1.7),
+        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5),
         ;
 
         /** The function. */
@@ -872,9 +873,13 @@ class HurwitzZetaTest {
             Arguments.of(19, -0.9999999999999998, 2.61598781051334795153424084243e+297, 0),
             Arguments.of(20, -0.9999999999999998, inf, 0), // 1.178e313
             Arguments.of(21, -0.9999999999999998, inf, 0), // 5.31e328
-            // 0.5^-s overflows
-            Arguments.of(1024, -1.75, inf, 0), // 3.23e616
+            // 0.5^-s overflows with odd or even s
             Arguments.of(1025, -1.25, -inf, 0), // -1.29e617
+            Arguments.of(1024, -1.75, inf, 0), // 3.23e616
+            // very large s: will be odd if cast to a long which triggers the cancellation path with s half-integer
+            Arguments.of(1e+19, -1.25, inf, 0), // 1.88e+6020599913279623904
+            Arguments.of(1e+19, -1.5, inf, 0), // 2.74e+3010299956639811952
+            Arguments.of(1e+19, -1.75, inf, 0), // 1.88e+6020599913279623904
 
             // Note: large negative a can be evaluated as complex using mpmath.
             // To obtain a real result requires the digits of precision (dps)
@@ -899,8 +904,50 @@ class HurwitzZetaTest {
             Arguments.of(3, -12326.06738, -3268.4963860622797455849029641482, 0),
 
             // very large negative a (not feasible using a sum of the negative terms)
-            Arguments.of(2, -12326165757157.06738, 230.08687018030868985783440062902, 0),
-            Arguments.of(3, -12326165757157.06738, -3414.424543876135548542972795997, 0),
+            Arguments.of(2, -12326165757157.066, 230.08687018030868985783440062902, 0),
+            Arguments.of(3, -12326165757157.066, -3414.424543876135548542972795997, 0),
+
+            // Worst case of extreme cancellation. When a -> half-integer
+            // and the low series is the full range possible given 0.5+/-2^-b
+            Arguments.of(3, -1.5 + 0x1p-52, 0.11810202582084209719727895331851, 1),
+            Arguments.of(3, -1.5 - 0x1p-52, 0.11810202582088530580646271524921, 2),
+            Arguments.of(3, -3.5 + 0x1p-51, 0.0307784106604705956811455131349, 3),
+            Arguments.of(3, -3.5 - 0x1p-51, 0.030778410660557098867785659805987, 2),
+            Arguments.of(3, -7.5 + 0x1p-50, 0.0077822558978654467309133842121074, 1),
+            Arguments.of(3, -7.5 - 0x1p-50, 0.0077822558980384765932871763254915, 3),
+            Arguments.of(3, -15.5 + 0x1p-49, 0.0019512219787038490075394821332913, 4),
+            Arguments.of(3, -15.5 - 0x1p-49, 0.0019512219790499147520220765569762, 4),
+            Arguments.of(3, -31.5 + 0x1p-48, 0.00048816210820002952659777173497611, 2),
+            Arguments.of(3, -31.5 - 0x1p-48, 0.00048816210889216253017517339304625, 3),
+            Arguments.of(3, -63.5 + 0x1p-47, 0.00012206286228806035641514115942213, 10),
+            Arguments.of(3, -63.5 - 0x1p-47, 0.00012206286367232674283574332594035, 10),
+            Arguments.of(3, -127.5 + 0x1p-46, 0.000030517111096024468697569156501944, 10),
+            Arguments.of(3, -127.5 - 0x1p-46, 0.000030517113864557336393645086698446, 10),
+            Arguments.of(3, -255.5 + 0x1p-45, 0.0000076293626591457113750252501943586, 10),
+            Arguments.of(3, -255.5 - 0x1p-45, 0.0000076293681962114704832983463164781, 10),
+            Arguments.of(3, -511.5 + 0x1p-44, 0.0000019073412767613820522958206941628, 10),
+            Arguments.of(3, -511.5 - 0x1p-44, 0.0000019073523508929061980225612021874, 10),
+            Arguments.of(3, -1023.5 + 0x1p-43, 0.00000047682597038482563656491683673066, 10),
+            Arguments.of(3, -1023.5 - 0x1p-43, 0.00000047684811864787541032292535846052, 10),
+            Arguments.of(3, -2047.5 + 0x1p-42, 0.00000011918713418230492155747450649894, 10),
+            Arguments.of(3, -2047.5 - 0x1p-42, 0.00000011923143070840483965021033635372, 10),
+            Arguments.of(3, -4095.5 + 0x1p-41, 0.000000029758025417506153675797113283396, 10),
+            Arguments.of(3, -4095.5 - 0x1p-41, 0.000000029846618469706082505485151864752, 10),
+            // Limit of a double-double summation of opposing terms from 0.5 +/- 2^-40
+            Arguments.of(3, -8191.5 + 0x1p-40, 0.0000000073619875169683123404158617742165, 10),
+            Arguments.of(3, -8191.5 - 0x1p-40, 0.0000000075391736213681931608483274726682, 10),
+            Arguments.of(3, -16383.5 + 0x1p-39, 0.0000000016854590430963498434783046783686, 10),
+            Arguments.of(3, -16383.5 - 0x1p-39, 0.0000000020398312518961172746074881289298, 10),
+            // 50 ulp = Loss of ~ 6-bits of precision
+            Arguments.of(3, -65535.5 + 0x1p-37, -0.00000000059232909577937793989464549320949, 50),
+            Arguments.of(3, -65535.5 - 0x1p-37, 0.00000000082515973941969504164666837084463, 50),
+            Arguments.of(3, -1048575.5 + 0x1p-33, -0.000000011339455934241697907112956454121, 10),
+            Arguments.of(3, -1048575.5 - 0x1p-33, 0.000000011340365428943470628555741917531, 10),
+
+            // Check some larger powers
+            Arguments.of(7, -31.5 + 0x1p-48, 0.00000000014222080058151244961535769914742, 5),
+            Arguments.of(9, -127.5 - 0x1p-46, 0.00000000026193893956547650755982737479515, 0),
+            Arguments.of(5, -1023.5 - 0x1p-43, 0.00000000007309223831961703808738193264568, 0),
 
             Arguments.of(1.5, 4789, 0.0289021565574206125831622859402, 0),
             Arguments.of(2.345, 12.789, 0.0254390524135780630410689989495, 1),
@@ -1100,6 +1147,7 @@ class HurwitzZetaTest {
         // the most significant terms.
         "2, 4, 1, 7, 0.5, 30",
         "3, 5, 1, 7, 0.5, 30",
+        "3, 5, 8, 33, 0.5, 30",
     })
     @Disabled("Used to generate test data")
     void testDataNegativeASample(int ls, int us,
