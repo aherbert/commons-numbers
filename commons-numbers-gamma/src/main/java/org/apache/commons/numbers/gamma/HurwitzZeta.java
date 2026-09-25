@@ -189,7 +189,7 @@ public final class HurwitzZeta {
 
         // Case of total cancellation
         final boolean odd = ((long) s & 1) == 1;
-        final double xn = a - ca;
+        double xn = a - ca;
         // Intentional float comparison
         if (odd && xn == -HALF) {
             return zetaImp(s, 1 - a);
@@ -231,13 +231,72 @@ public final class HurwitzZeta {
                 Double.POSITIVE_INFINITY;
         }
 
+        // Here the remaining series above and below zero are effectively both zeta
+        // evaluations with zeta(s >= 2, a > 1). This is always < 2.
+        // Adding to the existing finite sum cannot trigger overflow.
+
+        // TODO: If odd compute the next term in extended precision.
+        // How many terms to compute and how to know?
+        // Depends on how close to half-integer and the size of the exponent.
+        // Hold the first terms.
+        // Compute the cancellation in bits.
+        //
+        // Ideal ???
+        // Compute additional terms in double-double precision to
+        // maintain a double-double sum of differences. This can stop
+        // when the cancellation in the difference of the remaining zeta series
+        // in each direction is less than the current sum of differences in
+        // double precision.
+        // This still has an impractical number of terms when a is close to
+        // half-integer and s is 3.
+        // The first few terms are larger than the entire remaining series.
+        // This stops after a few terms:
+        //  0.5^-3 = 8.0     : zeta(3,  1.5) = 0.41
+        //  1.5^-3 = 0.296   : zeta(3,  2.5) = 0.12
+        //  2.5^-3 = 0.064   : zeta(3,  3.5) = 0.054
+        //  3.5^-3 = 0.023   : zeta(3,  4.5) = 0.031
+        //  4.5^-3 = 0.011   : zeta(3,  5.5) = 0.020
+        //  8.5^-3 = 0.0016  : zeta(3,  9.5) = 0.0062
+        // 16.5^-3 = 0.00022 : zeta(3, 17.5) = 0.0017
+        // The closest to 0.5 is limited by ulp a. With 2 terms this is 0.5 += 2^-51
+
+        // TODO compute the exact sum of the differences:
+        // (2.5 - b)^-3 + (1.5 - b)^-3 + (0.5 - b)^-3 - (0.5 + b)^-3 - (1.5 + b)^-3 - (3.5 + b)^-3
+        // compare to zeta(3, 3.5 + b) - (zeta(3, 3.5 - b) - zeta(3, 4.5 - b))
+        // This is the worst case limit of precision.
+        // Do this for each b.
+
+        // - possible to use an extended precision zetaImp. requires returning N+M
+        // and DD precision bernoulli terms.
+
+        double xp = 2 + xn;
+        if (odd) {
+            // Compute additional terms
+            final int n = (int) -s;
+            final double x = xn;
+//            final long[] expn = {0};
+//            final long[] expp = {0};
+            for (int i = 0; i < 8 && xn > a; i++) {
+                xn -= 1.0;
+                DD pn = DD.of(xn);
+                DD pp = DD.ofSum(2 + i, x);
+                // DDMath here makes no difference
+//                pn = DDMath.pow(pn, n, expn);
+//                pp = DDMath.pow(pp, n, expp);
+//                pn = pn.scalb((int) expn[0]);
+//                pp = pp.scalb((int) expp[0]);
+                pn = pn.pow(n);
+                pp = pp.pow(n);
+                sum = sum.add(pn.add(pp));
+            }
+            // advance positive x
+            xp = 2 + (x - xn) + x;
+        }
+
         // Compute the remaining terms
         final double sn1 = negativeSeriesSum(a, xn, s);
-        final double sp1 = zetaImp(s, 2 + xn);
+        final double sp1 = zetaImp(s, xp);
 
-        // The terms sp1 and sn1 are effectively both zeta evaluations
-        // with zeta(s >= 2, a > 1). This is always < 2.
-        // Adding (sp1 + sn1) to the existing finite sum cannot trigger overflow.
         return sum.add(DD.ofSum(sp1, sn1)).hi();
     }
 
