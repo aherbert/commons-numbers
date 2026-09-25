@@ -364,8 +364,10 @@ class HurwitzZetaTest {
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.9, 0.57),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 3.22, 0.62),
-        ZETA_S2_4_N_A1_7(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-1.csv", 0.66, 0.1),
-        ZETA_S3_5_N_A1_7(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-1.csv", 26.7, 0.77),
+        ZETA_S2_4_N_A1_7(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-1.csv", 0.63, 0.1),
+        ZETA_S3_5_N_A1_7(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-1.csv", 3, 0.1),
+        ZETA_S2_4_N_A8_33(HurwitzZeta::value, "hzeta_s2_4_na8_33_p0.5_p0x1p-1.csv", 0.75, 0.1),
+        ZETA_S3_5_N_A8_33(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-1.csv", 0, 0),
         // Extended precision power is exact on the largest term
         ZETA_S2_4_N_A1_7_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0x1p-30.csv", 0, 0),
         ZETA_S3_5_N_A1_7_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0x1p-30.csv", 0, 0),
@@ -373,7 +375,7 @@ class HurwitzZetaTest {
         // The method suffers some cancellation here.
         // Further precision gains would require BigDecimal over double-double math.
         ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6, 1.7),
-        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5);
+        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2);
 
 //        JDK Temurin 25.492-b09
 //        ZETA_5_15                             max    22.7482   RMS    3.32905   mean        1.28589  n 18000
@@ -390,13 +392,15 @@ class HurwitzZetaTest {
 //        ZETA_S1_4_A0_1                        max    1.86288   RMS   0.550082   mean    -0.00582330  n 3000
 //        ZETA_S1_4_A0                          max    1.22616   RMS   0.127784   mean    -0.00596360  n 3000
 //        ZETA_S4_32_A1_8                       max    3.18614   RMS   0.592956   mean    -0.00843521  n 3000
-//        ZETA_S2_4_N_A1_7                      max   0.640575   RMS  0.0809186   mean    0.000631071  n 3000
-//        ZETA_S3_5_N_A1_7                      max    4.46327   RMS  0.0922253   mean   -0.000939272  n 3000
+//        ZETA_S2_4_N_A1_7                      max   0.600309   RMS  0.0644069   mean   -0.000470018  n 3000
+//        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0653419   mean   -0.000183116  n 3000
+//        ZETA_S2_4_N_A8_33                     max   0.734873   RMS  0.0669002   mean    0.000287677  n 3000
+//        ZETA_S3_5_N_A8_33                     max    0.00000   RMS    0.00000   mean        0.00000  n 3000
 //        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
 //        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.608342   RMS  0.0832319   mean     0.00650061  n 3000
-//        ZETA_S3_5_N_A1_7_HALF_B30             max    5.89128   RMS    1.62211   mean     -0.0208132  n 3000
-//        ZETA_S3_5_N_A8_33_HALF_B30            max    170.967   RMS    4.61434   mean     -0.0234005  n 3000
+//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.608751   RMS  0.0652802   mean     0.00355178  n 3000
+//        ZETA_S3_5_N_A1_7_HALF_B30             max    5.66317   RMS    1.59232   mean     -0.0478892  n 3000
+//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02775   mean     -0.0120123  n 3000
 //        zeta  N=8   M=1   6596
 //        zeta  N=8   M=2   170
 //        zeta  N=8   M=3   133
@@ -406,6 +410,7 @@ class HurwitzZetaTest {
 //        zeta  N=8   M=7   1678
 //        zeta  N=8   M=8   2585
 //        zeta  N=8   M=9   3704
+
 
         /** The function. */
         private final DoubleBinaryOperator fun;
@@ -1000,7 +1005,7 @@ class HurwitzZetaTest {
      */
     private static void assertRms(TestError te, TestUtils.ErrorStatistics stats) {
         final double rms = stats.getRMS();
-        debugRms(te.toString(), stats.getMaxAbs(), rms, stats.getMean(), stats.size());
+        // debugRms(te.toString(), stats.getMaxAbs(), rms, stats.getMean(), stats.size());
         Assertions.assertTrue(rms <= te.getRmsTolerance(),
             () -> String.format("%s RMS %s < %s", te, rms, te.getRmsTolerance()));
     }
@@ -1086,6 +1091,9 @@ class HurwitzZetaTest {
         // a = -[1.5, 7.5] +/- 0.5
         "2, 4, 1, 7, 0.5, 1",
         "3, 5, 1, 7, 0.5, 1",
+        // a = -[8.5, 33.5] +/- 0.5
+        "2, 4, 8, 33, 0.5, 1",
+        "3, 5, 8, 33, 0.5, 1",
         // a = -[1, 7] +/- 9.31e-10
         // This approaches the pole at a = -1, -2, -3, ... and is easy to compute as
         // a single term dominates the result
@@ -1098,6 +1106,7 @@ class HurwitzZetaTest {
         // the most significant terms.
         "2, 4, 1, 7, 0.5, 30",
         "3, 5, 1, 7, 0.5, 30",
+        // a = -[8.5, 33.5] +/- 9.31e-10
         "3, 5, 8, 33, 0.5, 30",
     })
     @Disabled("Used to generate test data")
@@ -1122,7 +1131,7 @@ class HurwitzZetaTest {
         // signed 53-bits * 2^-53 * scale
         final double f = 0x1.0p-53 * scale;
         final int ra = ua - la + 1;
-        final DoubleSupplier a = () -> la + rng.nextInt(ra) + offset + f * (rng.nextLong() >> 11);
+        final DoubleSupplier a = () -> la + rng.nextInt(ra) + offset + f * (rng.nextLong() >> 10);
 
         final int size = 3000;
         final StringBuilder name = new StringBuilder("hzeta_s")
