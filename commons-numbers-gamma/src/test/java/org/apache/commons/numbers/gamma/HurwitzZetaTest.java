@@ -56,12 +56,21 @@ class HurwitzZetaTest {
     /** Optimal N used to test the zeta function. */
     private static final int N = 8;
     /** Minimum N used to test the zeta function.
-     * Used for reporting RMS errors with varying N. When MIN_N == MAX_N no report is printed. */
-    private static final int MIN_N = N; // e.g. 5
+     * Used for reporting RMS errors with varying N. When MIN_N >= MAX_N no report is printed. */
+    private static final int MIN_N = N + 1; // e.g. 5
     /** Maximum N used to test the zeta function. Used for reporting RMS errors with varying N. */
     private static final int MAX_N = N; // e.g. 12
     /** Flag set when the JVM version is printed. Used for testing. */
     private static boolean jvm = false;
+    /** Filenames of resources used for the test zeta function. */
+    private static String[] TEST_RESOURCES = {
+        "hzeta_s1_4_a1_8.csv",
+        "hzeta_s1_4_a8_32.csv",
+        "hzeta_s1_4_a32_2147483648.csv",
+        "hzeta_s1_4_a0_1.csv",
+        "hzeta_s1_4_a1e-16_1e-14.csv",
+        "hzeta_s4_32_a1_8.csv",
+    };
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -340,18 +349,18 @@ class HurwitzZetaTest {
      * the resource file containing the data.
      */
     private enum BiTestCase implements TestError {
-        // s in (1, 32); a in [1, 2^31)
-//        ZETA_5_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 5, 15), "hurwitzzeta.csv", 22, 2.5),
-//        ZETA_6_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 6, 15), "hurwitzzeta.csv", 3.8, 0.62),
-//        ZETA_7_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 7, 15), "hurwitzzeta.csv", 3.75, 0.61),
-//        ZETA_8_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 8, 15), "hurwitzzeta.csv", 3.5, 0.60),
-//        ZETA_9_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 9, 15), "hurwitzzeta.csv", 3.75, 0.61),
-//        ZETA_10_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 10, 15), "hurwitzzeta.csv", 3.5, 0.60),
-//        ZETA_11_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), "hurwitzzeta.csv", 3.8, 0.60),
-//        ZETA_12_15_INT((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), "hurwitzzeta.csv", 3.8, 0.60),
+        // Test implementation. Uses combined data from multiple resources in order to
+        // find N and M values. Any N above 5 works on this data.
+        ZETA_5_15((s, a) -> HurwitzZetaTest.zeta(s, a, 5, 15), TEST_RESOURCES, 25, 3.5),
+        ZETA_6_15((s, a) -> HurwitzZetaTest.zeta(s, a, 6, 15), TEST_RESOURCES, 4, 0.56),
+        ZETA_7_15((s, a) -> HurwitzZetaTest.zeta(s, a, 7, 15), TEST_RESOURCES, 4, 0.56),
+        ZETA_8_15((s, a) -> HurwitzZetaTest.zeta(s, a, 8, 15), TEST_RESOURCES, 4, 0.56),
+        ZETA_9_15((s, a) -> HurwitzZetaTest.zeta(s, a, 9, 15), TEST_RESOURCES, 4, 0.56),
+        ZETA_10_15((s, a) -> HurwitzZetaTest.zeta(s, a, 10, 15), TEST_RESOURCES, 4, 0.64),
+        ZETA_11_15((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), TEST_RESOURCES, 4.5, 0.66),
+        ZETA_12_15((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), TEST_RESOURCES, 4, 0.66),
         // TODO - remove after testing
-        CEPHES(HurwitzZetaTest::zetaCephes, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 10001114.7, 111111.0),
-//        ZETA_INT(HurwitzZeta::value, "hurwitzzeta.csv", 3.5, 0.60),
+        CEPHES(HurwitzZetaTest::zetaCephes, TEST_RESOURCES, 10001114.7e10, 111111.0),
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
         ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.68),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
@@ -364,19 +373,49 @@ class HurwitzZetaTest {
         ZETA_S2_4_N_A1_7_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0x1p-30.csv", 0, 0),
         ZETA_S3_5_N_A1_7_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0x1p-30.csv", 0, 0),
         ZETA_S2_4_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-30.csv", 0.63, 0.1),
-        // The method suffers some cancellation here
+        // The method suffers some cancellation here.
+        // Further precision gains would require BigDecimal over double-double math.
         ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6, 1.7),
-        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5),
-        ;
+        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5);
+
+//        JDK Temurin 25.492-b09
+//        ZETA_5_15                             max    22.7482   RMS    3.32905   mean        1.28589  n 18000
+//        ZETA_6_15                             max    3.50083   RMS   0.545590   mean    -0.00931504  n 18000
+//        ZETA_7_15                             max    3.19219   RMS   0.543611   mean     -0.0108850  n 18000
+//        ZETA_8_15                             max    3.52850   RMS   0.541361   mean    -0.00823326  n 18000
+//        ZETA_9_15                             max    3.46324   RMS   0.546674   mean    -0.00892159  n 18000
+//        ZETA_10_15                            max    3.80492   RMS   0.540870   mean    -0.00484315  n 18000
+//        ZETA_11_15                            max    4.18614   RMS   0.551071   mean   -0.000419412  n 18000
+//        ZETA_12_15                            max    3.77276   RMS   0.545796   mean    -0.00703945  n 18000
+//        CEPHES                                max    4398.74   RMS    38.7684   mean      -0.821160  n 18000
+//        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.641152   mean   -0.000526424  n 3000
+//        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.674928   mean     -0.0209228  n 3000
+//        ZETA_S1_4_A32_2147483648              max    1.77377   RMS   0.470439   mean    -0.00772827  n 3000
+//        ZETA_S1_4_A0_1                        max    1.86288   RMS   0.550082   mean    -0.00582330  n 3000
+//        ZETA_S1_4_A0                          max    1.22616   RMS   0.127784   mean    -0.00596360  n 3000
+//        ZETA_S4_32_A1_8                       max    3.18614   RMS   0.592956   mean    -0.00843521  n 3000
+//        ZETA_S2_4_N_A1_7                      max   0.640575   RMS  0.0809186   mean    0.000631071  n 3000
+//        ZETA_S3_5_N_A1_7                      max    4.46327   RMS  0.0922253   mean   -0.000939272  n 3000
+//        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
+//        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
+//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.608342   RMS  0.0832319   mean     0.00650061  n 3000
+//        ZETA_S3_5_N_A1_7_HALF_B30             max    5.89128   RMS    1.62211   mean     -0.0208132  n 3000
+//        ZETA_S3_5_N_A8_33_HALF_B30            max    170.967   RMS    4.61434   mean     -0.0234005  n 3000
+//        zeta  N=8   M=1   6596
+//        zeta  N=8   M=2   170
+//        zeta  N=8   M=3   133
+//        zeta  N=8   M=4   165
+//        zeta  N=8   M=5   1132
+//        zeta  N=8   M=6   1837
+//        zeta  N=8   M=7   1678
+//        zeta  N=8   M=8   2585
+//        zeta  N=8   M=9   3704
 
         /** The function. */
         private final DoubleBinaryOperator fun;
 
-        /** The filename containing the test data. */
-        private final String filename;
-
-        /** The field containing the expected value. */
-        private final int expected;
+        /** The filenames containing the test data. */
+        private final String[] filename;
 
         /** The maximum allowed ulp. */
         private final double maxUlp;
@@ -385,7 +424,7 @@ class HurwitzZetaTest {
         private final double rmsUlp;
 
         /**
-         * Instantiates a new test case.
+         * Create an instance.
          *
          * @param fun function to test
          * @param filename Filename of the test data
@@ -393,22 +432,23 @@ class HurwitzZetaTest {
          * @param rmsUlp maximum allowed RMS ulp
          */
         BiTestCase(DoubleBinaryOperator fun, String filename, double maxUlp, double rmsUlp) {
-            this(fun, filename, 2, maxUlp, rmsUlp);
+            this.fun = fun;
+            this.filename = new String[] {filename};
+            this.maxUlp = maxUlp;
+            this.rmsUlp = rmsUlp;
         }
 
         /**
-         * Instantiates a new test case.
+         * Create an instance.
          *
          * @param fun function to test
          * @param filename Filename of the test data
-         * @param expected Expected result field index
          * @param maxUlp maximum allowed ulp
          * @param rmsUlp maximum allowed RMS ulp
          */
-        BiTestCase(DoubleBinaryOperator fun, String filename, int expected, double maxUlp, double rmsUlp) {
+        BiTestCase(DoubleBinaryOperator fun, String[] filename, double maxUlp, double rmsUlp) {
             this.fun = fun;
             this.filename = filename;
-            this.expected = expected;
             this.maxUlp = maxUlp;
             this.rmsUlp = rmsUlp;
         }
@@ -421,17 +461,10 @@ class HurwitzZetaTest {
         }
 
         /**
-         * @return Filename of the test data
+         * @return Filenames of the test data
          */
-        String getFilename() {
+        String[] getFilenames() {
             return filename;
-        }
-
-        /**
-         * @return Expected result field index
-         */
-        int getExpectedField() {
-            return expected;
         }
 
         @Override
@@ -988,7 +1021,7 @@ class HurwitzZetaTest {
                 m = i + 1;
                 // This is used for testing.
                 // CHECKSTYLE: stop regex
-                System.out.printf("// zeta  N=%-2d  M=%-2d  %d%n", N, m, M[i]);
+                System.out.printf("zeta  N=%-2d  M=%-2d  %d%n", N, m, M[i]);
                 // CHECKSTYLE: resume regex
             }
         }
@@ -1016,25 +1049,27 @@ class HurwitzZetaTest {
      */
     private static void assertFunction(BiTestCase tc) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
-        try (DataReader in = new DataReader(tc.getFilename())) {
-            while (in.next()) {
-                try {
-                    final double x = in.getDouble(0);
-                    final double y = in.getDouble(1);
-                    final double actual = tc.getFunction().applyAsDouble(x, y);
-                    // Skip results from test zeta function
-                    if (Double.isNaN(actual)) {
-                        return;
+        for (final String filename : tc.getFilenames()) {
+            try (DataReader in = new DataReader(filename)) {
+                while (in.next()) {
+                    try {
+                        final double x = in.getDouble(0);
+                        final double y = in.getDouble(1);
+                        final double actual = tc.getFunction().applyAsDouble(x, y);
+                        // Skip results from test zeta function
+                        if (Double.isNaN(actual)) {
+                            return;
+                        }
+                        final BigDecimal expected = in.getBigDecimal(2);
+                        TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
+                            () -> tc + " x=" + x + ", y=" + y);
+                    } catch (final NumberFormatException ex) {
+                        Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
                     }
-                    final BigDecimal expected = in.getBigDecimal(tc.getExpectedField());
-                    TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
-                        () -> tc + " x=" + x + ", y=" + y);
-                } catch (final NumberFormatException ex) {
-                    Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
                 }
+            } catch (final IOException ex) {
+                Assertions.fail("Failed to load data: " + filename, ex);
             }
-        } catch (final IOException ex) {
-            Assertions.fail("Failed to load data: " + tc.getFilename(), ex);
         }
 
         assertRms(tc, stats);
