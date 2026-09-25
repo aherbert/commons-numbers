@@ -216,4 +216,22 @@ final class SpecialMath {
                     x * x2 /  3 -
                         x2 /  2;
     }
+
+    /**
+     * Checks if the value is odd.
+     *
+     * <p>Helper function used in Boost gamma functions and the Hurwitz zeta function.
+     *
+     * @param v Value (assumed to be positive finite and an integer)
+     * @return true if odd
+     */
+    static boolean isOdd(double v) {
+        // Note:
+        // Any value larger than 2^53 should be even.
+        // If the input is positive then truncation of extreme doubles (>2^63)
+        // to the primitive long creates an odd value: 2^63-1.
+        // This is corrected by inverting the sign of v and the extreme is even: -2^63.
+        // The isOdd function is correct for all positive finite v.
+        return (((long) -v) & 0x1) == 1;
+    }
 }
