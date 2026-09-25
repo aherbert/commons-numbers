@@ -244,6 +244,8 @@ public final class HurwitzZeta {
             // The number of terms depends on how close to half-integer and the size
             // of the exponent. This is detected by continuing until the
             // double-double sum is not possible.
+            // When a is close to integer this exits very fast otherwise the
+            // number of terms can be large.
             // In the extreme this is limited to 5430 terms when 0.5 +/- 2^-40.
             final int n = (int) -s;
             final double x = xn;
