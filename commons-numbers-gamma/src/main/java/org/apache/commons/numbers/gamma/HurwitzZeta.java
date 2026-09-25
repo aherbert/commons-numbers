@@ -91,6 +91,9 @@ public final class HurwitzZeta {
     private static final double MAX_S = 1024;
     /** double-double NaN. */
     private static final DD DD_NAN = DD.of(Double.NaN);
+    /** Maximum number of terms in the negative series summation.
+     * Equal to the number of Math.pow calls in two zeta function evaluations. */
+    private static final int MAX_TERMS = 2 * (N + 2);
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
@@ -176,7 +179,7 @@ public final class HurwitzZeta {
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be negative.
      *
-     * @param s Argument {@code s > 1}
+     * @param s Argument {@code s > 1} and integer
      * @param a Argument {@code a < 0}
      * @param ca Ceil(a)
      * @return zeta(s, a)
@@ -187,8 +190,8 @@ public final class HurwitzZeta {
         // and the addition of zeta(s, x > 0) has cancellation.
         // This is largest when a is close to half-integer.
 
-        // Case of total cancellation
-        final boolean odd = ((long) s & 1) == 1;
+        // Check case of total cancellation.
+        final boolean odd = SpecialMath.isOdd(s);
         double xn = a - ca;
         // Intentional float comparison
         if (odd && xn == -HALF) {
@@ -235,61 +238,33 @@ public final class HurwitzZeta {
         // evaluations with zeta(s >= 2, a > 1). This is always < 2.
         // Adding to the existing finite sum cannot trigger overflow.
 
-        // TODO: If odd compute the next term in extended precision.
-        // How many terms to compute and how to know?
-        // Depends on how close to half-integer and the size of the exponent.
-        // Hold the first terms.
-        // Compute the cancellation in bits.
-        //
-        // Ideal ???
-        // Compute additional terms in double-double precision to
-        // maintain a double-double sum of differences. This can stop
-        // when the cancellation in the difference of the remaining zeta series
-        // in each direction is less than the current sum of differences in
-        // double precision.
-        // This still has an impractical number of terms when a is close to
-        // half-integer and s is 3.
-        // The first few terms are larger than the entire remaining series.
-        // This stops after a few terms:
-        //  0.5^-3 = 8.0     : zeta(3,  1.5) = 0.41
-        //  1.5^-3 = 0.296   : zeta(3,  2.5) = 0.12
-        //  2.5^-3 = 0.064   : zeta(3,  3.5) = 0.054
-        //  3.5^-3 = 0.023   : zeta(3,  4.5) = 0.031
-        //  4.5^-3 = 0.011   : zeta(3,  5.5) = 0.020
-        //  8.5^-3 = 0.0016  : zeta(3,  9.5) = 0.0062
-        // 16.5^-3 = 0.00022 : zeta(3, 17.5) = 0.0017
-        // The closest to 0.5 is limited by ulp a. With 2 terms this is 0.5 += 2^-51
-
-        // TODO compute the exact sum of the differences:
-        // (2.5 - b)^-3 + (1.5 - b)^-3 + (0.5 - b)^-3 - (0.5 + b)^-3 - (1.5 + b)^-3 - (3.5 + b)^-3
-        // compare to zeta(3, 3.5 + b) - (zeta(3, 3.5 - b) - zeta(3, 4.5 - b))
-        // This is the worst case limit of precision.
-        // Do this for each b.
-
-        // - possible to use an extended precision zetaImp. requires returning N+M
-        // and DD precision bernoulli terms.
-
         double xp = 2 + xn;
         if (odd) {
-            // Compute additional terms
+            // If odd compute the terms in extended precision.
+            // The number of terms depends on how close to half-integer and the size
+            // of the exponent. This is detected by continuing until the
+            // double-double sum is not possible.
+            // In the extreme this is limited to 5430 terms when 0.5 +/- 2^-40.
             final int n = (int) -s;
             final double x = xn;
-//            final long[] expn = {0};
-//            final long[] expp = {0};
-            for (int i = 0; i < 8 && xn > a; i++) {
+            for (int i = 0; xn > a; i++) {
                 xn -= 1.0;
-                DD pn = DD.of(xn);
-                DD pp = DD.ofSum(2 + i, x);
-                // DDMath here makes no difference
-//                pn = DDMath.pow(pn, n, expn);
-//                pp = DDMath.pow(pp, n, expp);
-//                pn = pn.scalb((int) expn[0]);
-//                pp = pp.scalb((int) expp[0]);
-                pn = pn.pow(n);
-                pp = pp.pow(n);
-                sum = sum.add(pn.add(pp));
+                // Note: DDMath here makes no difference as s is small and the
+                // standard pow function is accurate to ~100 bits. If s is large
+                // then the terms rapidly reduce in magnitude compared to 0.5^-s
+                // and trailing imprecise bits in the term do not change the sum.
+                final DD pn = DD.of(xn).pow(n);
+                final DD pp = DD.ofSum(2 + i, x).pow(n);
+                final DD term = pn.add(pp);
+                if (Math.abs(term.hi()) < Math.abs(sum.lo())) {
+                    // Addition of single opposing terms not possible.
+                    // Reset xn to compute as part of the remaining series.
+                    xn += 1.0;
+                    break;
+                }
+                sum = sum.add(term);
             }
-            // advance positive x
+            // advance positive x by the number of terms computed (x - xn)
             xp = 2 + (x - xn) + x;
         }
 
@@ -326,9 +301,7 @@ public final class HurwitzZeta {
         double sum = 0.5 * p;
         // S : k in [0, n-1]
         for (int k = N - 1; k >= 0; k--) {
-            // Descending k sums in order of magnitude for increased precision.
-            // Prevents early exit for large s when the term (a+k)^-s is below
-            // machine epsilon of the ascending series sum.
+            // Descending k sums in order of magnitude for increased precision
             sum += Math.pow(a + k, -s);
         }
 
@@ -380,7 +353,7 @@ public final class HurwitzZeta {
      * <p>Assumes {@code a} and {@code b} are negative and separated by an integer
      * distance; and {@code exponent >= 2} and integer.
      *
-     * <p>Large ranges are evaluated using a difference of zeta functions.
+     * <p>Large ranges may be evaluated using a difference of zeta functions.
      *
      * @param a First term in the series to calculate (negative non-integer).
      * @param b Last term in the series to calculate, exclusive (negative non-integer).
@@ -391,22 +364,28 @@ public final class HurwitzZeta {
         // This can be computed using a difference of zeta functions.
         // A single call to zeta uses ~10 pow operations; use zeta when the
         // sum will use more.
-        // The difference incurs cancellation. However s >= 2 and the series
-        // is strongly converging. In this case the two terms are orders of
-        // magnitude different and the error is limited to the computation of
-        // the larger term.
-        if (b - a > 2 * N) {
-            final int sign = ((long) s & 1) == 1 ? -1 : 1;
-            return sign * (zetaImp(s, 1 - b) - zetaImp(s, 1 - a));
+        // Note: The difference incurs cancellation.
+        // When s is even the function is called with b in -[1, 0) and the
+        // series is strongly converging and no issue occurs.
+        // When s is odd it may be called with large |b|. In this case many
+        // terms have been computed to handle most of the cancellation in the
+        // result. Worst case is b ~ 5430:
+        // zeta(3, 5430) = 1.696e-08
+        // zeta(3, 5450) = 1.683e-08
+        // Cancellation in lost bits = exponent(max(a, b)) - exponent(a-b) = 7
+        // The result is sufficient for reasonable double precision.
+        if (b - a > MAX_TERMS) {
+            final int sign = SpecialMath.isOdd(s) ? -1 : 1;
+            final double zb = zetaImp(s, 1 - b);
+            final double za = zetaImp(s, 1 - a);
+            return sign * (zb - za);
         }
 
         // Sum terms in ascending order of magnitude
         double sum = 0;
         double x = a;
-        double t;
         while (x < b) {
-            t = Math.pow(x, -s);
-            sum += t;
+            sum += Math.pow(x, -s);
             x += 1.0;
         }
         return sum;
