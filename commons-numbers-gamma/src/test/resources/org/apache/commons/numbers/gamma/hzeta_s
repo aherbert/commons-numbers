@@ -1,1 +1,0 @@
-python3 src/test/resources/org/apache/commons/numbers/gamma/hzeta.py target/hzeta_s4_32_a1_8.txt
