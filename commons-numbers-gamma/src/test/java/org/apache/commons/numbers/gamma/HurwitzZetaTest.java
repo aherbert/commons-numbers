@@ -359,8 +359,6 @@ class HurwitzZetaTest {
         ZETA_10_15((s, a) -> HurwitzZetaTest.zeta(s, a, 10, 15), TEST_RESOURCES, 4, 0.64),
         ZETA_11_15((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), TEST_RESOURCES, 4.5, 0.66),
         ZETA_12_15((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), TEST_RESOURCES, 4, 0.66),
-        // TODO - remove after testing
-        CEPHES(HurwitzZetaTest::zetaCephes, TEST_RESOURCES, 10001114.7e10, 111111.0),
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
         ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.68),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
@@ -387,7 +385,6 @@ class HurwitzZetaTest {
 //        ZETA_10_15                            max    3.80492   RMS   0.540870   mean    -0.00484315  n 18000
 //        ZETA_11_15                            max    4.18614   RMS   0.551071   mean   -0.000419412  n 18000
 //        ZETA_12_15                            max    3.77276   RMS   0.545796   mean    -0.00703945  n 18000
-//        CEPHES                                max    4398.74   RMS    38.7684   mean      -0.821160  n 18000
 //        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.641152   mean   -0.000526424  n 3000
 //        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.674928   mean     -0.0209228  n 3000
 //        ZETA_S1_4_A32_2147483648              max    1.77377   RMS   0.470439   mean    -0.00772827  n 3000
@@ -577,85 +574,6 @@ class HurwitzZetaTest {
         return sum + tsum;
     }
 
-    static double zetaCephes(double x, double q) {
-        int i;
-        double a;
-        double b;
-        double k;
-        double s;
-        double t;
-        double w;
-
-        if (x == 1.0) {
-            return Double.POSITIVE_INFINITY;
-        }
-
-        if (x < 1.0) {
-            return Double.NaN;
-        }
-
-        if (q <= 0.0) {
-            if (q == Math.floor(q)) {
-                return Double.POSITIVE_INFINITY;
-            }
-            if (x != Math.floor(x)) {
-                /* because q^-x not defined */
-                return Double.NaN;
-            }
-        }
-
-        /* Asymptotic expansion
-         * https://dlmf.nist.gov/25.11#E43
-         */
-        if (q > 1e15) {
-            return (1 / (x - 1) + 1 / (2 * q)) * Math.pow(q, 1 - x);
-        }
-
-        /* Euler-Maclaurin summation formula */
-
-        /* Permit negative q but continue sum until n+q > +9 .
-         * This case should be handled by a reflection formula.
-         * If q<0 and x is an integer, there is a relation to
-         * the polyGamma function.
-         */
-        s = Math.pow(q, -x);
-        a = q;
-        i = 0;
-        b = 0.0;
-        while (i < 9 || a <= 9.0) {
-            i += 1;
-            a += 1.0;
-            b = Math.pow(a, -x);
-            s += b;
-            // abs required for convergence of negative q ???
-            if (Math.abs(b / s) < 0x1.0p-53) {
-                return s;
-            }
-        }
-
-        // w = q + n
-        w = a;
-        s += b * w / (x - 1.0);
-        s -= 0.5 * b;
-        a = 1.0;
-        k = 0.0;
-        for (i = 0; i < 12; i++) {
-            a *= x + k;
-            b /= w;
-            t = a * b / F[i];
-            s = s + t;
-            t = Math.abs(t / s);
-            if (t < 0x1.0p-53) {
-                return s;
-            }
-            k += 1.0;
-            a *= x + k;
-            b /= w;
-            k += 1.0;
-        }
-        return s;
-    }
-
     /**
      * Test the factors required for the tail sum. These are computed from the numerator
      * and denominator of the Bernoulli numbers, and the factorial of 2k. The test asserts
@@ -742,9 +660,6 @@ class HurwitzZetaTest {
         Assertions.assertEquals(z, HurwitzZeta.value(s, a));
     }
 
-    // TODO: Test function is monotonic at the half-integer negative a.
-    // It may be inaccurate, but is it monotonic?
-
     /**
      * Spot tests for the zeta function to check various points in the domain and extreme values.
      */
@@ -752,7 +667,6 @@ class HurwitzZetaTest {
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
         assertClose(HurwitzZeta::value, s, a, z, ulp);
-//        assertClose(HurwitzZetaTest::zetaCephes, s, a, z, 5);
     }
 
     static Stream<Arguments> testZetaSpot() {
