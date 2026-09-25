@@ -24,8 +24,6 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.SplittableRandom;
 import java.util.function.DoubleUnaryOperator;
@@ -178,9 +176,6 @@ class RiemannZetaTest {
         /** The filename containing the test data. */
         private final String filename;
 
-        /** The field containing the expected value. */
-        private final int expected;
-
         /** The maximum allowed ulp. */
         private final double maxUlp;
 
@@ -188,7 +183,7 @@ class RiemannZetaTest {
         private final double rmsUlp;
 
         /**
-         * Instantiates a new test case.
+         * Create an instance.
          *
          * @param fun function to test
          * @param filename Filename of the test data
@@ -196,22 +191,8 @@ class RiemannZetaTest {
          * @param rmsUlp maximum allowed RMS ulp
          */
         TestCase(DoubleUnaryOperator fun, String filename, double maxUlp, double rmsUlp) {
-            this(fun, filename, 1, maxUlp, rmsUlp);
-        }
-
-        /**
-         * Instantiates a new test case.
-         *
-         * @param fun function to test
-         * @param filename Filename of the test data
-         * @param expected Expected result field index
-         * @param maxUlp maximum allowed ulp
-         * @param rmsUlp maximum allowed RMS ulp
-         */
-        TestCase(DoubleUnaryOperator fun, String filename, int expected, double maxUlp, double rmsUlp) {
             this.fun = fun;
             this.filename = filename;
-            this.expected = expected;
             this.maxUlp = maxUlp;
             this.rmsUlp = rmsUlp;
         }
@@ -228,13 +209,6 @@ class RiemannZetaTest {
          */
         String getFilename() {
             return filename;
-        }
-
-        /**
-         * @return Expected result field index
-         */
-        int getExpectedField() {
-            return expected;
         }
 
         @Override
@@ -1003,7 +977,7 @@ class RiemannZetaTest {
             while (in.next()) {
                 try {
                     final double x = in.getDouble(0);
-                    final BigDecimal expected = in.getBigDecimal(tc.getExpectedField());
+                    final BigDecimal expected = in.getBigDecimal(1);
                     final double actual = tc.getFunction().applyAsDouble(x);
                     TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
                         () -> tc + " x=" + x);
