@@ -1047,7 +1047,7 @@ class HurwitzZetaTest {
         "4, 32, true, 1, 8, false",
     })
     @Disabled("Used to generate test data")
-    void testDataSample(double ls, double us, boolean uniforms, 
+    void testDataSample(double ls, double us, boolean uniforms,
                         double la, double ua, boolean uniforma) throws IOException {
         final SplittableRandom rng = new SplittableRandom(SEED);
         // Validate arguments
@@ -1061,7 +1061,7 @@ class HurwitzZetaTest {
 
         final int size = 3000;
         try (PrintStream out = getPrintStream(
-            String.format("hzeta_s%s_%s_a%s_%s.txt", 
+            String.format("hzeta_s%s_%s_a%s_%s.txt",
                 shortFormat(ls), shortFormat(us), shortFormat(la), shortFormat(ua)))) {
             for (int i = 0; i < size; i++) {
                 out.printf("%s, %s%n", s.getAsDouble(), a.getAsDouble());
