@@ -184,7 +184,7 @@ public final class HurwitzZeta {
      * @param ca Ceil(a)
      * @return zeta(s, a)
      */
-    static double zetaNegativeImp(double s, double a, double ca) {
+    private static double zetaNegativeImp(double s, double a, double ca) {
         // a < 0 (non-integer) and s is a positive integer.
         // If s is odd then the negative series sum will be negative
         // and the addition of zeta(s, x > 0) has cancellation.
@@ -241,9 +241,26 @@ public final class HurwitzZeta {
         double xp = 2 + xn;
         if (odd) {
             // If odd compute the terms in extended precision.
-            // The number of terms depends on how close to half-integer and the size
-            // of the exponent. This is detected by continuing until the
-            // double-double sum is not possible.
+            // This is impractical for large |a| so the number of terms
+            // is limited and precision will be lost for large |a|.
+            // The number of terms depends on how close to
+            // half-integer and the size of the exponent. 
+            // The sum continues until the cancellation in opposing terms is in
+            // the low part of the double-double sum. Computing the remaining
+            // terms in double precision will have cancellation, and the difference
+            // of their sums will overlap the high part of the double-double sum.
+            // The degree of cancellation is dependent on the number of remaining
+            // negative terms as the positive zeta evaluation to infinity will be
+            // larger and more accurate. Ideally the remaining double precision sums
+            // have missing bits that do not affect the result. In practice this
+            // strategy works to compute a result with many bit of precision and
+            // avoid a useless result with catastrophic cancellation.
+            // 
+            // sum          |--------|--------|
+            // sp1        |--------|
+            // -sn1        |------xx|
+            // sp1 + sn1          |----xxxx|
+            //
             // When a is close to integer this exits very fast otherwise the
             // number of terms can be large.
             // In the extreme this is limited to 5430 terms when 0.5 +/- 2^-40.
@@ -259,7 +276,7 @@ public final class HurwitzZeta {
                 final DD pp = DD.ofSum(2 + i, x).pow(n);
                 final DD term = pn.add(pp);
                 if (Math.abs(term.hi()) < Math.abs(sum.lo())) {
-                    // Addition of single opposing terms not possible.
+                    // Switch to a double precision tail.
                     // Reset xn to compute as part of the remaining series.
                     xn += 1.0;
                     break;
@@ -287,6 +304,7 @@ public final class HurwitzZeta {
      * @param a Argument {@code a > 0}
      * @return zeta(s, a)
      */
+    // package-private for testing using a == 1 (Riemann zeta function)
     static double zetaImp(double s, double a) {
         // Asymptotic Behavior as a -> inf
         // https://dlmf.nist.gov/25.11#E43

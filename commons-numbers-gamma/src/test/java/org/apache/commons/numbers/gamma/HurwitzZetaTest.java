@@ -30,6 +30,8 @@ import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
+import org.apache.commons.numbers.core.DD;
+import org.apache.commons.numbers.core.DDMath;
 import org.apache.commons.numbers.fraction.BigFraction;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
@@ -578,6 +580,245 @@ class HurwitzZetaTest {
         return sum + tsum;
     }
 
+    // TODO - Convert this to use BigDecimal
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     * The domain of {@code a} is expected to be negative.
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @param ca Ceil(a)
+     * @return zeta(s, a)
+     */
+    private static double zetaNegativeImp(double s, double a, double ca) {
+        // a < 0 (non-integer) and s is a positive integer.
+        // If s is odd then the negative series sum will be negative
+        // and the addition of zeta(s, x > 0) has cancellation.
+        // This is largest when a is close to half-integer.
+
+        // Check case of total cancellation.
+        final boolean odd = SpecialMath.isOdd(s);
+        double xn = a - ca;
+        // Intentional float comparison
+        if (odd && xn == -0.5) {
+            return zetaImp(s, 1 - a);
+        }
+
+        // Compute the two terms either side of zero:
+        // -1 < xn < 0 < xn + 1 < 1
+        // These are the largest terms and contain most of the error of the function.
+        // One term is < 0.5: 0.5^-s overflows when s >= 1024.
+        DD sum = DD.of(Double.NaN);
+        if (s < 1024) {
+            final int n = (int) -s;
+            DD pn = DD.of(xn);
+            DD pp = DD.ONE.add(xn);
+            // Avoid overflow issues using scaling
+            final long[] expn = {0};
+            final long[] expp = {0};
+            if (odd) {
+                // Compute accurately in extended precision to handle cancellation.
+                // The double-double result is +/- 1 ULP (105 bit precision).
+                pn = DDMath.pow(pn, n, expn);
+                pp = DDMath.pow(pp, n, expp);
+            } else {
+                // Power terms accurate to at least double precision.
+                pn = pn.pow(n, expn);
+                pp = pp.pow(n, expp);
+            }
+            // If re-scaling and addition create infinity we exit with the IEEE result.
+            // Note: if one side overflows then it is unlikely the other side will
+            // bring it back to finite and we do not check.
+            pn = pn.scalb((int) expn[0]);
+            pp = pp.scalb((int) expp[0]);
+            sum = pn.add(pp);
+        }
+        // Check for overflow or return the IEEE result
+        if (!sum.isFinite()) {
+            return odd && Math.abs(xn) < xn + 1 ?
+                Double.NEGATIVE_INFINITY :
+                Double.POSITIVE_INFINITY;
+        }
+
+        // Here the remaining series above and below zero are effectively both zeta
+        // evaluations with zeta(s >= 2, a > 1). This is always < 2.
+        // Adding to the existing finite sum cannot trigger overflow.
+
+        double xp = 2 + xn;
+        if (odd) {
+            // If odd compute the terms in extended precision.
+            // This is impractical for large |a| so the number of terms
+            // is limited and precision will be lost for large |a|.
+            // The number of terms depends on how close to
+            // half-integer and the size of the exponent. 
+            // The sum continues until the cancellation in opposing terms is in
+            // the low part of the double-double sum. Computing the remaining
+            // terms in double precision will have cancellation, and the difference
+            // of their sums will overlap the high part of the double-double sum.
+            // The degree of cancellation is dependent on the number of remaining
+            // negative terms as the positive zeta evaluation to infinity will be
+            // larger and more accurate. Ideally the remaining double precision sums
+            // have missing bits that do not affect the result. In practice this
+            // strategy works to compute a result with many bit of precision and
+            // avoid a useless result with catastrophic cancellation.
+            // 
+            // sum          |--------|--------|
+            // sp1        |--------|
+            // -sn1        |------xx|
+            // sp1 + sn1          |----xxxx|
+            //
+            // When a is close to integer this exits very fast otherwise the
+            // number of terms can be large.
+            // In the extreme this is limited to 5430 terms when 0.5 +/- 2^-40.
+            final int n = (int) -s;
+            final double x = xn;
+            for (int i = 0; xn > a; i++) {
+                xn -= 1.0;
+                // Note: DDMath here makes no difference as s is small and the
+                // standard pow function is accurate to ~100 bits. If s is large
+                // then the terms rapidly reduce in magnitude compared to 0.5^-s
+                // and trailing imprecise bits in the term do not change the sum.
+                final DD pn = DD.of(xn).pow(n);
+                final DD pp = DD.ofSum(2 + i, x).pow(n);
+                final DD term = pn.add(pp);
+                if (Math.abs(term.hi()) < Math.abs(sum.lo())) {
+                    // Switch to a double precision tail.
+                    // Reset xn to compute as part of the remaining series.
+                    xn += 1.0;
+                    break;
+                }
+                sum = sum.add(term);
+            }
+            // advance positive x by the number of terms computed (x - xn)
+            xp = 2 + (x - xn) + x;
+        }
+
+        // Compute the remaining terms
+        final double sn1 = negativeSeriesSum(a, xn, s);
+        final double sp1 = zetaImp(s, xp);
+
+        return sum.add(DD.ofSum(sp1, sn1)).hi();
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     * The domain of {@code a} is expected to be positive.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 0}
+     * @return zeta(s, a)
+     */
+    private static double zetaImp(double s, double a) {
+        // Asymptotic Behavior as a -> inf
+        // https://dlmf.nist.gov/25.11#E43
+        // When a is large the series cannot use a+k.
+        // This reduces to N=0, the I term and the first term of T.
+        if (a > 1e16) {
+            return Math.pow(a, 1 - s) / (s - 1) + Math.pow(a, -s) * 0.5;
+        }
+
+        final double apn = a + N;
+        double p = Math.pow(apn, -s);
+
+        // Initialise sum with the first tail term
+        double sum = 0.5 * p;
+        // S : k in [0, n-1]
+        for (int k = N - 1; k >= 0; k--) {
+            // Descending k sums in order of magnitude for increased precision
+            sum += Math.pow(a + k, -s);
+        }
+
+        // I
+        sum += Math.pow(apn, 1 - s) / (s - 1);
+
+        // T
+        // The following recycles the power term p: (a+n)^-(2k-1+s).
+        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
+        // The first power is (a+n)^-(1+s) not (a+n)^-1.
+        // When s is large the loop exits before the rising factorial overflows.
+
+        // Rising factorial term : (s)_{2k-1}
+        double f = s;
+        // 2k - 1
+        double k2 = 1;
+        // Sum of an alternating series as each F changes sign.
+        // Sum until terms will not impact the result.
+        double tsum = 0;
+        final double stop = sum * 0x1p-53;
+        int i;
+        for (i = 0; i < F.length; i++) {
+            // p = (a+n)^-(2k-1+s)
+            p /= apn;
+            final double t = f * p / F[i];
+            tsum += t;
+            if (Math.abs(t) <= stop) {
+                break;
+            }
+            p /= apn;
+            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+            f *= s + k2;
+            k2 += 1.0;
+            f *= s + k2;
+            k2 += 1.0;
+        }
+        return sum + tsum;
+    }
+
+    /**
+     * Calculates the sum of terms of the power series.
+     *
+     * <pre>
+     *      b-1   1
+     *   sum     ---
+     *      k=a  k^m
+     * </pre>
+     *
+     * <p>Assumes {@code a} and {@code b} are negative and separated by an integer
+     * distance; and {@code exponent >= 2} and integer.
+     *
+     * <p>Large ranges may be evaluated using a difference of zeta functions.
+     *
+     * @param a First term in the series to calculate (negative non-integer).
+     * @param b Last term in the series to calculate, exclusive (negative non-integer).
+     * @param s Exponent (positive integer).
+     * @return the sum
+     */
+    private static double negativeSeriesSum(double a, double b, double s) {
+        // This can be computed using a difference of zeta functions.
+        // A single call to zeta uses ~10 pow operations; use zeta when the
+        // sum will use more.
+        // Note: The difference incurs cancellation.
+        // When s is even the function is called with b in -[1, 0) and the
+        // series is strongly converging and no issue occurs.
+        // When s is odd it may be called with large |b|. In this case many
+        // terms have been computed to handle most of the cancellation in the
+        // result. Worst case is b ~ 5430:
+        // zeta(3, 5430) = 1.696e-08
+        // zeta(3, 5450) = 1.683e-08
+        // Cancellation in lost bits = exponent(max(a, b)) - exponent(a-b) = 7
+        // The result is sufficient for reasonable double precision.
+        if (b - a > 20) {
+            final int sign = SpecialMath.isOdd(s) ? -1 : 1;
+            final double zb = zetaImp(s, 1 - b);
+            final double za = zetaImp(s, 1 - a);
+            return sign * (zb - za);
+        }
+
+        // Sum terms in ascending order of magnitude
+        double sum = 0;
+        double x = a;
+        while (x < b) {
+            sum += Math.pow(x, -s);
+            x += 1.0;
+        }
+        return sum;
+    }
+
     /**
      * Test the factors required for the tail sum. These are computed from the numerator
      * and denominator of the Bernoulli numbers, and the factorial of 2k. The test asserts
@@ -1005,7 +1246,7 @@ class HurwitzZetaTest {
      */
     private static void assertRms(TestError te, TestUtils.ErrorStatistics stats) {
         final double rms = stats.getRMS();
-        // debugRms(te.toString(), stats.getMaxAbs(), rms, stats.getMean(), stats.size());
+        debugRms(te.toString(), stats.getMaxAbs(), rms, stats.getMean(), stats.size());
         Assertions.assertTrue(rms <= te.getRmsTolerance(),
             () -> String.format("%s RMS %s < %s", te, rms, te.getRmsTolerance()));
     }
