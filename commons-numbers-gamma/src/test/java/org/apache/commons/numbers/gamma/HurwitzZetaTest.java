@@ -392,6 +392,78 @@ class HurwitzZetaTest {
         new BigDecimal("4.942696565159461474896400153888328E-85"), // (36373903172617414408151820151593427169231298640581690038930816378281879873386202346572901 / 642) / 106!
     };
 
+    /** Context for the zeta implementation. */
+    private static class Context {
+        /** N. */
+        private final int n;
+        /** M. */
+        private final int m;
+        /** Epsion for convergence of the tail series. */
+        private final double eps;
+
+        /**
+         * Create an instance.
+         *
+         * @param n the n
+         * @param m the m
+         */
+        Context(int n, int m, double eps) {
+            this.n = n;
+            this.m = m;
+            this.eps = eps;
+        }
+
+        /**
+         * Create a context.
+         *
+         * @param n the number of terms N.
+         * @param m the number of terms N.
+         * @return the context
+         */
+        static Context of(int n, int m) {
+            return of(n,m, 0x1p-53);
+        }
+
+        /**
+         * Create a context.
+         *
+         * @param n the number of terms N.
+         * @param m the number of terms N.
+         * @param eps the convergence epsilon for the tail series T.
+         * @return the context
+         */
+        static Context of(int n, int m, double eps) {
+            return new Context(n,m,eps);
+        }
+
+        /**
+         * Gets N.
+         *
+         * @return n
+         */
+        int getN() {
+            return n;
+        }
+
+        /**
+         * Gets M.
+         *
+         * @return m
+         */
+        int getM() {
+            return m;
+        }
+
+        /**
+         * Gets the convergence epsilon for the tail series T.
+         *
+         * @return the epsilon
+         */
+        double getEps() {
+            return eps;
+        }
+    }
+
     /** Define the expected error for a test. */
     private interface TestError {
         /**
@@ -413,14 +485,14 @@ class HurwitzZetaTest {
     private enum BiTestCase implements TestError {
         // Test implementation. Uses combined data from multiple resources in order to
         // find N and M values. Any N above 5 works on this data.
-        ZETA_5_15((s, a) -> HurwitzZetaTest.zeta(s, a, 5, 15), TEST_RESOURCES, 25, 3.5),
-        ZETA_6_15((s, a) -> HurwitzZetaTest.zeta(s, a, 6, 15), TEST_RESOURCES, 4, 0.56),
-        ZETA_7_15((s, a) -> HurwitzZetaTest.zeta(s, a, 7, 15), TEST_RESOURCES, 4, 0.56),
-        ZETA_8_15((s, a) -> HurwitzZetaTest.zeta(s, a, 8, 15), TEST_RESOURCES, 4, 0.56),
-        ZETA_9_15((s, a) -> HurwitzZetaTest.zeta(s, a, 9, 15), TEST_RESOURCES, 4, 0.56),
-        ZETA_10_15((s, a) -> HurwitzZetaTest.zeta(s, a, 10, 15), TEST_RESOURCES, 4, 0.64),
-        ZETA_11_15((s, a) -> HurwitzZetaTest.zeta(s, a, 11, 15), TEST_RESOURCES, 4.5, 0.66),
-        ZETA_12_15((s, a) -> HurwitzZetaTest.zeta(s, a, 12, 15), TEST_RESOURCES, 4, 0.66),
+        ZETA_5_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(5, 15)), TEST_RESOURCES, 25, 3.5),
+        ZETA_6_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(6, 15)), TEST_RESOURCES, 4, 0.56),
+        ZETA_7_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(7, 15)), TEST_RESOURCES, 4, 0.56),
+        ZETA_8_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(8, 15)), TEST_RESOURCES, 4, 0.56),
+        ZETA_9_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(9, 15)), TEST_RESOURCES, 4, 0.56),
+        ZETA_10_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(10, 15)), TEST_RESOURCES, 4, 0.64),
+        ZETA_11_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(11, 15)), TEST_RESOURCES, 4.5, 0.66),
+        ZETA_12_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(12, 15)), TEST_RESOURCES, 4, 0.66),
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
         ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.69),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
@@ -562,16 +634,16 @@ class HurwitzZetaTest {
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
      * See {@link HurwitzZeta} for the formula details.
-     *
+     * 
      * <p><strong>Warning</strong>: No parameter validation is performed.
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a >= 1}
-     * @param n Argument {@code N}
-     * @param m Argument {@code M}
+     * @param c Evaluation context.
      * @return zeta(s, a)
      */
-    static double zeta(double s, double a, int n, int m) {
+    static double zeta(double s, double a, Context c) {
+        final int n = c.getN();
         // Skip testing
         if (n < MIN_N || n > MAX_N) {
             return Double.NaN;
@@ -617,9 +689,9 @@ class HurwitzZetaTest {
         // Note: if the factor is too small (e.g. 0x1p-63) then the series continues
         // further and terms may be less accurate (i.e. add noise to the T sum).
         double tsum = 0;
-        final double stop = sum * 0x1p-53;
+        final double stop = sum * c.getEps();
         int i;
-        for (i = 0; i < m; i++) {
+        for (i = 0; i < c.getM(); i++) {
             // p = (a+n)^-(2k-1+s)
             p /= apn;
             final double t = f * p / F[i];
@@ -641,7 +713,7 @@ class HurwitzZetaTest {
         return sum + tsum;
     }
 
-    // TODO - Convert this to use BigDecimal
+    // TODO - Convert this to use BigDecimal with a Context
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
