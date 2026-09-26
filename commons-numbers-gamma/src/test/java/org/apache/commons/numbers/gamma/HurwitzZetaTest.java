@@ -51,7 +51,7 @@ class HurwitzZetaTest {
     /** Seed for data generation. */
     private static final long SEED = 6516587940839803692L;
     /** Table used to create a histogram of the number of steps to converge the tail series.
-     * Used in the {@link #zeta(double, double, int, int)} implementation. */
+     * Used in the {@link #zeta(double, double, Context)} implementation. */
     private static final int[] M = new int[53];
     /** Optimal N used to test the zeta function. */
     private static final int N = 8;
@@ -783,8 +783,14 @@ class HurwitzZetaTest {
         // Intentional float comparison
         if (odd && xn == -0.5) {
             // Use extended precision but evaluated with precision for a double result
-            return zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)),
+            return zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null,
                 Context.of(10, 15, new MathContext(20))).doubleValue();
+        }
+
+        // Compute dominant term using closest to zero.
+        double d = Math.pow(xn > -0.5 ? xn : 1 + xn, -s);
+        if (!Double.isFinite(d)) {
+            return d;
         }
 
         // Odd computation requires twice the precision of a double (17 digits).
@@ -796,31 +802,28 @@ class HurwitzZetaTest {
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
         // These are the largest terms and contain most of the error of the function.
-        // One term is < 0.5: 0.5^-s overflows when s >= 1024.
-        BigDecimal sum = null;
         BigDecimal x = new BigDecimal(xn);
+        BigDecimal xp = BigDecimal.ONE.add(x);
         MathContext mc = c.getMathContext();
-        if (s < 1024) {
-            final BigDecimal pn = x.pow(-s, mc);
-            final BigDecimal pp = BigDecimal.ONE.add(x).pow(-s, mc);
-            sum = pn.add(pp, mc);
-        }
-        // Check for overflow or return the IEEE result
-        if (sum == null || !Double.isFinite(sum.doubleValue())) {
-            return odd && Math.abs(xn) < xn + 1 ?
-                Double.NEGATIVE_INFINITY :
-                Double.POSITIVE_INFINITY;
-        }
+        final BigDecimal pn = x.pow(-s, mc);
+        final BigDecimal pp = xp.pow(-s, mc);
 
         // Here the remaining series above and below zero are effectively both zeta
         // evaluations with zeta(s >= 2, a > 1). This is always < 2.
-        // Adding to the existing finite sum cannot trigger overflow.
+        // Exit early if remaining terms cannot be added.
+        d = pn.add(pp, mc).doubleValue();
+        if (Math.abs(d) > 0x1p54) {
+            return d;
+        }
 
-        // Compute the remaining terms
-        final BigDecimal sn1 = negativeSeriesSum(a, xn, s, c);
-        final BigDecimal sp1 = zetaImp(s, BigDecimal.valueOf(2).add(x), c);
+        // x = a - ceil(a) : x in -(1, 0)
+        // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
 
-        return sum.add(sp1.add(sn1, mc), mc).doubleValue();
+        // Compute the remaining terms passing in the known values:
+        final BigDecimal sn1 = negativeSeriesSum(a, xn, s, pn, c);
+        final BigDecimal sp1 = zetaImp(s, xp, pp, c);
+
+        return sp1.add(sn1, mc).doubleValue();
     }
 
     /**
@@ -831,10 +834,11 @@ class HurwitzZetaTest {
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a > 1}
+     * @param a0 {@code a^-s}
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
-    private static BigDecimal zetaImp(int s, BigDecimal a, Context c) {
+    private static BigDecimal zetaImp(int s, BigDecimal a, BigDecimal a0, Context c) {
         final int n = c.getN();
         final MathContext mc = c.getMathContext();
         final BigDecimal apn = a.add(BigDecimal.valueOf(n));
@@ -843,9 +847,15 @@ class HurwitzZetaTest {
         // Initialise sum with the first tail term
         BigDecimal sum = p.multiply(new BigDecimal(0.5));
         // S : k in [0, n-1]
-        for (int k = n - 1; k >= 0; k--) {
+        for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
-            sum = sum.add(a.add(BigDecimal.valueOf(k)).pow(-s, mc));
+            sum = sum.add(a.add(BigDecimal.valueOf(k)).pow(-s, mc), mc);
+        }
+        // First term may be provide
+        if (a0 != null) {
+            sum = sum.add(a0);
+        } else {
+            sum = sum.add(a.pow(-s, mc), mc);
         }
 
         // I : (a+p)^(1-s) / (s-1)
@@ -863,7 +873,8 @@ class HurwitzZetaTest {
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         BigDecimal tsum = BigDecimal.ZERO;
-        BigDecimal apn2 = apn.pow(2, mc);
+        // Used to divide by (a+n)^2
+        BigDecimal apn2 = apn.pow(-2, mc);
         final int stop = sum.scale() + mc.getPrecision();
         int i;
         for (i = 0; i < c.getM(); i++) {
@@ -874,7 +885,7 @@ class HurwitzZetaTest {
                 break;
             }
             // p = (a+n)^-(2k-1+s)
-            p = p.divide(apn2, mc);
+            p = p.multiply(apn2, mc);
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             // compute the multiplicand as a long as it cannot overflow when M is small
             f = f.multiply(BigDecimal.valueOf((s + (2L * i) + 1) * (s + (2L * i) + 2)), mc);
@@ -886,7 +897,7 @@ class HurwitzZetaTest {
      * Calculates the sum of terms of the power series.
      *
      * <pre>
-     *      b-1   1
+     *      b     1
      *   sum     ---
      *      k=a  k^m
      * </pre>
@@ -897,12 +908,14 @@ class HurwitzZetaTest {
      * <p>Large ranges may be evaluated using a difference of zeta functions.
      *
      * @param a First term in the series to calculate (negative non-integer).
-     * @param b Last term in the series to calculate, exclusive (negative non-integer).
+     * @param b Last term in the series inclusive (negative non-integer); result provided.
      * @param s Exponent (positive integer).
+     * @param bn {@code b^-s}.
      * @param c Evaluation context.
      * @return the sum
      */
-    private static BigDecimal negativeSeriesSum(double a, double b, int s, Context c) {
+    private static BigDecimal negativeSeriesSum(double a, double b, int s,
+            BigDecimal bn, Context c) {
         // This can be computed using a difference of zeta functions.
         // A single call to zeta uses many pow operations; use zeta when the
         // sum will use more.
@@ -911,10 +924,13 @@ class HurwitzZetaTest {
             // Note: The difference incurs cancellation.
             // This should not be an issue as function is called with b in -(1, 0)
             // and the series is strongly converging, e.g.
-            // zeta(2, 1.5)  = 0.9348
+            // zeta(2, 0.5)  = 1.6449
             // zeta(2, 31.5) = 0.03225
-            final BigDecimal zb = zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(b)), c);
-            final BigDecimal za = zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)), c);
+            // Significant cancellation (leading digits the same) is not possible.
+            // Take care to change the sign of a provided result for the zeta method.
+            final BigDecimal zb = zetaImp(s, new BigDecimal(-b),
+                (s & 1) == 1 ? bn.negate() : bn, c);
+            final BigDecimal za = zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null, c);
             final BigDecimal r = zb.subtract(za, mc);
             return (s & 1) == 1 ? r.negate() : r;
         }
@@ -929,7 +945,7 @@ class HurwitzZetaTest {
             x += 1.0;
             bx = bx.add(BigDecimal.ONE);
         }
-        return sum;
+        return sum.add(bn, mc);
     }
 
     /**
