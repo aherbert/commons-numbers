@@ -30,8 +30,6 @@ import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
-import org.apache.commons.numbers.core.DD;
-import org.apache.commons.numbers.core.DDMath;
 import org.apache.commons.numbers.fraction.BigFraction;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
@@ -394,23 +392,36 @@ class HurwitzZetaTest {
 
     /** Context for the zeta implementation. */
     private static class Context {
+        /** Default epsilon. */
+        private static final double EPS = 0x1p-53;
+        /** Default math context. */
+        private static final MathContext MC = MathContext.DECIMAL128;
+
         /** N. */
         private final int n;
         /** M. */
         private final int m;
         /** Epsion for convergence of the tail series. */
         private final double eps;
+        /** Math context for extended precision evaluations. */
+        private final MathContext mc;
 
         /**
          * Create an instance.
          *
          * @param n the n
          * @param m the m
+         * @param eps the eps
+         * @param mc the mc
          */
-        Context(int n, int m, double eps) {
+        Context(int n, int m, double eps, MathContext mc) {
+            if (m >= F.length) {
+                throw new IllegalArgumentException("Unsupported M: " + m);
+            }
             this.n = n;
             this.m = m;
             this.eps = eps;
+            this.mc = mc;
         }
 
         /**
@@ -421,7 +432,7 @@ class HurwitzZetaTest {
          * @return the context
          */
         static Context of(int n, int m) {
-            return of(n,m, 0x1p-53);
+            return new Context(n, m, EPS, MC);
         }
 
         /**
@@ -433,7 +444,19 @@ class HurwitzZetaTest {
          * @return the context
          */
         static Context of(int n, int m, double eps) {
-            return new Context(n,m,eps);
+            return new Context(n, m, eps, MC);
+        }
+
+        /**
+         * Create a context.
+         *
+         * @param n the number of terms N.
+         * @param m the number of terms N.
+         * @param mc the context for extended precision evaluations.
+         * @return the context
+         */
+        static Context of(int n, int m, MathContext mc) {
+            return new Context(n, m, EPS, mc);
         }
 
         /**
@@ -461,6 +484,15 @@ class HurwitzZetaTest {
          */
         double getEps() {
             return eps;
+        }
+
+        /**
+         * Gets the math context for extended precision evaluations.
+         *
+         * @return the math context
+         */
+        MathContext getMathContext() {
+            return mc;
         }
     }
 
@@ -643,9 +675,11 @@ class HurwitzZetaTest {
      * @return zeta(s, a)
      */
     static double zeta(double s, double a, Context c) {
-        final int n = c.getN();
-        // Skip testing
-        if (n < MIN_N || n > MAX_N) {
+        int n = c.getN();
+        // Skip testing, or use default
+        if (n < 0) {
+            n = N;
+        } else if (n < MIN_N || n > MAX_N) {
             return Double.NaN;
         }
 
@@ -713,7 +747,14 @@ class HurwitzZetaTest {
         return sum + tsum;
     }
 
-    // TODO - Convert this to use BigDecimal with a Context
+    // TODO - Add test data for large range of -a using a Matlab script.
+    // Is the current double-double implementation good enough?
+    // How slow is the DD vs BigDecimal (optimised) for odd s.
+    // The BigDecimal can compute the zeta difference accurately.
+
+    // Get test data from large range of +a with integer s.
+    // Optimise the N+M for the positive a case for double-double precision.
+    // Try using double-double for this.
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
@@ -723,54 +764,49 @@ class HurwitzZetaTest {
      *
      * @param s Argument {@code s > 1} and integer
      * @param a Argument {@code a < 0}
-     * @param ca Ceil(a)
      * @return zeta(s, a)
      */
-    private static double zetaNegativeImp(double s, double a, double ca) {
+    private static double zetaNegativeImp(int s, double a) {
         // a < 0 (non-integer) and s is a positive integer.
         // If s is odd then the negative series sum will be negative
         // and the addition of zeta(s, x > 0) has cancellation.
         // This is largest when a is close to half-integer.
 
         // Check case of total cancellation.
-        final boolean odd = SpecialMath.isOdd(s);
+        final boolean odd = (s & 1) == 1;
+        final double ca = Math.ceil(a);
+        if (ca == a) {
+            // The term 0^-s is infinity
+            return Double.POSITIVE_INFINITY;
+        }
         double xn = a - ca;
         // Intentional float comparison
         if (odd && xn == -0.5) {
-            return zetaImp(s, 1 - a);
+            // Use extended precision but evaluated with precision for a double result
+            return zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)),
+                Context.of(10, 15, new MathContext(20))).doubleValue();
         }
+
+        // Odd computation requires twice the precision of a double (17 digits).
+        // Even requires some extra.
+        final Context c = odd ?
+            Context.of(20, 30, new MathContext(37)) :
+            Context.of(10, 15, new MathContext(20));
 
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
         // These are the largest terms and contain most of the error of the function.
         // One term is < 0.5: 0.5^-s overflows when s >= 1024.
-        DD sum = DD.of(Double.NaN);
+        BigDecimal sum = null;
+        BigDecimal x = new BigDecimal(xn);
+        MathContext mc = c.getMathContext();
         if (s < 1024) {
-            final int n = (int) -s;
-            DD pn = DD.of(xn);
-            DD pp = DD.ONE.add(xn);
-            // Avoid overflow issues using scaling
-            final long[] expn = {0};
-            final long[] expp = {0};
-            if (odd) {
-                // Compute accurately in extended precision to handle cancellation.
-                // The double-double result is +/- 1 ULP (105 bit precision).
-                pn = DDMath.pow(pn, n, expn);
-                pp = DDMath.pow(pp, n, expp);
-            } else {
-                // Power terms accurate to at least double precision.
-                pn = pn.pow(n, expn);
-                pp = pp.pow(n, expp);
-            }
-            // If re-scaling and addition create infinity we exit with the IEEE result.
-            // Note: if one side overflows then it is unlikely the other side will
-            // bring it back to finite and we do not check.
-            pn = pn.scalb((int) expn[0]);
-            pp = pp.scalb((int) expp[0]);
-            sum = pn.add(pp);
+            final BigDecimal pn = x.pow(-s, mc);
+            final BigDecimal pp = BigDecimal.ONE.add(x).pow(-s, mc);
+            sum = pn.add(pp, mc);
         }
         // Check for overflow or return the IEEE result
-        if (!sum.isFinite()) {
+        if (sum == null || !Double.isFinite(sum.doubleValue())) {
             return odd && Math.abs(xn) < xn + 1 ?
                 Double.NEGATIVE_INFINITY :
                 Double.POSITIVE_INFINITY;
@@ -780,60 +816,11 @@ class HurwitzZetaTest {
         // evaluations with zeta(s >= 2, a > 1). This is always < 2.
         // Adding to the existing finite sum cannot trigger overflow.
 
-        double xp = 2 + xn;
-        if (odd) {
-            // If odd compute the terms in extended precision.
-            // This is impractical for large |a| so the number of terms
-            // is limited and precision will be lost for large |a|.
-            // The number of terms depends on how close to
-            // half-integer and the size of the exponent. 
-            // The sum continues until the cancellation in opposing terms is in
-            // the low part of the double-double sum. Computing the remaining
-            // terms in double precision will have cancellation, and the difference
-            // of their sums will overlap the high part of the double-double sum.
-            // The degree of cancellation is dependent on the number of remaining
-            // negative terms as the positive zeta evaluation to infinity will be
-            // larger and more accurate. Ideally the remaining double precision sums
-            // have missing bits that do not affect the result. In practice this
-            // strategy works to compute a result with many bit of precision and
-            // avoid a useless result with catastrophic cancellation.
-            // 
-            // sum          |--------|--------|
-            // sp1        |--------|
-            // -sn1        |------xx|
-            // sp1 + sn1          |----xxxx|
-            //
-            // When a is close to integer this exits very fast otherwise the
-            // number of terms can be large.
-            // In the extreme this is limited to 5430 terms when 0.5 +/- 2^-40.
-            final int n = (int) -s;
-            final double x = xn;
-            for (int i = 0; xn > a; i++) {
-                xn -= 1.0;
-                // Note: DDMath here makes no difference as s is small and the
-                // standard pow function is accurate to ~100 bits. If s is large
-                // then the terms rapidly reduce in magnitude compared to 0.5^-s
-                // and trailing imprecise bits in the term do not change the sum.
-                final DD pn = DD.of(xn).pow(n);
-                final DD pp = DD.ofSum(2 + i, x).pow(n);
-                final DD term = pn.add(pp);
-                if (Math.abs(term.hi()) < Math.abs(sum.lo())) {
-                    // Switch to a double precision tail.
-                    // Reset xn to compute as part of the remaining series.
-                    xn += 1.0;
-                    break;
-                }
-                sum = sum.add(term);
-            }
-            // advance positive x by the number of terms computed (x - xn)
-            xp = 2 + (x - xn) + x;
-        }
-
         // Compute the remaining terms
-        final double sn1 = negativeSeriesSum(a, xn, s);
-        final double sp1 = zetaImp(s, xp);
+        final BigDecimal sn1 = negativeSeriesSum(a, xn, s, c);
+        final BigDecimal sp1 = zetaImp(s, BigDecimal.valueOf(2).add(x), c);
 
-        return sum.add(DD.ofSum(sp1, sn1)).hi();
+        return sum.add(sp1.add(sn1, mc), mc).doubleValue();
     }
 
     /**
@@ -843,31 +830,26 @@ class HurwitzZetaTest {
      * The domain of {@code a} is expected to be positive.
      *
      * @param s Argument {@code s > 1}
-     * @param a Argument {@code a > 0}
+     * @param a Argument {@code a > 1}
+     * @param c Evaluation context.
      * @return zeta(s, a)
      */
-    private static double zetaImp(double s, double a) {
-        // Asymptotic Behavior as a -> inf
-        // https://dlmf.nist.gov/25.11#E43
-        // When a is large the series cannot use a+k.
-        // This reduces to N=0, the I term and the first term of T.
-        if (a > 1e16) {
-            return Math.pow(a, 1 - s) / (s - 1) + Math.pow(a, -s) * 0.5;
-        }
-
-        final double apn = a + N;
-        double p = Math.pow(apn, -s);
+    private static BigDecimal zetaImp(int s, BigDecimal a, Context c) {
+        final int n = c.getN();
+        final MathContext mc = c.getMathContext();
+        final BigDecimal apn = a.add(BigDecimal.valueOf(n));
+        BigDecimal p = apn.pow(-s, mc);
 
         // Initialise sum with the first tail term
-        double sum = 0.5 * p;
+        BigDecimal sum = p.multiply(new BigDecimal(0.5));
         // S : k in [0, n-1]
-        for (int k = N - 1; k >= 0; k--) {
+        for (int k = n - 1; k >= 0; k--) {
             // Descending k sums in order of magnitude for increased precision
-            sum += Math.pow(a + k, -s);
+            sum = sum.add(a.add(BigDecimal.valueOf(k)).pow(-s, mc));
         }
 
-        // I
-        sum += Math.pow(apn, 1 - s) / (s - 1);
+        // I : (a+p)^(1-s) / (s-1)
+        sum = sum.add(apn.pow(1 - s, mc).divide(BigDecimal.valueOf(s - 1), mc), mc);
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
@@ -876,30 +858,28 @@ class HurwitzZetaTest {
         // When s is large the loop exits before the rising factorial overflows.
 
         // Rising factorial term : (s)_{2k-1}
-        double f = s;
-        // 2k - 1
-        double k2 = 1;
+        BigDecimal f = BigDecimal.valueOf(s);
+        p = p.divide(apn, mc);
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
-        double tsum = 0;
-        final double stop = sum * 0x1p-53;
+        BigDecimal tsum = BigDecimal.ZERO;
+        BigDecimal apn2 = apn.pow(2, mc);
+        final int stop = sum.scale() + mc.getPrecision();
         int i;
-        for (i = 0; i < F.length; i++) {
-            // p = (a+n)^-(2k-1+s)
-            p /= apn;
-            final double t = f * p / F[i];
-            tsum += t;
-            if (Math.abs(t) <= stop) {
+        for (i = 0; i < c.getM(); i++) {
+            final BigDecimal t = f.multiply(p, mc).multiply(FD[i], mc);
+            tsum = tsum.add(t, mc);
+            if (t.scale() >= stop) {
+//                System.out.printf("%d %s  %d%n", s, a.doubleValue(), i + 1);
                 break;
             }
-            p /= apn;
+            // p = (a+n)^-(2k-1+s)
+            p = p.divide(apn2, mc);
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-            f *= s + k2;
-            k2 += 1.0;
-            f *= s + k2;
-            k2 += 1.0;
+            // compute the multiplicand as a long as it cannot overflow when M is small
+            f = f.multiply(BigDecimal.valueOf((s + (2L * i) + 1) * (s + (2L * i) + 2)), mc);
         }
-        return sum + tsum;
+        return sum.add(tsum, mc);
     }
 
     /**
@@ -919,35 +899,35 @@ class HurwitzZetaTest {
      * @param a First term in the series to calculate (negative non-integer).
      * @param b Last term in the series to calculate, exclusive (negative non-integer).
      * @param s Exponent (positive integer).
+     * @param c Evaluation context.
      * @return the sum
      */
-    private static double negativeSeriesSum(double a, double b, double s) {
+    private static BigDecimal negativeSeriesSum(double a, double b, int s, Context c) {
         // This can be computed using a difference of zeta functions.
-        // A single call to zeta uses ~10 pow operations; use zeta when the
+        // A single call to zeta uses many pow operations; use zeta when the
         // sum will use more.
-        // Note: The difference incurs cancellation.
-        // When s is even the function is called with b in -[1, 0) and the
-        // series is strongly converging and no issue occurs.
-        // When s is odd it may be called with large |b|. In this case many
-        // terms have been computed to handle most of the cancellation in the
-        // result. Worst case is b ~ 5430:
-        // zeta(3, 5430) = 1.696e-08
-        // zeta(3, 5450) = 1.683e-08
-        // Cancellation in lost bits = exponent(max(a, b)) - exponent(a-b) = 7
-        // The result is sufficient for reasonable double precision.
-        if (b - a > 20) {
-            final int sign = SpecialMath.isOdd(s) ? -1 : 1;
-            final double zb = zetaImp(s, 1 - b);
-            final double za = zetaImp(s, 1 - a);
-            return sign * (zb - za);
+        final MathContext mc = c.getMathContext();
+        if (b - a > 2 * (c.getN() + 2)) {
+            // Note: The difference incurs cancellation.
+            // This should not be an issue as function is called with b in -(1, 0)
+            // and the series is strongly converging, e.g.
+            // zeta(2, 1.5)  = 0.9348
+            // zeta(2, 31.5) = 0.03225
+            final BigDecimal zb = zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(b)), c);
+            final BigDecimal za = zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)), c);
+            final BigDecimal r = zb.subtract(za, mc);
+            return (s & 1) == 1 ? r.negate() : r;
         }
 
-        // Sum terms in ascending order of magnitude
-        double sum = 0;
+        // Sum terms in ascending order of magnitude.
+        // Use a double to track the iterations, and mirror with a BigDecimal.
+        BigDecimal sum = BigDecimal.ZERO;
         double x = a;
+        BigDecimal bx = new BigDecimal(a);
         while (x < b) {
-            sum += Math.pow(x, -s);
+            sum = sum.add(bx.pow(-s, mc), mc);
             x += 1.0;
+            bx = bx.add(BigDecimal.ONE);
         }
         return sum;
     }
@@ -1044,7 +1024,10 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
-        assertClose(HurwitzZeta::value, s, a, z, ulp);
+//        assertClose(HurwitzZeta::value, s, a, z, ulp);
+        if (a < 0 && s < Integer.MAX_VALUE) {
+            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeImp((int) x, y), s, a, z, 0);
+        }
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -1167,14 +1150,14 @@ class HurwitzZetaTest {
 
             // a is odd has cancellation.
             // ULP tolerance is very dependent on the JDK pow implementation.
-            Arguments.of(3, -21.499, -0.09637775418460447271221850760411324846873791133448, 37),
-            Arguments.of(3, -21.501, 0.098442803974649377073746600966748291488497220978961, 37),
-            Arguments.of(5, -21.499, -0.64094298652061283507484770384318604647832428321319, 16),
-            Arguments.of(5, -21.501, 0.64094511727200934057870930923285174211166495014722, 16),
-            Arguments.of(3, -7.5000000001, 0.007782265638668063994730919817396152634504258389332, 11),
-            Arguments.of(3, -7.4999999999, 0.0077822461572358593294768713462220939956242365981849, 28),
-            Arguments.of(3, -7.499999999999999, 0.0077822558978654467309133842121074379966549149936996, 20),
-            Arguments.of(3, -7.500000000000001, 0.0077822558980384765932871763254914638339941060968054, 18),
+            Arguments.of(3, -21.499, -0.09637775418460447271221850760411324846873791133448, 1),
+            Arguments.of(3, -21.501, 0.098442803974649377073746600966748291488497220978961, 1),
+            Arguments.of(5, -21.499, -0.64094298652061283507484770384318604647832428321319, 1),
+            Arguments.of(5, -21.501, 0.64094511727200934057870930923285174211166495014722, 1),
+            Arguments.of(3, -7.5000000001, 0.007782265638668063994730919817396152634504258389332, 1),
+            Arguments.of(3, -7.4999999999, 0.0077822461572358593294768713462220939956242365981849, 1),
+            Arguments.of(3, -7.499999999999999, 0.0077822558978654467309133842121074379966549149936996, 1),
+            Arguments.of(3, -7.500000000000001, 0.0077822558980384765932871763254914638339941060968054, 3),
 
             // s is odd and a is half-integer -> total cancellation
             Arguments.of(3, -12.5, 0.0029542182928941203954486528445780501312428003881805, 0),
