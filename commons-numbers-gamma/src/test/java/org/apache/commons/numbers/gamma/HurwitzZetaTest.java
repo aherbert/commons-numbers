@@ -21,7 +21,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.math.RoundingMode;
+import java.math.MathContext;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -830,8 +830,7 @@ class HurwitzZetaTest {
         BigInteger factorial = BigInteger.ONE;
         double sum1 = 0;
         double sum2 = 0;
-        // If this is too small the BigDecimal created by BigFraction is truncated
-        final int scale = 200;
+        final MathContext mc = MathContext.DECIMAL128;
         // Check factors
         for (int k = 1; k < NUM.length; k++) {
             factorial = factorial.multiply(BigInteger.valueOf(2 * k - 1)).multiply(BigInteger.valueOf(2 * k));
@@ -842,11 +841,11 @@ class HurwitzZetaTest {
             final BigFraction factor1 = BigFraction.of(factorial.multiply(denom), num);
             final double d1 = factor1.doubleValue();
             // Cross verify BigFraction vs BigDecimal
-            BigDecimal v = factor1.bigDecimalValue(scale, RoundingMode.HALF_EVEN);
+            BigDecimal v = factor1.bigDecimalValue(mc);
             Assertions.assertEquals(v.doubleValue(), d1);
             // Find ULP precision
             final double e1 = new BigDecimal(d1).subtract(v)
-                .divide(new BigDecimal(Math.ulp(d1)), scale, RoundingMode.HALF_EVEN).doubleValue();
+                .divide(new BigDecimal(Math.ulp(d1)), mc).doubleValue();
             sum1 += Math.abs(e1);
 
             Assertions.assertEquals(d1, F[k - 1]);
@@ -858,11 +857,11 @@ class HurwitzZetaTest {
             final BigFraction factor2 = BigFraction.of(num, factorial.multiply(denom));
             final double d2 = factor2.doubleValue();
             // Cross verify BigFraction vs BigDecimal
-            v = factor2.bigDecimalValue(scale, RoundingMode.HALF_EVEN);
+            v = factor2.bigDecimalValue(mc);
             Assertions.assertEquals(v.doubleValue(), d2);
             // Find ULP precision
             final double e2 = new BigDecimal(d2).subtract(v)
-                .divide(new BigDecimal(Math.ulp(d2)), scale, RoundingMode.HALF_EVEN).doubleValue();
+                .divide(new BigDecimal(Math.ulp(d2)), mc).doubleValue();
             sum2 += Math.abs(e2);
 
             Assertions.assertEquals(d2, FM[k - 1]);
