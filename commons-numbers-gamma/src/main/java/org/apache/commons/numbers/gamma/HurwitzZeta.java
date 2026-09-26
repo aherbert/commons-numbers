@@ -229,7 +229,7 @@ public final class HurwitzZeta {
         }
         // Check for overflow or return the IEEE result
         if (!sum.isFinite()) {
-            return odd && Math.abs(xn) < xn + 1 ?
+            return odd && xn > -HALF ?
                 Double.NEGATIVE_INFINITY :
                 Double.POSITIVE_INFINITY;
         }
