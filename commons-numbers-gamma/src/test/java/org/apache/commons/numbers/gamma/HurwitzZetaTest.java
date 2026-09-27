@@ -1342,18 +1342,19 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
-//        assertClose(HurwitzZeta::value, s, a, z, ulp);
-        if (a < 0 && s < Integer.MAX_VALUE) {
-            //assertClose((x, y) -> HurwitzZetaTest.zetaNegative((int) x, y), s, a, z, 0);
-            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y), s, a, z, 0);
-        }
+        assertClose(HurwitzZeta::value, s, a, z, ulp);
+//        if (a < 0 && s < Integer.MAX_VALUE) {
+//            //assertClose((x, y) -> HurwitzZetaTest.zetaNegative((int) x, y), s, a, z, 0);
+//            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y), s, a, z, 0);
+//        }
     }
 
     // TODO - remove
     @Test
     void test() {
-        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
-            5, -22.500000000921442, 0.00000148253693746789985363830295586415232, 0);
+        assertClose(HurwitzZeta::value, 50, 2000, 3.6698119957034991027055454908981e-164, 0);
+//        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
+//            5, -22.500000000921442, 0.00000148253693746789985363830295586415232, 0);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -1421,6 +1422,30 @@ class HurwitzZetaTest {
 
             Arguments.of(1e+19, 1, 1.0, 0),
             Arguments.of(1e+19, 1.0000000000000002, 0, 0),
+
+            // Large s with large a
+            Arguments.of(50, 20, 9.7412887436036448537718048483189669464194616553866e-66, 1),
+            // XXX: mpmath disagrees with matlab
+            Arguments.of(50, 200, 4.0877905547003724197061862269315573442276635335729e-115, 26000),
+            // On this case using mp.dps=50,80,100 has differences in the first 12 digits
+            Arguments.of(50, 2000, 3.6698119961414421907531687439376998787130928517259e-164, 600000),
+            Arguments.of(50, 20000, 3.6296607820625266676514381487393861416851065066219e-213, 265),
+            // --- matlab agrees with our implementation
+            Arguments.of(50, 200, 4.0877905546774699327612047878897e-115, 0),
+            Arguments.of(50, 2000, 3.6698119957034991027055454908981e-164, 0),
+            Arguments.of(50, 20000, 3.6296607820623517558146318095834e-213, 0),
+            // --- end matlab
+            Arguments.of(50, 200000, 3.6256621473059150264825344395019993470971219502611e-262, 1),
+            Arguments.of(50, 2000000, 3.625262448698370064130045968154440065060042043605e-311, 1),
+            Arguments.of(50, 3000000, 8.5283690506160333026898323949253691719144047850959e-320, 3),
+            Arguments.of(50, 3500000, 4.4717013098147129077153665995697691837355569545233e-323, 0),
+            Arguments.of(50, 4000000, 0, 0), // 6.43e-326
+            Arguments.of(5, 10000000000.0, 2.5000000005000000000416666666666666666666666666529e-41, 0),
+            Arguments.of(5, 100000000000.0, 2.5000000000500000000004166666666666666666666666667e-45, 0),
+            Arguments.of(5, 1000000000000.0, 2.5000000000050000000000041666666666666666666666667e-49, 1),
+            Arguments.of(5, 10000000000000.0, 2.5000000000005000000000000416666666666666666666667e-53, 1),
+            Arguments.of(5, 100000000000000.0, 2.5000000000000500000000000004166666666666666666667e-57, 1),
+            Arguments.of(5, 1000000000000000.0, 2.5000000000000050000000000000041666666666666666667e-61, 0),
 
             // Requires M=12 when N=9.
             // This is largest M noted during development when the RMS error is close to optimal.
