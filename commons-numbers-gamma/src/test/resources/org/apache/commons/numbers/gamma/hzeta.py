@@ -19,7 +19,7 @@ from mpmath import mp, zeta, __version__ as version
 parser = argparse.ArgumentParser(description="Program to compute zeta(s, a).")
 parser.add_argument("data", type=str, help="s, a values")
 args = parser.parse_args()
-mp.dps = 36
+mp.dps = 50 # Required for double-double precision result (34 digits)
 mp.pretty = True
 
 with open(args.data) as f:
