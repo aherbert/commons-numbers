@@ -28,11 +28,13 @@ import java.util.Arrays;
 import java.util.SplittableRandom;
 import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
+import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.core.DDMath;
 import org.apache.commons.numbers.fraction.BigFraction;
+import org.apache.commons.numbers.rootfinder.BrentSolver;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.MethodOrderer;
@@ -608,8 +610,11 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2),
         BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        BD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 0, 0),
         DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         DD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        // TODO - Can this be fixed?
+        DD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 1, 0.05),
         ;
 
 //        JDK Temurin 25.492-b09
@@ -830,11 +835,12 @@ class HurwitzZetaTest {
         return sum + tsum;
     }
 
-    // TODO - Add test data for large range of -a using a Matlab script with a
-    // close to half-integer.
+    // TODO
     // Is the current double-double implementation good enough?
     // How slow is the DD vs BigDecimal (optimised) for odd s.
     // The BigDecimal can compute the zeta difference accurately.
+    // Simple benchmark of random values with mix of odd and even s
+    // calling each implementation.
 
     // Get test data from large range of +a with integer s.
     // Optimise the N+M for the positive a case for double-double precision.
@@ -1710,6 +1716,54 @@ class HurwitzZetaTest {
         }
         System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d%n",
             name, maxAbsUlp, rmsUlp, meanUlp, size);
+    }
+
+    /**
+     * Find roots of the the zeta function.
+     * This uses positive a parameters for convenience.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "3, 9, 0, 100",
+        // Require evaluation in matlab
+        // Note the root f(x) gets further from zero as |a| or s increases
+        // and x -> half-integer
+//        "3, 3, 1000, 1100",
+//        "3, 3, 1000000, 1000100",
+    })
+    @Disabled("Used to generate test data")
+    void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
+        // Check we can iterate over a with odd s
+        Assertions.assertNotEquals(la, la + 1, "a must be iterable with +1");
+        Assertions.assertEquals(la, Math.floor(la), "lower a must be an integer");
+        Assertions.assertEquals(ua, Math.floor(ua), "upper a must be an integer");
+        Assertions.assertEquals(1, ls & 1, "s must be odd");
+        // Lowest tolerance allowed
+        final BrentSolver solver = new BrentSolver(0, 0, 0);
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_root_s%d_%d_na%s_%s.txt", ls, us, shortFormat(la), shortFormat(ua)))) {
+            for (int s = ls; s <= us; s += 2) {
+                final int ss = s;
+                // Assume the function is optimised for accuracy
+                final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
+                for (double a = la; a <= ua; a += 1) {
+                    // a is integer: bracket -(a, a+1)
+                    double min = -a - 1;
+                    double max = -a;
+                    double x = solver.findRoot(f, Math.nextUp(min), Math.nextDown(max));
+                    // Check the solver found a bracket
+                    double x0 = Math.nextDown(x);
+                    double x1 = Math.nextUp(x);
+                    double f0 = f.applyAsDouble(x0);
+                    double f1 = f.applyAsDouble(x1);
+                    Assertions.assertTrue(f0 * f1 <= 0);
+                    System.out.printf("(%s, %s) %s %s%n", s, x, f0, f1);
+                    out.printf("%s, %s%n", s, x0);
+                    out.printf("%s, %s%n", s, x);
+                    out.printf("%s, %s%n", s, x1);
+                }
+            }
+        }
     }
 
     /**
