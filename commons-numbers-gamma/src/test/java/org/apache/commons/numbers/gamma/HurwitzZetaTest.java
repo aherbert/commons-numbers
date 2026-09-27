@@ -59,9 +59,9 @@ class HurwitzZetaTest {
     private static final int N = 8;
     /** Minimum N used to test the zeta function.
      * Used for reporting RMS errors with varying N. When MIN_N >= MAX_N no report is printed. */
-    private static final int MIN_N = 5; //N + 1; // e.g. 5
+    private static final int MIN_N = N + 1; // e.g. 5
     /** Maximum N used to test the zeta function. Used for reporting RMS errors with varying N. */
-    private static final int MAX_N = 12;//N; // e.g. 12
+    private static final int MAX_N = N; // e.g. 12
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
         "hzeta_s1_4_a1_8.csv",
@@ -605,8 +605,8 @@ class HurwitzZetaTest {
         // Further precision gains would require BigDecimal over double-double math.
         ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6, 1.7),
         ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2),
-        BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
-        BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         DD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         ;
@@ -829,20 +829,18 @@ class HurwitzZetaTest {
         return sum + tsum;
     }
 
-    // TODO - Add test data for large range of -a using a Matlab script.
+    // TODO - Add test data for large range of -a using a Matlab script with a
+    // close to half-integer.
     // Is the current double-double implementation good enough?
     // How slow is the DD vs BigDecimal (optimised) for odd s.
     // The BigDecimal can compute the zeta difference accurately.
 
     // Get test data from large range of +a with integer s.
     // Optimise the N+M for the positive a case for double-double precision.
-    // Try using double-double for this.
-
-    // Add a version of this using DD
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
-     * when {@code a} is negative.
+     * when {@code a} is negative. Uses {@link BigDecimal} arithmetic.
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be negative.
@@ -851,7 +849,7 @@ class HurwitzZetaTest {
      * @param a Argument {@code a < 0}
      * @return zeta(s, a)
      */
-    private static double zetaNegative(int s, double a) {
+    private static double zetaNegativeBD(int s, double a) {
         // a < 0 (non-integer) and s is a positive integer.
         // If s is odd then the negative series sum will be negative
         // and the addition of zeta(s, x > 0) has cancellation.
@@ -936,7 +934,7 @@ class HurwitzZetaTest {
             // Descending k sums in order of magnitude for increased precision
             sum = sum.add(a.add(BigDecimal.valueOf(k)).pow(-s, mc), mc);
         }
-        // First term may be provide
+        // First term may be provided
         if (a0 != null) {
             sum = sum.add(a0);
         } else {
@@ -1034,7 +1032,7 @@ class HurwitzZetaTest {
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
-     * when {@code a} is negative.
+     * when {@code a} is negative. Uses double-double ({@link DD}) arithmetic.
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be negative.
@@ -1065,6 +1063,7 @@ class HurwitzZetaTest {
         }
 
         // Compute dominant term using closest to zero.
+        // Note 0.5^-1024 overflows.
         double d = Math.pow(x > -0.5 ? x : 1 + x, -s);
         if (!Double.isFinite(d)) {
             return d;
@@ -1098,10 +1097,10 @@ class HurwitzZetaTest {
         // priority = exponent(max(a, b)) - exponent(a - b) = 50 bits
 
         // We have the two largest power terms for each side.
-        // The remaining terms are increasing smaller. Computing with some
-        // extra precision for the zeta evaluations should handle cancellation.
+        // The remaining terms are increasing smaller. Computing with
+        // double-double (DD) precision for the zeta evaluations should handle cancellation.
 
-        // Evaluate with extra precision
+        // Evaluate zeta with extra precision
         final Context c = Context.of(20, 30, 0x1p-106);
 
         // Compute the remaining terms passing in the known values:
@@ -1117,13 +1116,21 @@ class HurwitzZetaTest {
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
      *
-     * @param s Argument {@code s > 1}
+     * @param s Argument {@code s > 1}, expected {@code s < 1024}
      * @param a Argument {@code a > 1}
      * @param a0 {@code a^-s}
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
     private static DD zeta(int s, DD a, DD a0, Context c) {
+        // Note:
+        // Closest sum of terms when cancellation occurs and we need full DD accuracy:
+        // (1-2^-53)^-3 + 2^-3 + 3^-3 + 4^-3 + ... ~ 1.0 + 0.125 + 0.0370 + 0.01562
+        // zeta(3, 2) 0.202056
+        // The initial series of terms are > 2-fold smaller. Computing with the standard
+        // DD pow function has enough accuracy to not accumulate error to the zeta result,
+        // No requirement for DDMath pow.
+
         final int n = c.getN();
         final DD apn = a.add(n);
         DD p = apn.pow(-s);
@@ -1135,7 +1142,7 @@ class HurwitzZetaTest {
             // Descending k sums in order of magnitude for increased precision
             sum = sum.add(a.add(k).pow(-s));
         }
-        // First term may be provide
+        // First term may be provided
         if (a0 != null) {
             sum = sum.add(a0);
         } else {
@@ -1150,6 +1157,9 @@ class HurwitzZetaTest {
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
         // When s is large the loop exits before the rising factorial overflows.
+        // Max expected s is < 1024. This overflows at k=51:
+        // pochammer(1024, 101) = 1.30e+306
+        // pochammer(1024, 102) = 1.46e+309
 
         // Rising factorial term : (s)_{2k-1}
         DD f = DD.of(s);
