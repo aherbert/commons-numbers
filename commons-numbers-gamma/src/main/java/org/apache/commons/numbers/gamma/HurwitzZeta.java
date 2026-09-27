@@ -320,13 +320,24 @@ public final class HurwitzZeta {
         // Initialise sum with the first tail term
         double sum = 0.5 * p;
         // S : k in [0, n-1]
-        for (int k = N - 1; k >= 0; k--) {
+        for (int k = N - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
             sum += Math.pow(a + k, -s);
         }
+        // Final term
+        final double t0 = Math.pow(a, -s);
 
         // I
-        sum += Math.pow(apn, 1 - s) / (s - 1);
+        final double ti = Math.pow(apn, 1 - s) / (s - 1);
+
+        // Add in magnitude order. When a in [0, 1] it may be the dominant term
+        if (t0 > ti) {
+            sum += ti;
+            sum += t0;
+        } else {
+            sum += t0;
+            sum += ti;
+        }
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
