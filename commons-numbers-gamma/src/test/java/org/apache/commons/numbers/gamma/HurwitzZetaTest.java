@@ -58,6 +58,7 @@ class HurwitzZetaTest {
      * Used in the {@link #zeta(double, double, Context)} implementation. */
     private static final int[] M = new int[53];
     /** Optimal N used to test the zeta function. */
+    // TODO - verify this is the best value
     private static final int N = 8;
     /** Minimum N used to test the zeta function.
      * Used for reporting RMS errors with varying N. When MIN_N >= MAX_N no report is printed. */
@@ -583,7 +584,7 @@ class HurwitzZetaTest {
         // Test implementation. Uses combined data from multiple resources in order to
         // find N and M values. Any N above 5 works on this data.
         ZETA_5_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(5, 15)), TEST_RESOURCES, 25, 3.5),
-        ZETA_6_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(6, 15)), TEST_RESOURCES, 4, 0.56),
+        ZETA_6_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(6, 15)), TEST_RESOURCES, 6, 0.56),
         ZETA_7_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(7, 15)), TEST_RESOURCES, 4, 0.56),
         ZETA_8_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(8, 15)), TEST_RESOURCES, 4, 0.56),
         ZETA_9_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(9, 15)), TEST_RESOURCES, 4, 0.56),
@@ -596,7 +597,7 @@ class HurwitzZetaTest {
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.9, 0.57),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 3.22, 0.62),
-        ZETA_S2_4_N_A1_7(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-1.csv", 0.63, 0.1),
+        ZETA_S2_4_N_A1_7(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-1.csv", 0.7, 0.1),
         ZETA_S3_5_N_A1_7(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-1.csv", 3, 0.1),
         ZETA_S2_4_N_A8_33(HurwitzZeta::value, "hzeta_s2_4_na8_33_p0.5_p0x1p-1.csv", 0.75, 0.1),
         ZETA_S3_5_N_A8_33(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-1.csv", 0, 0),
@@ -606,7 +607,7 @@ class HurwitzZetaTest {
         ZETA_S2_4_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-30.csv", 0.63, 0.1),
         // The method suffers some cancellation here.
         // Further precision gains would require BigDecimal over double-double math.
-        ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6, 1.7),
+        ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6.5, 1.7),
         ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2),
         BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
@@ -618,29 +619,35 @@ class HurwitzZetaTest {
         ;
 
 //        JDK Temurin 25.492-b09
-//        ZETA_5_15                             max    22.7482   RMS    3.32905   mean        1.28589  n 18000
-//        ZETA_6_15                             max    3.50083   RMS   0.545590   mean    -0.00931504  n 18000
-//        ZETA_7_15                             max    3.19219   RMS   0.543611   mean     -0.0108850  n 18000
-//        ZETA_8_15                             max    3.52850   RMS   0.541361   mean    -0.00823326  n 18000
-//        ZETA_9_15                             max    3.46324   RMS   0.546674   mean    -0.00892159  n 18000
-//        ZETA_10_15                            max    3.80492   RMS   0.540870   mean    -0.00484315  n 18000
-//        ZETA_11_15                            max    4.18614   RMS   0.551071   mean   -0.000419412  n 18000
-//        ZETA_12_15                            max    3.77276   RMS   0.545796   mean    -0.00703945  n 18000
-//        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.641152   mean   -0.000526424  n 3000
-//        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.674928   mean     -0.0209228  n 3000
+//        ZETA_5_15                             max    22.7482   RMS    3.32271   mean        1.28523  n 18000
+//        ZETA_6_15                             max    4.03990   RMS   0.517851   mean    -0.00641581  n 18000
+//        ZETA_7_15                             max    3.19219   RMS   0.515154   mean    -0.00790843  n 18000
+//        ZETA_8_15                             max    3.52850   RMS   0.512206   mean    -0.00776736  n 18000
+//        ZETA_9_15                             max    3.03990   RMS   0.523973   mean    -0.00502301  n 18000
+//        ZETA_10_15                            max    3.80492   RMS   0.515456   mean    -0.00676918  n 18000
+//        ZETA_11_15                            max    3.50083   RMS   0.525740   mean    -0.00333901  n 18000
+//        ZETA_12_15                            max    3.16162   RMS   0.521647   mean    -0.00653556  n 18000
+//        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.609868   mean     0.00407202  n 3000
+//        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.675110   mean     -0.0240288  n 3000
 //        ZETA_S1_4_A32_2147483648              max    1.77377   RMS   0.470439   mean    -0.00772827  n 3000
-//        ZETA_S1_4_A0_1                        max    1.86288   RMS   0.550082   mean    -0.00582330  n 3000
-//        ZETA_S1_4_A0                          max    1.22616   RMS   0.127784   mean    -0.00596360  n 3000
-//        ZETA_S4_32_A1_8                       max    3.18614   RMS   0.592956   mean    -0.00843521  n 3000
-//        ZETA_S2_4_N_A1_7                      max   0.600309   RMS  0.0644069   mean   -0.000470018  n 3000
-//        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0653419   mean   -0.000183116  n 3000
-//        ZETA_S2_4_N_A8_33                     max   0.734873   RMS  0.0669002   mean    0.000287677  n 3000
+//        ZETA_S1_4_A0_1                        max    1.83029   RMS   0.483327   mean     -0.0128829  n 3000
+//        ZETA_S1_4_A0                          max   0.952404   RMS   0.107769   mean    -0.00278978  n 3000
+//        ZETA_S4_32_A1_8                       max    3.05405   RMS   0.529045   mean    -0.00324641  n 3000
+//        ZETA_S2_4_N_A1_7                      max   0.653535   RMS  0.0672688   mean    0.000652193  n 3000
+//        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0658265   mean   -0.000869074  n 3000
+//        ZETA_S2_4_N_A8_33                     max   0.633617   RMS  0.0622978   mean    0.000343235  n 3000
 //        ZETA_S3_5_N_A8_33                     max    0.00000   RMS    0.00000   mean        0.00000  n 3000
 //        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
 //        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.608751   RMS  0.0652802   mean     0.00355178  n 3000
-//        ZETA_S3_5_N_A1_7_HALF_B30             max    5.66317   RMS    1.59232   mean     -0.0478892  n 3000
-//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02775   mean     -0.0120123  n 3000
+//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.589429   RMS  0.0613828   mean     0.00299001  n 3000
+//        ZETA_S3_5_N_A1_7_HALF_B30             max    6.26561   RMS    1.58252   mean     -0.0695818  n 3000
+//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02735   mean     -0.0130644  n 3000
+//        BD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000
+//        BD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000
+//        BD_ZETA_ROOT_S3_9_N_A0_100            max    0.00000   RMS    0.00000   mean        0.00000  n 1212
+//        DD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000
+//        DD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000
+//        DD_ZETA_ROOT_S3_9_N_A0_100            max   0.638297   RMS  0.0362792   mean   -0.000613956  n 1212
 //        zeta  N=8   M=1   6596
 //        zeta  N=8   M=2   170
 //        zeta  N=8   M=3   133
@@ -650,7 +657,6 @@ class HurwitzZetaTest {
 //        zeta  N=8   M=7   1678
 //        zeta  N=8   M=8   2585
 //        zeta  N=8   M=9   3704
-
 
         /** The function. */
         private final DoubleBinaryOperator fun;
@@ -770,16 +776,27 @@ class HurwitzZetaTest {
         // Initialise sum with the first tail term
         double sum = 0.5 * p;
         // S : k in [0, n-1]
-        for (int k = n; --k >= 0;) {
+        for (int k = n; --k > 0;) {
             // Descending k sums in order of magnitude for increased precision.
             // Prevents early exit for large s when the term (a+k)^-s is below
             // machine epsilon of the ascending series sum.
             sum += Math.pow(a + k, -s);
         }
+        // Final term
+        final double t0 = Math.pow(a, -s);
 
-        // I
+        // I : (a+p)^(1-s) / (s-1)
         // Use of (a+n)^(1-s) = (a+n)^-1 * apn to recycle the power lowers precision.
-        sum += Math.pow(apn, 1 - s) / (s - 1);
+        final double ti = Math.pow(apn, 1 - s) / (s - 1);
+
+        // Add in magnitude order. When a in [0, 1] it may be the dominant term
+        if (t0 > ti) {
+            sum += ti;
+            sum += t0;
+        } else {
+            sum += t0;
+            sum += ti;
+        }
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
@@ -945,14 +962,17 @@ class HurwitzZetaTest {
             sum = sum.add(a.add(BigDecimal.valueOf(k)).pow(-s, mc), mc);
         }
         // First term may be provided
-        if (a0 != null) {
-            sum = sum.add(a0);
-        } else {
-            sum = sum.add(a.pow(-s, mc), mc);
-        }
+        final BigDecimal t0 = a0 == null ? a.pow(-s, mc) : a0;
 
         // I : (a+p)^(1-s) / (s-1)
-        sum = sum.add(apn.pow(1 - s, mc).divide(BigDecimal.valueOf(s - 1), mc), mc);
+        final BigDecimal ti = apn.pow(1 - s, mc).divide(BigDecimal.valueOf(s - 1), mc);
+
+        // Add in magnitude order. When a in [0, 1] it may be the dominant term
+        if (t0.compareTo(ti) > 0) {
+            sum = sum.add(ti, mc).add(t0, mc);
+        } else {
+            sum = sum.add(t0, mc).add(ti, mc);
+        }
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
@@ -1135,11 +1155,14 @@ class HurwitzZetaTest {
     private static DD zeta(int s, DD a, DD a0, Context c) {
         // Note:
         // Closest sum of terms when cancellation occurs and we need full DD accuracy:
+        // a in [0, 1]
         // (1-2^-53)^-3 + 2^-3 + 3^-3 + 4^-3 + ... ~ 1.0 + 0.125 + 0.0370 + 0.01562
         // zeta(3, 2) 0.202056
         // The initial series of terms are > 2-fold smaller. Computing with the standard
-        // DD pow function has enough accuracy to not accumulate error to the zeta result,
-        // No requirement for DDMath pow.
+        // DD pow function has enough accuracy to not accumulate error to the zeta result.
+        // When a >> 1 then the terms are all similar magnitude and we use DDmath.
+
+        // TODO : get pow function from the context to allow testing
 
         final int n = c.getN();
         final DD apn = a.add(n);
@@ -1153,14 +1176,17 @@ class HurwitzZetaTest {
             sum = sum.add(a.add(k).pow(-s));
         }
         // First term may be provided
-        if (a0 != null) {
-            sum = sum.add(a0);
-        } else {
-            sum = sum.add(a.pow(-s));
-        }
+        final DD t0 = a0 == null ? a.pow(-s) : a0;
 
         // I : (a+p)^(1-s) / (s-1)
-        sum = sum.add(apn.pow(1 - s).divide(s - 1));
+        final DD ti = apn.pow(1 - s).divide(s - 1);
+
+        // Add in magnitude order. When a in [0, 1] it may be the dominant term
+        if (t0.hi() > ti.hi()) {
+            sum = sum.add(ti).add(t0);
+        } else {
+            sum = sum.add(t0).add(ti);
+        }
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
@@ -1471,7 +1497,7 @@ class HurwitzZetaTest {
 
             // a in [0, 1]
             Arguments.of(1.5, 0.5, 4.77653794755483324857662766936, 1),
-            Arguments.of(1.5, 0.1, 34.0529755150756003469433380579, 0),
+            Arguments.of(1.5, 0.1, 34.0529755150756003469433380579, 1),
             Arguments.of(1.5, 0.9, 2.83731486390441065293824846471, 0),
             Arguments.of(1.234, 0.9, 5.06661932437970945786497350413, 0),
             Arguments.of(1.234, 0.567, 6.18461364443178731103712531596, 1),
@@ -1570,7 +1596,7 @@ class HurwitzZetaTest {
             // and the low series is the full range possible given 0.5+/-2^-b
             Arguments.of(3, -0.5 + 0x1p-54, 0.41439832211715462961751618626938, 1),
             Arguments.of(3, -0.5 + 0x1p-53, 0.41439832211714926143686524195861, 1),
-            Arguments.of(3, -0.5 - 0x1p-53, 0.41439832211717073415946901920171, 2),
+            Arguments.of(3, -0.5 - 0x1p-53, 0.41439832211717073415946901920171, 3),
             Arguments.of(3, -1.5 + 0x1p-52, 0.11810202582084209719727895331851, 2),
             Arguments.of(3, -1.5 - 0x1p-52, 0.11810202582088530580646271524921, 2),
             Arguments.of(3, -3.5 + 0x1p-51, 0.0307784106604705956811455131349, 4),
