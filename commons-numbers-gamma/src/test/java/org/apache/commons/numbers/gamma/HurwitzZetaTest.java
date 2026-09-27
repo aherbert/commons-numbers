@@ -30,6 +30,8 @@ import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
+import org.apache.commons.numbers.core.DD;
+import org.apache.commons.numbers.core.DDMath;
 import org.apache.commons.numbers.fraction.BigFraction;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
@@ -57,9 +59,9 @@ class HurwitzZetaTest {
     private static final int N = 8;
     /** Minimum N used to test the zeta function.
      * Used for reporting RMS errors with varying N. When MIN_N >= MAX_N no report is printed. */
-    private static final int MIN_N = N + 1; // e.g. 5
+    private static final int MIN_N = 5; //N + 1; // e.g. 5
     /** Maximum N used to test the zeta function. Used for reporting RMS errors with varying N. */
-    private static final int MAX_N = N; // e.g. 12
+    private static final int MAX_N = 12;//N; // e.g. 12
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
         "hzeta_s1_4_a1_8.csv",
@@ -389,6 +391,66 @@ class HurwitzZetaTest {
         new BigDecimal("-1.951298390909883071112323768145618E-83"), // (-319533631363830011287103352796174274671189606078272738327103470162849568365549721224053 / 1590) / 104!
         new BigDecimal("4.942696565159461474896400153888328E-85"), // (36373903172617414408151820151593427169231298640581690038930816378281879873386202346572901 / 642) / 106!
     };
+    /**
+     * Precomputed factors for {@code k}-th element of the tail function {@code T}.
+     * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
+     * This is the same as table {@link #FM} in double-double precision.
+     */
+    private static final DD[] FDD = {
+        DD.ofSum(0.08333333333333333, 4.625929269271485E-18), // (1 / 6) / 2!
+        DD.ofSum(-0.001388888888888889, 5.300543954373577E-20), // (-1 / 30) / 4!
+        DD.ofSum(3.306878306878307E-5, -2.2300719288557665E-21), // (1 / 42) / 6!
+        DD.ofSum(-8.267195767195768E-7, 3.457597454003665E-23), // (-1 / 30) / 8!
+        DD.ofSum(2.08767569878681E-8, -1.2073450591132599E-24), // (5 / 66) / 10!
+        DD.ofSum(-5.284190138687493E-10, 3.517096671929869E-27), // (-691 / 2730) / 12!
+        DD.ofSum(1.3382536530684679E-11, -2.828354019907999E-29), // (7 / 6) / 14!
+        DD.ofSum(-3.3896802963225827E-13, -1.4986928409964295E-29), // (-3617 / 510) / 16!
+        DD.ofSum(8.586062056277845E-15, -6.05252374381974E-31), // (43867 / 798) / 18!
+        DD.ofSum(-2.174868698558062E-16, 4.961617782549996E-33), // (-174611 / 330) / 20!
+        DD.ofSum(5.5090028283602295E-18, -1.49827152194499E-35), // (854513 / 138) / 22!
+        DD.ofSum(-1.3954464685812522E-19, -1.0350590497256251E-35), // (-236364091 / 2730) / 24!
+        DD.ofSum(3.534707039629467E-21, 1.894231142684204E-37), // (8553103 / 6) / 26!
+        DD.ofSum(-8.953517427037546E-23, -5.728752743153026E-39), // (-23749461029 / 870) / 28!
+        DD.ofSum(2.267952452337683E-24, 1.3043458462619563E-40), // (8615841276005 / 14322) / 30!
+        DD.ofSum(-5.744790668872202E-26, 1.663242973708004E-43), // (-7709321041217 / 510) / 32!
+        DD.ofSum(1.455172475614865E-27, -5.613265715443096E-44), // (2577687858367 / 6) / 34!
+        DD.ofSum(-3.6859949406653103E-29, 1.0778256413554197E-45), // (-26315271553053477373 / 1919190) / 36!
+        DD.ofSum(9.336734257095045E-31, -3.9347970210731877E-47), // (2929993913841559 / 6) / 38!
+        DD.ofSum(-2.36502241570063E-32, 2.0347170931532494E-49), // (-261082718496449122051 / 13530) / 40!
+        DD.ofSum(5.990671762482134E-34, 1.6265467158179092E-50), // (1520097643918070802691 / 1806) / 42!
+        DD.ofSum(-1.5174548844682903E-35, 5.493014407946745E-52), // (-27833269579301024235023 / 690) / 44!
+        DD.ofSum(3.843758125454189E-37, -3.685053096067968E-53), // (596451111593912163277961 / 282) / 46!
+        DD.ofSum(-9.736353072646691E-39, 2.258059165188444E-55), // (-5609403368997817686249127547 / 46410) / 48!
+        DD.ofSum(2.466247044200681E-40, -1.505641802268162E-56), // (495057205241079648212477525 / 66) / 50!
+        DD.ofSum(-6.247076741820743E-42, -2.7106815859687654E-58), // (-801165718135489957347924991853 / 1590) / 52!
+        DD.ofSum(1.5824030244644914E-43, 2.545428531496969E-60), // (29149963634884862421418123812691 / 798) / 54!
+        DD.ofSum(-4.008273685948936E-45, -2.2124211668946826E-61), // (-2479392929313226753685415739663229 / 870) / 56!
+        DD.ofSum(1.0153075855569557E-46, -9.404269751258486E-63), // (84483613348880041862046775994036021 / 354) / 58!
+        DD.ofSum(-2.5718041582418717E-48, -6.537655454012542E-65), // (-1215233140483755572040304994079820246041491 / 56786730) / 60!
+        DD.ofSum(6.514456035233815E-50, -2.763626172529861E-66), // (12300585434086858541953039857403386151 / 6) / 62!
+        DD.ofSum(-1.6501309906896525E-51, 3.1794529475063687E-68), // (-106783830147866529886385444979142647942017 / 510) / 64!
+        DD.ofSum(4.179830628539476E-53, 2.617556823159939E-69), // (1472600022126335654051619428551932342241899101 / 64722) / 66!
+        DD.ofSum(-1.058763466770291E-54, 6.6915528436035195E-71), // (-78773130858718728141909149208474606244347001 / 30) / 68!
+        DD.ofSum(2.6818791912607708E-56, -8.70695425146146E-73), // (1505381347333367003803076567377857208511438160235 / 4686) / 70!
+        DD.ofSum(-6.793279351107421E-58, 2.795667911354165E-74), // (-5827954961669944110438277244641067365282488301844260429 / 140100870) / 72!
+        DD.ofSum(1.7207577616681404E-59, 4.65433497191727E-76), // (34152417289221168014330073731472635186688307783087 / 6) / 74!
+        DD.ofSum(-4.358730329348894E-61, 2.8840522874209336E-77), // (-24655088825935372707687196040585199904365267828865801 / 30) / 76!
+        DD.ofSum(1.1040792903684666E-62, 6.624841731022409E-79), // (414846365575400828295179035549542073492199375372400483487 / 3318) / 78!
+        DD.ofSum(-2.7966655133781345E-64, 2.628041826403209E-81), // (-4603784299479457646935574969019046849794257872751288919656867 / 230010) / 80!
+        DD.ofSum(7.084036501679471E-66, -5.026235239023924E-82), // (1677014149185145836823154509786269900207736027570253414881613 / 498) / 82!
+        DD.ofSum(-1.794407408289224E-67, 1.5372719769275798E-84), // (-2024576195935290360231131160111731009989917391198090877281083932477 / 3404310) / 84!
+        DD.ofSum(4.545287063611096E-69, 9.87696151726261E-87), // (660714619417678653573847847426261496277830686653388931761996983 / 6) / 86!
+        DD.ofSum(-1.1513346631982051E-70, -7.192856523313341E-87), // (-1311426488674017507995511424019311843345750275572028644296919890574047 / 61410) / 88!
+        DD.ofSum(2.9163647710923614E-72, -3.8911087510195904E-89), // (1179057279021082799884123351249215083775254949669647116231545215727922535 / 272118) / 90!
+        DD.ofSum(-7.387238263497337E-74, -6.923136687699924E-90), // (-1295585948207537527989427828538576749659341483719435143023316326829946247 / 1410) / 92!
+        DD.ofSum(1.8712093117637953E-75, 1.5886680102062367E-92), // (1220813806579744469607301679413201203958508415202696621436215105284649447 / 6) / 94!
+        DD.ofSum(-4.739828557761799E-77, -9.517121002177184E-94), // (-211600449597266513097597728109824233673043954389060234150638733420050668349987259 / 4501770) / 96!
+        DD.ofSum(1.2006125993354507E-78, -1.109850335891779E-95), // (67908260672905495624051117546403605607342195728504487509073961249992947058239 / 6) / 98!
+        DD.ofSum(-3.0411872415142924E-80, 5.125117133572647E-97), // (-94598037819122125295227433069493721872702841533066936133385696204311395415197247711 / 33330) / 100!
+        DD.ofSum(7.703417274705106E-82, 3.948211996024456E-99), // (3204019410860907078243020782116241775491817197152717450679002501086861530836678158791 / 4326) / 102!
+        DD.ofSum(-1.951298390909883E-83, -1.2533409416284754E-99), // (-319533631363830011287103352796174274671189606078272738327103470162849568365549721224053 / 1590) / 104!
+        DD.ofSum(4.942696565159462E-85, -2.8094990080509668E-101), // (36373903172617414408151820151593427169231298640581690038930816378281879873386202346572901 / 642) / 106!
+    };
 
     /** Context for the zeta implementation. */
     private static class Context {
@@ -542,7 +604,12 @@ class HurwitzZetaTest {
         // The method suffers some cancellation here.
         // Further precision gains would require BigDecimal over double-double math.
         ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6, 1.7),
-        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2);
+        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2),
+        BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        DD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
+        ;
 
 //        JDK Temurin 25.492-b09
 //        ZETA_5_15                             max    22.7482   RMS    3.32905   mean        1.28589  n 18000
@@ -725,15 +792,30 @@ class HurwitzZetaTest {
         double tsum = 0;
         final double stop = sum * c.getEps();
         int i;
+        // ---
+        // Alternative implementation:
+        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+        // Divide by (a+n)^2
+        // p = Math.pow(apn, -s - 1);
+        // final double apn2 = Math.pow(apn, -2);
+        // ---
         for (i = 0; i < c.getM(); i++) {
             // p = (a+n)^-(2k-1+s)
+            // ---
+            // Comment this out for alternative implementation
             p /= apn;
+            // ---
             final double t = f * p / F[i];
             tsum += t;
             if (Math.abs(t) <= stop) {
                 break;
             }
+            // ---
+            // Comment this out for alternative implementation
             p /= apn;
+            // Comment this in for Alternative implementation:
+            // p *= apn2;
+            // ---
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             f *= s + k2;
             k2 += 1.0;
@@ -756,8 +838,11 @@ class HurwitzZetaTest {
     // Optimise the N+M for the positive a case for double-double precision.
     // Try using double-double for this.
 
+    // Add a version of this using DD
+
     /**
-     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
+     * when {@code a} is negative.
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be negative.
@@ -766,7 +851,7 @@ class HurwitzZetaTest {
      * @param a Argument {@code a < 0}
      * @return zeta(s, a)
      */
-    private static double zetaNegativeImp(int s, double a) {
+    private static double zetaNegative(int s, double a) {
         // a < 0 (non-integer) and s is a positive integer.
         // If s is odd then the negative series sum will be negative
         // and the addition of zeta(s, x > 0) has cancellation.
@@ -783,7 +868,7 @@ class HurwitzZetaTest {
         // Intentional float comparison
         if (odd && xn == -0.5) {
             // Use extended precision but evaluated with precision for a double result
-            return zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null,
+            return zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null,
                 Context.of(10, 15, new MathContext(20))).doubleValue();
         }
 
@@ -821,7 +906,7 @@ class HurwitzZetaTest {
 
         // Compute the remaining terms passing in the known values:
         final BigDecimal sn1 = negativeSeriesSum(a, xn, s, pn, c);
-        final BigDecimal sp1 = zetaImp(s, xp, pp, c);
+        final BigDecimal sp1 = zeta(s, xp, pp, c);
 
         return sp1.add(sn1, mc).doubleValue();
     }
@@ -838,7 +923,7 @@ class HurwitzZetaTest {
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
-    private static BigDecimal zetaImp(int s, BigDecimal a, BigDecimal a0, Context c) {
+    private static BigDecimal zeta(int s, BigDecimal a, BigDecimal a0, Context c) {
         final int n = c.getN();
         final MathContext mc = c.getMathContext();
         final BigDecimal apn = a.add(BigDecimal.valueOf(n));
@@ -928,9 +1013,8 @@ class HurwitzZetaTest {
             // zeta(2, 31.5) = 0.03225
             // Significant cancellation (leading digits the same) is not possible.
             // Take care to change the sign of a provided result for the zeta method.
-            final BigDecimal zb = zetaImp(s, new BigDecimal(-b),
-                (s & 1) == 1 ? bn.negate() : bn, c);
-            final BigDecimal za = zetaImp(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null, c);
+            final BigDecimal zb = zeta(s, new BigDecimal(-b), bn.abs(), c);
+            final BigDecimal za = zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null, c);
             final BigDecimal r = zb.subtract(za, mc);
             return (s & 1) == 1 ? r.negate() : r;
         }
@@ -946,6 +1030,201 @@ class HurwitzZetaTest {
             bx = bx.add(BigDecimal.ONE);
         }
         return sum.add(bn, mc);
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
+     * when {@code a} is negative.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     * The domain of {@code a} is expected to be negative.
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @return zeta(s, a)
+     */
+    private static double zetaNegativeDD(int s, double a) {
+        // a < 0 (non-integer) and s is a positive integer.
+        // If s is odd then the negative series sum will be negative
+        // and the addition of zeta(s, x > 0) has cancellation.
+        // This is largest when a is close to half-integer.
+
+        // Check case of total cancellation.
+        final boolean odd = (s & 1) == 1;
+        final double ca = Math.ceil(a);
+        if (ca == a) {
+            // The term 0^-s is infinity
+            return Double.POSITIVE_INFINITY;
+        }
+        double x = a - ca;
+        // Intentional float comparison
+        if (odd && x == -0.5) {
+            // Use extended precision but evaluated with precision for a double result
+            return zeta(s, DD.ONE.subtract(a), null,
+                Context.of(10, 15, 0x1p-53)).doubleValue();
+        }
+
+        // Compute dominant term using closest to zero.
+        double d = Math.pow(x > -0.5 ? x : 1 + x, -s);
+        if (!Double.isFinite(d)) {
+            return d;
+        }
+
+        // Compute the two terms either side of zero:
+        // -1 < xn < 0 < xn + 1 < 1
+        // These are the largest terms and contain most of the error of the function.
+        DD xn = DD.of(x);
+        DD xp = DD.ONE.add(x);
+        final long[] expn = {0};
+        final long[] expp = {0};
+        DD pn = DDMath.pow(xn, -s, expn);
+        DD pp = DDMath.pow(xp, -s, expp);
+        pn = pn.scalb((int) expn[0]);
+        pp = pp.scalb((int) expp[0]);
+
+        // Here the remaining series above and below zero are effectively both zeta
+        // evaluations with zeta(s >= 2, a > 1). This is always < 2.
+        // Exit early if remaining terms cannot be added.
+        d = pn.add(pp).doubleValue();
+        if (Math.abs(d) > 0x1p54) {
+            return d;
+        }
+
+        // x = a - ceil(a) : x in -(1, 0)
+        // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
+
+        // Worst case single term cancellation:
+        // pow(0.5 + 2^-53, -3) - pow(0.5 - 2^-53, -3)
+        // priority = exponent(max(a, b)) - exponent(a - b) = 50 bits
+
+        // We have the two largest power terms for each side.
+        // The remaining terms are increasing smaller. Computing with some
+        // extra precision for the zeta evaluations should handle cancellation.
+
+        // Evaluate with extra precision
+        final Context c = Context.of(20, 30, 0x1p-106);
+
+        // Compute the remaining terms passing in the known values:
+        final DD sn1 = negativeSeriesSum(a, x, s, pn, c);
+        final DD sp1 = zeta(s, xp, pp, c);
+
+        return sp1.add(sn1).hi();
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     * The domain of {@code a} is expected to be positive.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 1}
+     * @param a0 {@code a^-s}
+     * @param c Evaluation context.
+     * @return zeta(s, a)
+     */
+    private static DD zeta(int s, DD a, DD a0, Context c) {
+        final int n = c.getN();
+        final DD apn = a.add(n);
+        DD p = apn.pow(-s);
+
+        // Initialise sum with the first tail term: 0.5 * (a+n)^-s
+        DD sum = p.scalb(-1);
+        // S : k in [0, n-1]
+        for (int k = n - 1; k > 0; k--) {
+            // Descending k sums in order of magnitude for increased precision
+            sum = sum.add(a.add(k).pow(-s));
+        }
+        // First term may be provide
+        if (a0 != null) {
+            sum = sum.add(a0);
+        } else {
+            sum = sum.add(a.pow(-s));
+        }
+
+        // I : (a+p)^(1-s) / (s-1)
+        sum = sum.add(apn.pow(1 - s).divide(s - 1));
+
+        // T
+        // The following recycles the power term p: (a+n)^-(2k-1+s).
+        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
+        // The first power is (a+n)^-(1+s) not (a+n)^-1.
+        // When s is large the loop exits before the rising factorial overflows.
+
+        // Rising factorial term : (s)_{2k-1}
+        DD f = DD.of(s);
+        p = p.divide(apn);
+        // Sum of an alternating series as each F changes sign.
+        // Sum until terms will not impact the result.
+        DD tsum = DD.ZERO;
+        // Used to divide by (a+n)^2
+        DD apn2 = apn.pow(-2);
+        final double stop = sum.hi() * c.getEps();
+        int i;
+        for (i = 0; i < c.getM(); i++) {
+            final DD t = f.multiply(p).multiply(FDD[i]);
+            tsum = tsum.add(t);
+            if (Math.abs(t.hi()) <= stop) {
+//                System.out.printf("%d %s  %d%n", s, a.doubleValue(), i + 1);
+                break;
+            }
+            // p = (a+n)^-(2k-1+s)
+            p = p.multiply(apn2);
+            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+            // compute the multiplicand as a long as it cannot overflow when M is small
+            f = f.multiply((s + (2L * i) + 1) * (s + (2L * i) + 2));
+        }
+        return sum.add(tsum);
+    }
+
+    /**
+     * Calculates the sum of terms of the power series.
+     *
+     * <pre>
+     *      b     1
+     *   sum     ---
+     *      k=a  k^m
+     * </pre>
+     *
+     * <p>Assumes {@code a} and {@code b} are negative and separated by an integer
+     * distance; and {@code exponent >= 2} and integer.
+     *
+     * <p>Large ranges may be evaluated using a difference of zeta functions.
+     *
+     * @param a First term in the series to calculate (negative non-integer).
+     * @param b Last term in the series inclusive (negative non-integer); result provided.
+     * @param s Exponent (positive integer).
+     * @param bn {@code b^-s}.
+     * @param c Evaluation context.
+     * @return the sum
+     */
+    private static DD negativeSeriesSum(double a, double b, int s,
+            DD bn, Context c) {
+        // This can be computed using a difference of zeta functions.
+        // A single call to zeta uses many pow operations; use zeta when the
+        // sum will use more.
+        if (b - a > 2 * (c.getN() + 2)) {
+            // Note: The difference incurs cancellation.
+            // This should not be an issue as function is called with b in -(1, 0)
+            // and the series is strongly converging, e.g.
+            // zeta(2, 0.5)  = 1.6449
+            // zeta(2, 31.5) = 0.03225
+            // Significant cancellation (leading digits the same) is not possible.
+            // Take care to change the sign of a provided result for the zeta method.
+            final DD zb = zeta(s, DD.of(-b), bn.abs(), c);
+            final DD za = zeta(s, DD.ONE.subtract(a), null, c);
+            final DD r = zb.subtract(za);
+            return (s & 1) == 1 ? r.negate() : r;
+        }
+
+        // Sum terms in ascending order of magnitude
+        DD sum = DD.ZERO;
+        double x = a;
+        while (x < b) {
+            sum = sum.add(DD.of(x).pow(-s));
+            x += 1.0;
+        }
+        return sum.add(bn);
     }
 
     /**
@@ -1042,8 +1321,16 @@ class HurwitzZetaTest {
     void testZetaSpot(double s, double a, double z, int ulp) {
 //        assertClose(HurwitzZeta::value, s, a, z, ulp);
         if (a < 0 && s < Integer.MAX_VALUE) {
-            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeImp((int) x, y), s, a, z, 0);
+            //assertClose((x, y) -> HurwitzZetaTest.zetaNegative((int) x, y), s, a, z, 0);
+            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y), s, a, z, 0);
         }
+    }
+
+    // TODO - remove
+    @Test
+    void test() {
+        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
+            5, -22.500000000921442, 0.00000148253693746789985363830295586415232, 0);
     }
 
     static Stream<Arguments> testZetaSpot() {
