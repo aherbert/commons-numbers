@@ -244,7 +244,7 @@ public final class HurwitzZeta {
             // This is impractical for large |a| so the number of terms
             // is limited and precision will be lost for large |a|.
             // The number of terms depends on how close to
-            // half-integer and the size of the exponent. 
+            // half-integer and the size of the exponent.
             // The sum continues until the cancellation in opposing terms is in
             // the low part of the double-double sum. Computing the remaining
             // terms in double precision will have cancellation, and the difference
@@ -255,7 +255,7 @@ public final class HurwitzZeta {
             // have missing bits that do not affect the result. In practice this
             // strategy works to compute a result with many bit of precision and
             // avoid a useless result with catastrophic cancellation.
-            // 
+            //
             // sum          |--------|--------|
             // sp1        |--------|
             // -sn1        |------xx|
