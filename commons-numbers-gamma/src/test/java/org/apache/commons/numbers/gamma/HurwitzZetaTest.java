@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.SplittableRandom;
+import java.util.function.BiFunction;
 import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
@@ -57,21 +58,14 @@ class HurwitzZetaTest {
     /** Table used to create a histogram of the number of steps to converge the tail series.
      * Used in the {@link #zeta(double, double, Context)} implementation. */
     private static final int[] M = new int[53];
-    /** Optimal N used to test the zeta function. */
-    // TODO - verify this is the best value
-    private static final int N = 8;
-    /** Minimum N used to test the zeta function.
-     * Used for reporting RMS errors with varying N. When MIN_N >= MAX_N no report is printed. */
-    private static final int MIN_N = N + 1; // e.g. 5
-    /** Maximum N used to test the zeta function. Used for reporting RMS errors with varying N. */
-    private static final int MAX_N = N; // e.g. 12
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
-        "hzeta_s1_4_a1_8.csv",
-        "hzeta_s1_4_a8_32.csv",
         "hzeta_s1_4_a32_2147483648.csv",
         "hzeta_s1_4_a0_1.csv",
         "hzeta_s1_4_a1e-16_1e-14.csv",
+        // Higher error on these data
+        "hzeta_s1_4_a1_8.csv",
+        "hzeta_s1_4_a8_32.csv",
         "hzeta_s4_32_a1_8.csv",
     };
     /** Flag set when the JVM version is printed. Used for testing. */
@@ -456,12 +450,35 @@ class HurwitzZetaTest {
         DD.ofSum(4.942696565159462E-85, -2.8094990080509668E-101), // (36373903172617414408151820151593427169231298640581690038930816378281879873386202346572901 / 642) / 106!
     };
 
-    /** Context for the zeta implementation. */
+    // TODO - refactor Context to double, double-double and BigDecimal implementations
+
+    /** Context for the zeta implementation.
+     * This is used to control how the test zeta implementation is computed.
+     * Contains options for double, double-double and BigDecimal implementations. */
     private static class Context {
+        // Default contexts optimised using the precision tests
+
+        /** Context for double precision zeta implementation.
+         * N=9 has max M used as 9 in the test data. */
+        public static final Context DOUBLE = Context.of(9, 15);
+        // TODO: To be optimised
+        /** Context for double-double precision using the DD zeta implementation. */
+        public static final Context DOUBLE_DOUBLE = Context.of(20, 30).withEpsilon(0x1p-106);
+        /** Context for double-double precision using the BigDecimal zeta implementation. */
+        public static final Context BD = Context.of(20, 30).withMathContext(new MathContext(37));
+        /** Context for double precision using the BigDecimal zeta implementation. */
+        public static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(20));
+
         /** Default epsilon. */
         private static final double EPS = 0x1p-53;
         /** Default math context. */
         private static final MathContext MC = MathContext.DECIMAL128;
+        /** Default pow(n+x, y) function. */
+        private static final boolean POWNP = true;
+        /** Default option for tail series. */
+        private static final int TAIL = 0;
+        /** Default option for extended precision sum. */
+        private static final boolean EP_SUM = true;
 
         /** N. */
         private final int n;
@@ -471,6 +488,12 @@ class HurwitzZetaTest {
         private final double eps;
         /** Math context for extended precision evaluations. */
         private final MathContext mc;
+        /** Use extended precision Math.pow(n + x, y). */
+        private final boolean usePowNp;
+        /** Tail series option. */
+        private final int tailOption;
+        /** Use extended precision sum. */
+        private final boolean useExtendedPrecisionSum;
 
         /**
          * Create an instance.
@@ -479,8 +502,12 @@ class HurwitzZetaTest {
          * @param m the m
          * @param eps the eps
          * @param mc the mc
+         * @param usePowNp flag for extended precision pow(n+x, y)
+         * @param tailOption the tail option
+         * @param useExtendedPrecisionSum Use an extended precision sum
          */
-        Context(int n, int m, double eps, MathContext mc) {
+        Context(int n, int m, double eps, MathContext mc,
+            boolean usePowNp, int tailOption, boolean useExtendedPrecisionSum) {
             if (m >= F.length) {
                 throw new IllegalArgumentException("Unsupported M: " + m);
             }
@@ -488,46 +515,74 @@ class HurwitzZetaTest {
             this.m = m;
             this.eps = eps;
             this.mc = mc;
+            this.usePowNp = usePowNp;
+            this.tailOption = tailOption;
+            this.useExtendedPrecisionSum = useExtendedPrecisionSum;
         }
 
         /**
          * Create a context.
          *
          * @param n the number of terms N.
-         * @param m the number of terms N.
+         * @param m the number of terms M.
          * @return the context
          */
         static Context of(int n, int m) {
-            return new Context(n, m, EPS, MC);
+            return new Context(n, m, EPS, MC, POWNP, TAIL, EP_SUM);
         }
 
         /**
-         * Create a context.
+         * Return a context that uses the provided convergence epsilon in the tail series.
          *
-         * @param n the number of terms N.
-         * @param m the number of terms N.
-         * @param eps the convergence epsilon for the tail series T.
+         * @param value the value
          * @return the context
          */
-        static Context of(int n, int m, double eps) {
-            return new Context(n, m, eps, MC);
+        Context withEpsilon(double value) {
+            return new Context(n, m, value, mc, usePowNp, tailOption, useExtendedPrecisionSum);
         }
 
         /**
-         * Create a context.
+         * Return a context that uses the provided MathContext.
          *
-         * @param n the number of terms N.
-         * @param m the number of terms N.
-         * @param mc the context for extended precision evaluations.
+         * @param value the value
          * @return the context
          */
-        static Context of(int n, int m, MathContext mc) {
-            return new Context(n, m, EPS, mc);
+        Context withMathContext(MathContext value) {
+            return new Context(n, m, eps, value, usePowNp, tailOption, useExtendedPrecisionSum);
+        }
+
+        /**
+         * Return a context that uses extended precision for Math.pow(n + x, y).
+         *
+         * @param value the value
+         * @return the context
+         */
+        Context withUseNp(boolean value) {
+            return new Context(n, m, eps, mc, value, tailOption, useExtendedPrecisionSum);
+        }
+
+        /**
+         * Return a context that uses the provided option in the tail series.
+         *
+         * @param value the value
+         * @return the context
+         */
+        Context withTailOption(int value) {
+            return new Context(n, m, eps, mc, usePowNp, value, useExtendedPrecisionSum);
+        }
+
+        /**
+         * Return a context that uses an extended precision sum.
+         *
+         * @param value the value
+         * @return the context
+         */
+        Context withExtendedPrecisionSum(boolean value) {
+            return new Context(n, m, eps, mc, usePowNp, tailOption, value);
         }
 
         /**
          * Gets N.
-         *
          * @return n
          */
         int getN() {
@@ -536,7 +591,6 @@ class HurwitzZetaTest {
 
         /**
          * Gets M.
-         *
          * @return m
          */
         int getM() {
@@ -545,7 +599,6 @@ class HurwitzZetaTest {
 
         /**
          * Gets the convergence epsilon for the tail series T.
-         *
          * @return the epsilon
          */
         double getEps() {
@@ -554,11 +607,59 @@ class HurwitzZetaTest {
 
         /**
          * Gets the math context for extended precision evaluations.
-         *
          * @return the math context
          */
         MathContext getMathContext() {
             return mc;
+        }
+
+        /**
+         * Get the function to compute {@code (x+y)^z}.
+         * @return function
+         */
+        DoubleTernaryOperator getPowNp() {
+            return usePowNp ? Context::powNp : (x, y, z) -> Math.pow(x + y, z);
+        }
+
+        /**
+         * Gets the option to use in the tail series.
+         * Implementations may use this as a bit flag to change multiple options.
+         * @return the option
+         */
+        int getTailOption() {
+            return tailOption;
+        }
+
+        /**
+         * Gets the option to use an extended precision sum.
+         * @return the option
+         */
+        boolean getUseExtendedPrecisionSum() {
+            return useExtendedPrecisionSum;
+        }
+        /**
+         * Extended precision {@code (x+y)^z}.
+         *
+         * <p>Warning: assumes x+y is finite.
+         * This method is used for testing where the arguments should be {@code n + y}
+         * with y finite and less than 2^53.
+         *
+         * @param x the x
+         * @param y the y
+         * @param z the z
+         * @return the result
+         */
+        static double powNp(double x, double y, double z) {
+            // (s+ss)^y = s^y * (1+ss/s)^y
+            //          = s^y * exp(y*log1p(ss/s))
+            // ss/s < machine epsilon : log1p(ss/s) ~ ss/s
+            final DD s = DD.ofSum(x, y);
+            double r = Math.pow(s.hi(), z);
+            // This does not check all pow edge cases and assumes the round-off is finite
+            if (s.lo() != 0) {
+                r *= Math.exp(z * s.lo() / s.hi());
+            }
+            return r;
         }
     }
 
@@ -575,27 +676,25 @@ class HurwitzZetaTest {
         double getRmsTolerance();
     }
 
+    /** Define a test for a double-precision zeta function. */
+    private interface DoublePrecisionTestCase extends TestError {
+        /**
+         * @return function to test
+         */
+        DoubleBinaryOperator getFunction();
+
+        /**
+         * @return Filenames of the test data
+         */
+        String[] getFilenames();
+    }
+
     /**
      * Define the test cases for each resource file for two argument functions.
      * This encapsulates the function to test, the expected maximum and RMS error, and
      * the resource file containing the data.
      */
-    private enum BiTestCase implements TestError {
-        // Test implementation. Uses combined data from multiple resources in order to
-        // find N and M values. Any N above 5 works on this data.
-
-        // TODO: Move this to a test fixture.
-        // The fixture should run using N in [x, y], print the error, and then the M for chosen n
-        // Duplicate this for BD and DD implementations in double-double precision
-        ZETA_5_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(5, 15)), TEST_RESOURCES, 25, 3.5),
-        ZETA_6_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(6, 15)), TEST_RESOURCES, 6, 0.56),
-        ZETA_7_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(7, 15)), TEST_RESOURCES, 4, 0.56),
-        ZETA_8_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(8, 15)), TEST_RESOURCES, 4, 0.56),
-        ZETA_9_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(9, 15)), TEST_RESOURCES, 4, 0.56),
-        ZETA_10_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(10, 15)), TEST_RESOURCES, 4, 0.64),
-        ZETA_11_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(11, 15)), TEST_RESOURCES, 4.5, 0.66),
-        ZETA_12_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(12, 15)), TEST_RESOURCES, 4, 0.66),
-
+    private enum ZetaTestCase implements DoublePrecisionTestCase {
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
         ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.69),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
@@ -624,8 +723,8 @@ class HurwitzZetaTest {
         DD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 1, 0.05),
         DD_ZETA_ROOT_S3_9_N_A1000_1100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na1000_1100.csv", 1, 0.05),
         // TODO - Must be optimised for double-double precision
-        BD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.of(30, 40, MathContext.DECIMAL128)).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
-        DD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.of(30, 40, 0x1p-106)).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
+        BD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
+        DD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DOUBLE_DOUBLE).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
         ;
 
 //        JDK Temurin 25.492-b09
@@ -688,7 +787,7 @@ class HurwitzZetaTest {
          * @param maxUlp maximum allowed ulp
          * @param rmsUlp maximum allowed RMS ulp
          */
-        BiTestCase(DoubleBinaryOperator fun, String filename, double maxUlp, double rmsUlp) {
+        ZetaTestCase(DoubleBinaryOperator fun, String filename, double maxUlp, double rmsUlp) {
             this.fun = fun;
             this.filename = new String[] {filename};
             this.maxUlp = maxUlp;
@@ -703,23 +802,21 @@ class HurwitzZetaTest {
          * @param maxUlp maximum allowed ulp
          * @param rmsUlp maximum allowed RMS ulp
          */
-        BiTestCase(DoubleBinaryOperator fun, String[] filename, double maxUlp, double rmsUlp) {
+        ZetaTestCase(DoubleBinaryOperator fun, String[] filename, double maxUlp, double rmsUlp) {
             this.fun = fun;
             this.filename = filename;
             this.maxUlp = maxUlp;
             this.rmsUlp = rmsUlp;
         }
 
-        /**
-         * @return function to test
-         */
+        @Override
+        public
         DoubleBinaryOperator getFunction() {
             return fun;
         }
 
-        /**
-         * @return Filenames of the test data
-         */
+        @Override
+        public
         String[] getFilenames() {
             return filename;
         }
@@ -738,7 +835,6 @@ class HurwitzZetaTest {
     // Test zeta implementation
     //
     // This class contains a parameterized version of the final implementation.
-    // See STATISTICS-100 for variations tested during development.
     //
     // Note: The method is sensitive to the initial loop over N to create S.
     // Under certain conditions the N cannot be too high if using an ascending
@@ -748,29 +844,20 @@ class HurwitzZetaTest {
     // Better results are obtained using descending k. However this prevents
     // an early exit if the series is rapidly converging and the term (a+k)^-s
     // drops below machine epsilon of the sum.
-    //
-    // Summing in extended precision requires a double-double (DD) sum to be used
-    // throughout. Use in S and then not in the tail T does not lower the RMS.
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
      * See {@link HurwitzZeta} for the formula details.
-     * 
+     *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      *
      * @param s Argument {@code s > 1}
-     * @param a Argument {@code a >= 1}
+     * @param a Argument {@code a > 0}
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
     static double zeta(double s, double a, Context c) {
-        int n = c.getN();
-        // Skip testing, or use default
-        if (n < 0) {
-            n = N;
-        } else if (n < MIN_N || n > MAX_N) {
-            return Double.NaN;
-        }
+        final int n = c.getN();
 
         // Asymptotic Behavior as a -> inf
         // https://dlmf.nist.gov/25.11#E43
@@ -780,39 +867,57 @@ class HurwitzZetaTest {
             return Math.pow(a, 1 - s) / (s - 1) + Math.pow(a, -s) * 0.5;
         }
 
-        final double apn = a + n;
-        double p = Math.pow(apn, -s);
+        // Can overflow if 0 < a < 1.
+        final double t0 = Math.pow(a, -s);
+        if (!Double.isFinite(t0)) {
+            return t0;
+        }
+        // Now any (a+n)^-s cannot overflow and the sum cannot overflow.
+
+        DoubleTernaryOperator pow = c.getPowNp();
+
+        // Check the extra precision power will make a difference
+        if (!(a > 1 && Math.abs(s * DD.ofSum(a, n).lo()) >= 0x1p-53)) {
+            pow = (x, y, z) -> Math.pow(x + y, z);
+        }
+
+        double p = pow.applyAsDouble(a, n, -s);
+
+        // We always use a DD sum. If not using extended precision
+        // we add in double precision and create a new DD.
+        BiFunction<DD, Double, DD> add = c.getUseExtendedPrecisionSum() ?
+            DD::add :
+            (x, y) -> DD.of(x.hi() + y);
 
         // Initialise sum with the first tail term
-        double sum = 0.5 * p;
+        DD sum = DD.of(0.5 * p);
         // S : k in [0, n-1]
         for (int k = n; --k > 0;) {
             // Descending k sums in order of magnitude for increased precision.
             // Prevents early exit for large s when the term (a+k)^-s is below
             // machine epsilon of the ascending series sum.
-            sum += Math.pow(a + k, -s);
+            sum = add.apply(sum, pow.applyAsDouble(a, k, -s));
         }
-        // Final term
-        final double t0 = Math.pow(a, -s);
 
         // I : (a+p)^(1-s) / (s-1)
         // Use of (a+n)^(1-s) = (a+n)^-1 * apn to recycle the power lowers precision.
-        final double ti = Math.pow(apn, 1 - s) / (s - 1);
+        final double ti = pow.applyAsDouble(a, n, 1 - s) / (s - 1);
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (t0 > ti) {
-            sum += ti;
-            sum += t0;
+            sum = add.apply(sum, ti);
+            sum = add.apply(sum, t0);
         } else {
-            sum += t0;
-            sum += ti;
+            sum = add.apply(sum, t0);
+            sum = add.apply(sum, ti);
         }
 
         // T
-        // The following recycles the power term p: (a+n)^-(2k-1+s).
-        // This incorporates the factor for T into the sum terms.
+        // The following incorporates the factor for T into the sum terms
+        // as (a+n)^-(2k-1+s).
         // This sets the first power as (a+n)^-(1+s) not (a+n)^-1.
         // When s is large the loop exits before the rising factorial overflows.
+        // This factor can be computed using alternative implementations.
 
         // Rising factorial term : (s)_{2k-1}
         double f = s;
@@ -822,44 +927,65 @@ class HurwitzZetaTest {
         // Sum until terms will not impact the result.
         // Note: if the factor is too small (e.g. 0x1p-63) then the series continues
         // further and terms may be less accurate (i.e. add noise to the T sum).
-        double tsum = 0;
-        final double stop = sum * c.getEps();
+
+        // tsum can use extended precision.
+        DD tsum = DD.ZERO;
+        add = (c.getTailOption() & 4) != 0 ?
+            DD::add :
+            (x, y) -> DD.of(x.hi() + y);
+
+        final double stop = sum.hi() * c.getEps();
+
+        // Alternative implementations for (a+n)^-(2k-1+s).
+        // Set using the first two bits of the tail option.
+        double apn = 0;
+        int powerTermOption = c.getTailOption() & 0x3;
+        if (powerTermOption == 0) {
+            // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+            // Divide by (a+n)^2 using multiplication
+            p = pow.applyAsDouble(a, n, -s - 1);
+            apn = pow.applyAsDouble(a, n, -2);
+        } else if (powerTermOption == 1) {
+            // Initialise (a+n)^-(2k-1+s) to (a+n)^-s
+            // Divide by (a+n) twice inside the loop
+            apn = a + n;
+        } else {
+            // Compute using the power function
+            p = pow.applyAsDouble(a, n, -(k2 + s));
+        }
+
         int i;
-        // ---
-        // Alternative implementation:
-        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
-        // Divide by (a+n)^2
-        // p = Math.pow(apn, -s - 1);
-        // final double apn2 = Math.pow(apn, -2);
-        // ---
         for (i = 0; i < c.getM(); i++) {
             // p = (a+n)^-(2k-1+s)
-            // ---
-            // Comment this out for alternative implementation
-            p /= apn;
-            // ---
+            if (powerTermOption == 1) {
+                p /= apn;
+            }
+            // Note that this uses divide by F rather than multiply by FM.
+            // Testing shows negligible difference. The first 6/7 terms of
+            // M are exact so divide is used.
             final double t = f * p / F[i];
-            tsum += t;
+            tsum = add.apply(tsum, t);
             if (Math.abs(t) <= stop) {
                 break;
             }
-            // ---
-            // Comment this out for alternative implementation
-            p /= apn;
-            // Comment this in for Alternative implementation:
-            // p *= apn2;
-            // ---
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             f *= s + k2;
             k2 += 1.0;
             f *= s + k2;
             k2 += 1.0;
+            // Update (a+n)^-(2k-1+s)
+            if (powerTermOption == 0) {
+                p *= apn;
+            } else if (powerTermOption == 1) {
+                p /= apn;
+            } else {
+                p = pow.applyAsDouble(a, n, -(k2 + s));
+            }
         }
+
         // Used to histogram convergence when testing
-        if (n == N) {
-            M[i]++;
-        }
-        return sum + tsum;
+        M[i]++;
+        return sum.add(tsum).hi();
     }
 
     // TODO
@@ -898,7 +1024,7 @@ class HurwitzZetaTest {
         if (odd && xn == -0.5) {
             // Use extended precision but evaluated with precision for a double result
             return zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null,
-                Context.of(10, 15, new MathContext(20))).doubleValue();
+                Context.DOUBLE.withMathContext(new MathContext(20))).doubleValue();
         }
 
         // Compute dominant term using closest to zero.
@@ -909,9 +1035,7 @@ class HurwitzZetaTest {
 
         // Odd computation requires twice the precision of a double (17 digits).
         // Even requires some extra.
-        final Context c = odd ?
-            Context.of(20, 30, new MathContext(37)) :
-            Context.of(10, 15, new MathContext(20));
+        final Context c = odd ? Context.BD : Context.BD_DOUBLE;
 
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
@@ -1092,8 +1216,7 @@ class HurwitzZetaTest {
         // Intentional float comparison
         if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result
-            return zeta(s, DD.ONE.subtract(a), null,
-                Context.of(10, 15, 0x1p-53)).doubleValue();
+            return zeta(s, DD.ONE.subtract(a), null, Context.DOUBLE).doubleValue();
         }
 
         // Compute dominant term using closest to zero.
@@ -1135,7 +1258,7 @@ class HurwitzZetaTest {
         // double-double (DD) precision for the zeta evaluations should handle cancellation.
 
         // Evaluate zeta with extra precision
-        final Context c = Context.of(20, 30, 0x1p-106);
+        final Context c = Context.DOUBLE_DOUBLE;
 
         // Compute the remaining terms passing in the known values:
         final DD sn1 = negativeSeriesSum(a, x, s, pn, c);
@@ -1215,7 +1338,6 @@ class HurwitzZetaTest {
             final DD t = f.multiply(p).multiply(FDD[i]);
             tsum = tsum.add(t);
             if (Math.abs(t.hi()) <= stop) {
-//                System.out.printf("%d %s  %d%n", s, a.doubleValue(), i + 1);
                 break;
             }
             // p = (a+n)^-(2k-1+s)
@@ -1335,6 +1457,129 @@ class HurwitzZetaTest {
             // as the first 6/7 factors are exact and errors in the later factors
             // are comparable.
             Assertions.assertTrue(sum1 < sum2, "2k! / B_2k does not have lower combined error");
+        }
+    }
+
+    /**
+     * Test the double-precision zeta test function.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // Notes:
+        // - N >= 7 has similar error. A lower N uses more M in the tail series.
+        // - Using a high precision pow(n + x, y) lowers max error by ~1 ULP and rms by 20%.
+        //   Investigation shows it makes most difference when s is large which makes
+        //   sense given the implementation (a+n)^-s using -s * round-off of (a+n)
+        //   (verified using test resources with s above 4).
+        //   It does not impact a in [0, 1] where (a+n) is inexact as a^-s is magnitudes
+        //   larger than all other terms.
+        //   It could be applied when: a>1; s>2; and (a+n) is inexact. Here the round-off
+        //   multiplied by s will be above 2^-53 and exp(-s * round-off) != 1.
+        // - Using divide makes negligible difference from using multiply in the tail.
+        // - Using the power function to compute (a+n)^-(2k-1+s) makes no difference
+        //   and will be expensive.
+        // - Extended precision sum makes a small difference. Max error is similar and RMS drops.
+        //   Terms are added in ascending magnitude which is fine in double precision
+        //   unless the largest terms have error. Can be helped using high precision pow.
+        // - Extended precision tail sum makes no difference. The error is in the other part
+        //   of the computation.
+        // - Using a smaller epsilon requires more terms in the tail but does not impact
+        //   error unless epsilon is too high.
+        // - RMS drops with increasing N then plateaus. The plateau is at larger N when
+        //   using the higher precision power **and** sum, e.g. N=8 vs N=10. Using one or
+        //   the other N=8 is OK.
+
+        // Extended precision power function (difference)
+        "5, 15, 15, -53, false, 0, false",
+        "5, 15, 15, -53, true, 0, false",
+        // Extended precision sum (small difference with/without the power function)
+        // RMS drops as N increases. Max error is variable.
+        "5, 15, 15, -53, false, 0, true",
+        "5, 15, 15, -53, true, 0, true",
+//        // Using divide in the tail series (no difference)
+//        "5, 12, 15, -53, false, 1, false",
+//        "5, 12, 15, -53, true, 1, false",
+//        // Use power in the tail series (no difference)
+//        "5, 12, 15, -53, false, 2, true",
+//        "5, 12, 15, -53, true, 2, true",
+//        // Use extended precision sum in the tail series (no difference)
+//        "5, 12, 15, -53, false, 4, true",
+//        "5, 12, 15, -53, true, 4, true",
+//        "5, 12, 15, -53, false, 6, true",
+//        "5, 12, 15, -53, true, 6, true",
+//        // Convergence (negligible error change unless to high, does increase required M)
+//        "8, 10, 15, -49, true, 0, true",
+//        "8, 10, 15, -50, true, 0, true",
+//        "8, 10, 15, -51, true, 0, true",
+//        "8, 10, 15, -52, true, 0, true",
+//        "8, 10, 15, -53, true, 0, true",
+//        "8, 10, 15, -54, true, 0, true",
+    })
+    @Disabled("Used to parameterize the zeta function")
+    void testDoublePrecisionZeta(int ln, int un, int m, int b,
+        boolean powNp, int tail, boolean epSum)
+        throws IOException {
+        final double eps = Math.scalb(1.0, b);
+        for (int n = ln; n <= un; n++) {
+            // Reset M
+            Arrays.fill(M, 0);
+
+            final Context c = Context.of(n, m)
+                .withEpsilon(eps)
+                .withUseNp(powNp)
+                .withTailOption(tail)
+                .withExtendedPrecisionSum(epSum);
+            final String name = String.format("ZETA %2d %2d 2^%d %6s %6s %6s",
+                n, m, b,
+                powNp ? "powNp" : "",
+                tail,
+                epSum ? "EP sum" : "");
+            final DoublePrecisionTestCase test = new DoublePrecisionTestCase() {
+                @Override
+                public double getTolerance() {
+                    return 100;
+                }
+
+                @Override
+                public double getRmsTolerance() {
+                    return 10;
+                }
+
+                @Override
+                public DoubleBinaryOperator getFunction() {
+                    return (s, a) -> HurwitzZetaTest.zeta(s, a, c);
+                }
+
+                @Override
+                public String[] getFilenames() {
+                    // Use combined data from multiple resources in order to
+                    // find N and M values.
+                    return TEST_RESOURCES;
+                }
+
+                @Override
+                public String toString() {
+                    return name;
+                }
+            };
+            assertFunction(test);
+
+            // Check usage of M.
+            // As N increases the convergence of the tail is faster (M decreases).
+            // Johansson (2015) recommends N ~ M. However the test implementation does
+            // not use Math.pow in the tail function and can evaluate higher M efficiently.
+            int max = 0;
+            for (int i = 0; i < M.length; i++) {
+                if (M[i] != 0) {
+                    max = i + 1;
+                    // This is used for testing.
+                    // CHECKSTYLE: stop regex
+                    // System.out.printf("%s  M=%-2d  %d%n", name, max, M[i]);
+                    // CHECKSTYLE: resume regex
+                }
+            }
+            // n = 5 is too low and the tail does not converge
+            Assertions.assertTrue(n < 6 || max <= m);
         }
     }
 
@@ -1663,28 +1908,10 @@ class HurwitzZetaTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = BiTestCase.class)
+    @EnumSource(value = ZetaTestCase.class)
     @Order(1)
-    void testZeta(BiTestCase tc) {
+    void testZeta(ZetaTestCase tc) {
         assertFunction(tc);
-    }
-
-    @Test
-    @Order(2)
-    void testZetaM() {
-        // Check the M used to converge the tail series in the chosen implementation.
-        // This depends on the epsilon used to stop the sum.
-        int m = 0;
-        for (int i = 0; i < M.length; i++) {
-            if (M[i] != 0) {
-                m = i + 1;
-                // This is used for testing.
-                // CHECKSTYLE: stop regex
-                System.out.printf("zeta  N=%-2d  M=%-2d  %d%n", N, m, M[i]);
-                // CHECKSTYLE: resume regex
-            }
-        }
-        Assertions.assertTrue(m < 15);
     }
 
     /**
@@ -1706,7 +1933,7 @@ class HurwitzZetaTest {
      *
      * @param tc Test case
      */
-    private static void assertFunction(BiTestCase tc) {
+    private static void assertFunction(DoublePrecisionTestCase tc) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
         for (final String filename : tc.getFilenames()) {
             try (DataReader in = new DataReader(filename)) {

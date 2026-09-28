@@ -83,4 +83,5 @@
   <suppress checks="UnnecessaryParentheses" files=".*[/\\]jmh[/\\]arrays[/\\]PartitionTest.java" />
   <suppress checks="ParameterNumber" files=".*[/\\]jmh[/\\]arrays[/\\]PartitionTest.java" />
   <suppress checks="MethodLength" files=".*[/\\]gamma[/\\]HurwitzZetaTest.java" />
+  <suppress checks="FileLength" files=".*[/\\]gamma[/\\]HurwitzZetaTest.java" />
 </suppressions>
