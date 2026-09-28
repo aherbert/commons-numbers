@@ -612,10 +612,12 @@ class HurwitzZetaTest {
         BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         BD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 0, 0),
+        BD_ZETA_ROOT_S3_9_N_A1000_1100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_9_na1000_1100.csv", 0, 0),
         DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         DD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         // TODO - Can this be fixed?
         DD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 1, 0.05),
+        DD_ZETA_ROOT_S3_9_N_A1000_1100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na1000_1100.csv", 1, 0.05),
         ;
 
 //        JDK Temurin 25.492-b09
@@ -1778,13 +1780,14 @@ class HurwitzZetaTest {
         "3, 9, 0, 100",
         // Require evaluation in matlab
         // Note the root f(x) gets further from zero as |a| or s increases
-        // and x -> half-integer
-//        "3, 3, 1000, 1100",
-//        "3, 3, 1000000, 1000100",
+        // and the root x -> half-integer
+        "3, 9, 1000, 1100",
     })
     @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
         // Check we can iterate over a with odd s
+        Assertions.assertTrue(ls > 2);
+        Assertions.assertTrue(la >= 0);
         Assertions.assertNotEquals(la, la + 1, "a must be iterable with +1");
         Assertions.assertEquals(la, Math.floor(la), "lower a must be an integer");
         Assertions.assertEquals(ua, Math.floor(ua), "upper a must be an integer");
@@ -1808,7 +1811,6 @@ class HurwitzZetaTest {
                     double f0 = f.applyAsDouble(x0);
                     double f1 = f.applyAsDouble(x1);
                     Assertions.assertTrue(f0 * f1 <= 0);
-                    System.out.printf("(%s, %s) %s %s%n", s, x, f0, f1);
                     out.printf("%s, %s%n", s, x0);
                     out.printf("%s, %s%n", s, x);
                     out.printf("%s, %s%n", s, x1);
