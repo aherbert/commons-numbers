@@ -57,7 +57,7 @@ class HurwitzZetaTest {
     private static final long SEED = 6516587940839803692L;
     /** Table used to create a histogram of the number of steps to converge the tail series.
      * Used in the {@link #zeta(double, double, Context)} implementation. */
-    private static final int[] M = new int[53];
+    private static final int[] M = new int[54];
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
         "hzeta_s1_4_a32_2147483648.csv",
@@ -68,8 +68,13 @@ class HurwitzZetaTest {
         "hzeta_s1_4_a8_32.csv",
         "hzeta_s4_32_a1_8.csv",
     };
+    /** Filenames of resources used for the extended precision test zeta function using integer s. */
+    private static final String[] INT_TEST_RESOURCES = {
+        "hzeta_ia2_2_a1_1.csv",
+        "hzeta_ia2_2_a40_41.csv",
+    };
     /** Flag set when the JVM version is printed. Used for testing.
-     * If negative no RMS errors are printed to the console. 
+     * If negative no RMS errors are printed to the console.
      * Set to zero to show RMS errors. */
     private static int jvm = 0;
 
@@ -463,13 +468,18 @@ class HurwitzZetaTest {
         /** Context for double precision zeta implementation.
          * N=9 has max M used as 9 in the test data. */
         public static final Context DOUBLE = Context.of(9, 15);
+
         // TODO: To be optimised
         /** Context for double-double precision using the DD zeta implementation. */
         public static final Context DOUBLE_DOUBLE = Context.of(20, 30).withEpsilon(0x1p-106);
+
+        // BigDecimal implementation is very robust to different N.
+        // Here N ~ M on the test data with a 1 digit more than the expected 17 per double.
+
         /** Context for double-double precision using the BigDecimal zeta implementation. */
-        public static final Context BD = Context.of(20, 30).withMathContext(new MathContext(37));
+        public static final Context BD = Context.of(17, 30).withMathContext(new MathContext(36));
         /** Context for double precision using the BigDecimal zeta implementation. */
-        public static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(20));
+        public static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(18));
 
         /** Default epsilon. */
         private static final double EPS = 0x1p-53;
@@ -510,7 +520,7 @@ class HurwitzZetaTest {
          */
         Context(int n, int m, double eps, MathContext mc,
             boolean usePowNp, int tailOption, boolean useExtendedPrecisionSum) {
-            if (m >= F.length) {
+            if (m > F.length) {
                 throw new IllegalArgumentException("Unsupported M: " + m);
             }
             this.n = n;
@@ -678,7 +688,27 @@ class HurwitzZetaTest {
         double getRmsTolerance();
     }
 
-    /** Define a test for a double-precision zeta function. */
+
+    /** Define a test for an extended precision zeta function. */
+    private interface ExtendedPrecisionTestCase extends TestError {
+        /**
+         * @return function to test
+         */
+        BiFunction<Integer, Double, BigDecimal> getFunction();
+
+        /**
+         * @return Filenames of the test data
+         */
+        String[] getFilenames();
+
+        /**
+         * @return Scale to apply to the expected ULP.
+         * @see Math#scalb(double, int)
+         */
+        int scale();
+    }
+
+    /** Define a test for a double precision zeta function. */
     private interface DoublePrecisionTestCase extends TestError {
         /**
          * @return function to test
@@ -984,7 +1014,6 @@ class HurwitzZetaTest {
                 p = pow.applyAsDouble(a, n, -(k2 + s));
             }
         }
-
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum).hi();
@@ -1073,8 +1102,8 @@ class HurwitzZetaTest {
      * The domain of {@code a} is expected to be positive.
      *
      * @param s Argument {@code s > 1}
-     * @param a Argument {@code a > 1}
-     * @param a0 {@code a^-s}
+     * @param a Argument {@code a > 0}
+     * @param a0 {@code a^-s} (can be null)
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
@@ -1124,7 +1153,6 @@ class HurwitzZetaTest {
             final BigDecimal t = f.multiply(p, mc).multiply(FBD[i], mc);
             tsum = tsum.add(t, mc);
             if (t.scale() >= stop) {
-//                System.out.printf("%d %s  %d%n", s, a.doubleValue(), i + 1);
                 break;
             }
             // p = (a+n)^-(2k-1+s)
@@ -1133,6 +1161,8 @@ class HurwitzZetaTest {
             // compute the multiplicand as a long as it cannot overflow when M is small
             f = f.multiply(BigDecimal.valueOf((s + (2L * i) + 1) * (s + (2L * i) + 2)), mc);
         }
+        // Used to histogram convergence when testing
+        M[i]++;
         return sum.add(tsum, mc);
     }
 
@@ -1276,8 +1306,8 @@ class HurwitzZetaTest {
      * The domain of {@code a} is expected to be positive.
      *
      * @param s Argument {@code s > 1}, expected {@code s < 1024}
-     * @param a Argument {@code a > 1}
-     * @param a0 {@code a^-s}
+     * @param a Argument {@code a > 0}
+     * @param a0 {@code a^-s} (can be null)
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
@@ -1348,6 +1378,8 @@ class HurwitzZetaTest {
             // compute the multiplicand as a long as it cannot overflow when M is small
             f = f.multiply((s + (2L * i) + 1) * (s + (2L * i) + 2));
         }
+        // Used to histogram convergence when testing
+        M[i]++;
         return sum.add(tsum);
     }
 
@@ -1492,33 +1524,33 @@ class HurwitzZetaTest {
         //   the other N=8 is OK.
 
         // Extended precision power function (difference)
-        "5, 15, 15, -53, false, 0, false",
-        "5, 15, 15, -53, true, 0, false",
+        "5, 15, -53, false, 0, false",
+        "5, 15, -53, true, 0, false",
         // Extended precision sum (small difference with/without the power function)
         // RMS drops as N increases. Max error is variable.
-        "5, 15, 15, -53, false, 0, true",
-        "5, 15, 15, -53, true, 0, true",
+        "5, 15, -53, false, 0, true",
+        "5, 15, -53, true, 0, true",
 //        // Using divide in the tail series (no difference)
-//        "5, 12, 15, -53, false, 1, false",
-//        "5, 12, 15, -53, true, 1, false",
+//        "5, 12, -53, false, 1, false",
+//        "5, 12, -53, true, 1, false",
 //        // Use power in the tail series (no difference)
-//        "5, 12, 15, -53, false, 2, true",
-//        "5, 12, 15, -53, true, 2, true",
+//        "5, 12, -53, false, 2, true",
+//        "5, 12, -53, true, 2, true",
 //        // Use extended precision sum in the tail series (no difference)
-//        "5, 12, 15, -53, false, 4, true",
-//        "5, 12, 15, -53, true, 4, true",
-//        "5, 12, 15, -53, false, 6, true",
-//        "5, 12, 15, -53, true, 6, true",
+//        "5, 12, -53, false, 4, true",
+//        "5, 12, -53, true, 4, true",
+//        "5, 12, -53, false, 6, true",
+//        "5, 12, -53, true, 6, true",
 //        // Convergence (negligible error change unless to high, does increase required M)
-//        "8, 10, 15, -49, true, 0, true",
-//        "8, 10, 15, -50, true, 0, true",
-//        "8, 10, 15, -51, true, 0, true",
-//        "8, 10, 15, -52, true, 0, true",
-//        "8, 10, 15, -53, true, 0, true",
-//        "8, 10, 15, -54, true, 0, true",
+//        "8, 10, -49, true, 0, true",
+//        "8, 10, -50, true, 0, true",
+//        "8, 10, -51, true, 0, true",
+//        "8, 10, -52, true, 0, true",
+//        "8, 10, -53, true, 0, true",
+//        "8, 10, -54, true, 0, true",
     })
     @Disabled("Used to parameterize the zeta function")
-    void testPrecisionDouble(int ln, int un, int m, int b,
+    void testPrecisionDouble(int ln, int un, int b,
         boolean powNp, int tail, boolean epSum)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
@@ -1526,16 +1558,12 @@ class HurwitzZetaTest {
             // Reset M
             Arrays.fill(M, 0);
 
-            final Context c = Context.of(n, m)
+            final Context c = Context.of(n, F.length)
                 .withEpsilon(eps)
                 .withUseNp(powNp)
                 .withTailOption(tail)
                 .withExtendedPrecisionSum(epSum);
-            final String name = String.format("ZETA %2d %2d 2^%d %6s %6s %6s",
-                n, m, b,
-                powNp ? "powNp" : "",
-                tail,
-                epSum ? "EP sum" : "");
+            final int nn = n;
             final DoublePrecisionTestCase test = new DoublePrecisionTestCase() {
                 @Override
                 public double getTolerance() {
@@ -1561,27 +1589,100 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return name;
+                    // Get the largest m
+                    int max = 0;
+                    for (int i = 0; i < M.length; i++) {
+                        if (M[i] != 0) {
+                            max = i + 1;
+                        }
+                    }
+                    return String.format("ZETA %2d %2d 2^%d %6s %6s %6s",
+                        nn, max, b,
+                        powNp ? "powNp" : "",
+                        tail,
+                        epSum ? "EP sum" : "");
                 }
             };
             assertFunction(test);
+        }
+    }
 
-            // Check usage of M.
-            // As N increases the convergence of the tail is faster (M decreases).
-            // Johansson (2015) recommends N ~ M. However the test implementation does
-            // not use Math.pow in the tail function and can evaluate higher M efficiently.
-            int max = 0;
-            for (int i = 0; i < M.length; i++) {
-                if (M[i] != 0) {
-                    max = i + 1;
-                    // This is used for testing.
-                    // CHECKSTYLE: stop regex
-                    // System.out.printf("%s  M=%-2d  %d%n", name, max, M[i]);
-                    // CHECKSTYLE: resume regex
+    /**
+     * Test the precision of the BigDecimal implementation of the zeta function.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // Full double-double precision (~34 digits)
+        // Exact after N=11. Larger N uses smaller M.
+        "11, 30, 34, -53",
+        // If the computation is limited to fewer bits it cannot achieve double-double precision.
+        // This has implications for the DD version because DD arithmetic is typically
+        // performed to a few eps of 2^-106.
+        "11, 30, 33, -53",
+        // Not enough
+        "11, 30, 32, -53",
+        // Push more precision.
+        // Demonstrates the BigDecimal method can be a reference implementation,
+        // e.g. when used to find the roots of zeta (see method to find roots).
+//        "20, 30, 53, 40, -59",
+        // Full double-double precision (~17 digits)
+        "6, 15, 18, 0",
+        "6, 15, 17, 0",
+        // Not enough
+        "6, 15, 16, 0",
+    })
+    @Disabled("Used to parameterize the zeta function")
+    void testPrecisionBigDecimal(int ln, int un, int digits, int b)
+        throws IOException {
+        for (int n = ln; n <= un; n++) {
+            // Reset M
+            Arrays.fill(M, 0);
+
+            final Context c = Context.of(n, FBD.length)
+                .withMathContext(new MathContext(digits));
+            final int nn = n;
+            final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
+
+                @Override
+                public double getTolerance() {
+                    // Do not fail individual cases
+                    return 100;
                 }
-            }
-            // n = 5 is too low and the tail does not converge
-            Assertions.assertTrue(n < 6 || max <= m);
+
+                @Override
+                public double getRmsTolerance() {
+                    // Within 10 bits of the target precision
+                    return Math.scalb(1.0, 10);
+                }
+
+                @Override
+                public int scale() {
+                    return b;
+                }
+
+                @Override
+                public BiFunction<Integer, Double, BigDecimal> getFunction() {
+                    return (s, a) -> HurwitzZetaTest.zeta(s, new BigDecimal(a), null, c);
+                }
+
+                @Override
+                public String[] getFilenames() {
+                    return INT_TEST_RESOURCES;
+                }
+
+                @Override
+                public String toString() {
+                    // Get the largest m
+                    int max = 0;
+                    for (int i = 0; i < M.length; i++) {
+                        if (M[i] != 0) {
+                            max = i + 1;
+                        }
+                    }
+                    return String.format("ZETA %2d %2d dps=%d", nn, max, digits);
+                }
+            };
+            assertFunction(test);
         }
     }
 
@@ -1620,6 +1721,7 @@ class HurwitzZetaTest {
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
         assertClose(HurwitzZeta::value, s, a, z, ulp);
+        // TODO - remove
 //        if (a < 0 && s < Integer.MAX_VALUE) {
 //            //assertClose((x, y) -> HurwitzZetaTest.zetaNegative((int) x, y), s, a, z, 0);
 //            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y), s, a, z, 0);
@@ -1629,6 +1731,7 @@ class HurwitzZetaTest {
     // TODO - remove
     @Test
     void test() {
+        // Bug in mpmath?
         assertClose(HurwitzZeta::value, 50, 2000, 3.6698119957034991027055454908981e-164, 0);
 //        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
 //            5, -22.500000000921442, 0.00000148253693746789985363830295586415232, 0);
@@ -1944,12 +2047,40 @@ class HurwitzZetaTest {
                         final double x = in.getDouble(0);
                         final double y = in.getDouble(1);
                         final double actual = tc.getFunction().applyAsDouble(x, y);
-                        // Skip results from test zeta function
-                        if (Double.isNaN(actual)) {
-                            return;
-                        }
                         final BigDecimal expected = in.getBigDecimal(2);
                         TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
+                            () -> tc + " x=" + x + ", y=" + y);
+                    } catch (final NumberFormatException ex) {
+                        Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
+                    }
+                }
+            } catch (final IOException ex) {
+                Assertions.fail("Failed to load data: " + filename, ex);
+            }
+        }
+
+        assertRms(tc, stats);
+    }
+
+    /**
+     * Assert the function using extended precision.
+     *
+     * @param tc Test case
+     */
+    private static void assertFunction(ExtendedPrecisionTestCase tc) {
+        final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
+        for (final String filename : tc.getFilenames()) {
+            try (DataReader in = new DataReader(filename)) {
+                while (in.next()) {
+                    try {
+                        final double x = in.getDouble(0);
+                        final int s = (int) x;
+                        Assertions.assertEquals(x, s, "Expecting integer s");
+                        final double y = in.getDouble(1);
+                        final BigDecimal actual = tc.getFunction().apply(s, y);
+                        final BigDecimal expected = in.getBigDecimal(2);
+                        TestUtils.assertEquals(expected, actual, tc.getTolerance(), tc.scale(),
+                            stats::add,
                             () -> tc + " x=" + x + ", y=" + y);
                     } catch (final NumberFormatException ex) {
                         Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
