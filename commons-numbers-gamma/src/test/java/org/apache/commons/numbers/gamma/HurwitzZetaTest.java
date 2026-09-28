@@ -583,6 +583,10 @@ class HurwitzZetaTest {
     private enum BiTestCase implements TestError {
         // Test implementation. Uses combined data from multiple resources in order to
         // find N and M values. Any N above 5 works on this data.
+
+        // TODO: Move this to a test fixture.
+        // The fixture should run using N in [x, y], print the error, and then the M for chosen n
+        // Duplicate this for BD and DD implementations in double-double precision
         ZETA_5_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(5, 15)), TEST_RESOURCES, 25, 3.5),
         ZETA_6_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(6, 15)), TEST_RESOURCES, 6, 0.56),
         ZETA_7_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(7, 15)), TEST_RESOURCES, 4, 0.56),
@@ -591,6 +595,7 @@ class HurwitzZetaTest {
         ZETA_10_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(10, 15)), TEST_RESOURCES, 4, 0.64),
         ZETA_11_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(11, 15)), TEST_RESOURCES, 4.5, 0.66),
         ZETA_12_15((s, a) -> HurwitzZetaTest.zeta(s, a, Context.of(12, 15)), TEST_RESOURCES, 4, 0.66),
+
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
         ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.69),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
@@ -618,6 +623,9 @@ class HurwitzZetaTest {
         // TODO - Can this be fixed?
         DD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 1, 0.05),
         DD_ZETA_ROOT_S3_9_N_A1000_1100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na1000_1100.csv", 1, 0.05),
+        // TODO - Must be optimised for double-double precision
+        BD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.of(30, 40, MathContext.DECIMAL128)).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
+        DD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.of(30, 40, 0x1p-106)).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
         ;
 
 //        JDK Temurin 25.492-b09
@@ -860,12 +868,6 @@ class HurwitzZetaTest {
     // The BigDecimal can compute the zeta difference accurately.
     // Simple benchmark of random values with mix of odd and even s
     // calling each implementation.
-
-    // Get test data from large range of +a with integer s.
-    // Optimise the N+M for the positive a case for double-double precision.
-
-    // Method to find roots of the zeta with odd s.
-    // Find first 100 roots and compute a+/-ulp in Matlab. Check sign changes.
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
@@ -1785,7 +1787,7 @@ class HurwitzZetaTest {
     })
     @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
-        // Check we can iterate over a with odd s
+        // Validate arguments
         Assertions.assertTrue(ls > 2);
         Assertions.assertTrue(la >= 0);
         Assertions.assertNotEquals(la, la + 1, "a must be iterable with +1");
@@ -1815,6 +1817,45 @@ class HurwitzZetaTest {
                     out.printf("%s, %s%n", s, x);
                     out.printf("%s, %s%n", s, x1);
                 }
+            }
+        }
+    }
+
+    /**
+     * Create test data for integer {@code s} and {@code a in [la, ua)}.
+     * Samples can follow a log-uniform limiting distribution with full randomisation
+     * of the 52-bit mantissa.
+     * Used to generate data for the high-precision zeta functions.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // zeta called with 0 < a < 1. Use a close to 1:
+        // 0.9999999999988898 =  1.0 - 10000 * 0x1p-53
+        "2, 2, 0.9999999999988898, 1, false",
+        // zeta called with a > 1.
+        // Occurs when a > 2N with N the number of power terms in a zeta evaluation.
+        "2, 2, 40, 41, true",
+    })
+    @Disabled("Used to generate test data")
+    void testDataSampleIntegerS(int ls, int us,
+                                double la, double ua, boolean uniforma) throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Validate arguments
+        Assertions.assertTrue(ls > 1);
+        Assertions.assertTrue(us >= ls);
+        Assertions.assertTrue(la >= 0);
+        Assertions.assertTrue(ua > la);
+        // Create samplers
+        final int range = us - ls + 1;
+        final DoubleSupplier s = () -> ls + rng.nextInt(range);
+        final DoubleSupplier a = createSampler(rng, la, ua, uniforma);
+
+        final int size = 3000;
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_is%s_%s_a%s_%s.txt",
+                shortFormat(ls), shortFormat(us), shortFormat(la), shortFormat(ua)))) {
+            for (int i = 0; i < size; i++) {
+                out.printf("%s, %s%n", s.getAsDouble(), a.getAsDouble());
             }
         }
     }
@@ -1855,6 +1896,7 @@ class HurwitzZetaTest {
             }
         }
     }
+
     /**
      * Create test data for {@code s in [ls, ls + 2, ..., us - 2, us]}
      * and {@code a in -( [la, ua] + offset +/- 2^-b )}.
