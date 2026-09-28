@@ -485,6 +485,74 @@ final class TestUtils {
     }
 
     /**
+     * Assert the two numbers are equal within the provided units of least
+     * precision.
+     *
+     * <p>This method is for values that can be computed to arbitrary precision.
+     *
+     * <p>This method expresses the error relative the units in the last place (ulp)
+     * of the expected value when converted to a {@code double} type. If the actual
+     * value equals the expected value the error is 0. Otherwise the error is
+     * computed relative to the ulp of the expected value.
+     *
+     * <p>The ulp of the expected value can be scaled by {@code 2^b}. For example this
+     * can be used to report errors for double precision using {@code b == 0}, or
+     * double-double precision using {@code b == -53}.
+     *
+     * <p>Set {@code maxUlps} to negative to report the ulps to the stdout and
+     * ignore failures.
+     *
+     * <p>The ulp difference is signed. The sign of the error
+     * is the same as that returned from Double.compare(actual, expected); it is
+     * computed using {@code actual - expected}.
+     *
+     * @param expected expected value
+     * @param actual actual value
+     * @param maxUlps maximum units of least precision between the two values
+     * @param b scale for the ulp
+     * @param error Consumer for the ulp difference between the values (always positive)
+     * @param msg failure message
+     * @return ulp difference between the values (signed)
+     */
+    static double assertEquals(BigDecimal expected, BigDecimal actual, double maxUlps, int b,
+            DoubleConsumer error, Supplier<String> msg) {
+        final double e = expected.doubleValue();
+
+        double delta;
+        boolean equal;
+        if (expected.compareTo(actual) == 0) {
+            equal = true;
+            delta = 0;
+        } else {
+            // Two finite numbers. Express relative error using a scaled double ulp.
+            final double ulp = Math.scalb(Math.ulp(e), b);
+            delta = actual.subtract(expected)
+                        .divide(new BigDecimal(ulp), MathContext.DECIMAL64).doubleValue();
+            // Allow input of a negative maximum ULPs
+            equal = Math.abs(delta) <= Math.abs(maxUlps);
+        }
+
+        if (error != null) {
+            error.accept(delta);
+        }
+
+        // DEBUG:
+        if (maxUlps < 0) {
+            // CHECKSTYLE: stop Regex
+            if (!equal || reportAllDeviations) {
+                System.out.printf("%sexpected <%s> != actual <%s> (ulps=%s)%n",
+                    prefix(msg), expected, actual, delta);
+            }
+            // CHECKSTYLE: resume Regex
+        } else if (!equal) {
+            Assertions.fail(String.format("%sexpected <%s> != actual <%s> (ulps=%s)",
+                prefix(msg), expected, actual, delta));
+        }
+
+        return delta;
+    }
+
+    /**
      * Get the prefix for the message.
      *
      * @param msg Message supplier
