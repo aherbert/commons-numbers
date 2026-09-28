@@ -37,22 +37,6 @@ import org.junit.jupiter.params.provider.EnumSource.Mode;
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class BoostBetaTest {
-    /**
-     * Represents an operation upon three {@code double}-valued operands and producing a
-     * {@code double}-valued result.
-     */
-    interface DoubleTernaryOperator {
-        /**
-         * Applies this operator to the given operands.
-         *
-         * @param x the first operand
-         * @param y the second operand
-         * @param z the third operand
-         * @return the operator result
-         */
-        double applyAsDouble(double x, double y, double z);
-    }
-
     /** Define the expected error for a test. */
     private interface TestError {
         /**
