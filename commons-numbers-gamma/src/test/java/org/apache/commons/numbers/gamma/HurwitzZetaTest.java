@@ -68,8 +68,10 @@ class HurwitzZetaTest {
         "hzeta_s1_4_a8_32.csv",
         "hzeta_s4_32_a1_8.csv",
     };
-    /** Flag set when the JVM version is printed. Used for testing. */
-    private static boolean jvm = false;
+    /** Flag set when the JVM version is printed. Used for testing.
+     * If negative no RMS errors are printed to the console. 
+     * Set to zero to show RMS errors. */
+    private static int jvm = 0;
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -1461,7 +1463,7 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Test the double-precision zeta test function.
+     * Test the precision of the double implementation of the zeta function.
      */
     @ParameterizedTest
     @CsvSource({
@@ -1516,7 +1518,7 @@ class HurwitzZetaTest {
 //        "8, 10, 15, -54, true, 0, true",
     })
     @Disabled("Used to parameterize the zeta function")
-    void testDoublePrecisionZeta(int ln, int un, int m, int b,
+    void testPrecisionDouble(int ln, int un, int m, int b,
         boolean powNp, int tail, boolean epSum)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
@@ -1988,9 +1990,12 @@ class HurwitzZetaTest {
      * @param size Number of measurements
      */
     private static void debugRms(String name, double maxAbsUlp, double rmsUlp, double meanUlp, int size) {
+        if (jvm < 0) {
+            return;
+        }
         // CHECKSTYLE: stop regexp
-        if (!jvm) {
-            jvm = true;
+        if (jvm == 0) {
+            jvm = 1;
             System.out.printf("JDK %s %s%n",
                 System.getProperty("java.vm.vendor"),
                 System.getProperty("java.vm.version")
@@ -1998,6 +2003,7 @@ class HurwitzZetaTest {
         }
         System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d%n",
             name, maxAbsUlp, rmsUlp, meanUlp, size);
+        // CHECKSTYLE: resume regex
     }
 
     /**
