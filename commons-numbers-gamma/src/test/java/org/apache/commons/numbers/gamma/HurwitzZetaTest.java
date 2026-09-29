@@ -31,6 +31,8 @@ import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
+import java.util.stream.DoubleStream;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.core.DDMath;
@@ -1036,13 +1038,6 @@ class HurwitzZetaTest {
         return sum.add(tsum).hi();
     }
 
-    // TODO
-    // Is the current double-double implementation good enough?
-    // How slow is the DD vs BigDecimal (optimised) for odd s.
-    // The BigDecimal can compute the zeta difference accurately.
-    // Simple benchmark of random values with mix of odd and even s
-    // calling each implementation.
-
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
      * when {@code a} is negative. Uses {@link BigDecimal} arithmetic.
@@ -1303,35 +1298,30 @@ class HurwitzZetaTest {
         final long[] expp = {0};
         DD pn = DDMath.pow(xn, -s, expn);
         DD pp = DDMath.pow(xp, -s, expp);
-        // Add the smallest to the largest
+        // Add the smallest to the largest avoiding overflow by re-scaling after the sum
         DD sum;
         final long diff = expp[0] - expn[0];
-        if (Math.abs(diff) > 106) {
-            // Cannot add in DD precision
-            sum = expp[0] > expn[0] ?
+        if (Math.abs(diff) <= 106) {
+            sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
+        } else {
+            // cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106
+            sum = diff > 0 ?
                 pp.scalb((int) expp[0]) :
                 pn.scalb((int) expn[0]);
-        } else {
-            if (diff > 0) {
-                // pp is larger
-                sum = pp.add(pn.scalb((int) -diff)).scalb((int) expp[0]);
-            } else {
-                // pn is equal or larger
-                sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
-            }
-            // Rescale
-            pp = pp.scalb((int) expp[0]);
-            pn = pn.scalb((int) expn[0]);
         }
 
+        // Rescale
+        pp = pp.scalb((int) expp[0]);
+        pn = pn.scalb((int) expn[0]);
+
         // Here the remaining series above and below zero are effectively both zeta
-        // evaluations with zeta(s >= 2, a > 1). This is always < 2.
+        // evaluations with zeta(s >= 2, a > 1). This is always < 2; any individual term x^-s < 1.
         // Exit early if remaining terms cannot be added.
         // The result can be finite even if the terms are infinite. However
         // we do not support further computation from infinite terms so check
         // if anything can be added to these terms.
         final double d = sum.doubleValue();
-        if (Math.max(-pn.hi(), pp.hi()) > 0x1p106) {
+        if (Math.max(Math.abs(pn.hi()), pp.hi()) > 0x1p106) {
             // Limit of double-double arithmetic
             return d;
         }
@@ -1874,8 +1864,10 @@ class HurwitzZetaTest {
 //        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
 //            5, -22.500000000921442, 0.00000148253693746789985363830295586415232, 0);
 
+//      assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x,  y),
+//          1025, -0.5000000000000001, 1.636589053818470245558225638860755674476597603836215605163495852817453E+296, 0);
       assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x,  y),
-          1025, -0.5000000000000001, 1.636589053818470245558225638860755674476597603836215605163495852817453E+296, 0);
+          7, -53.00002375903286, -2.339907519661991E32, 0);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -2279,6 +2271,62 @@ class HurwitzZetaTest {
         System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d  (%.3gms)%n",
             name, maxAbsUlp, rmsUlp, meanUlp, size, nanos * 1e-6);
         // CHECKSTYLE: resume regex
+    }
+
+    /**
+     * Test the speed of the BigDecimal and DD implementations for negative a.
+     * This is an approximate test. Benchmarking should ideally use JMH.
+     *
+     * <p>This uses positive a parameters for convenience.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // negative series
+        "2, 8, 0, 20",
+        "3, 9, 0, 20",
+        // difference of zetas
+        "2, 8, 50, 100",
+        "3, 9, 50, 100",
+    })
+    @Disabled("Used to test extended precision implementations")
+//    2 8  0.0 20.0 : 30000   1528.45 : 326.818  (4.67675x)
+//    3 9  0.0 20.0 : 30000   2493.81 : 200.898  (12.4133x)
+//    2 8  50.0 100.0 : 30000   1535.21 : 491.355  (3.12444x)
+//    3 9  50.0 100.0 : 30000   3657.12 : 507.159  (7.21098x)
+    void testNegativeSpeed(int ls, int us, double la, double ua) {
+        Assertions.assertTrue(ls >= 2);
+        Assertions.assertTrue(us >= ls);
+        Assertions.assertTrue(la >= 0);
+        Assertions.assertTrue(ua >= la);
+        // Create data using odd or even s
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final int range = (us - ls) / 2;
+        final IntSupplier s = range > 1 ? () -> ls + 2 * rng.nextInt(range) : () -> ls;
+        final DoubleSupplier a = createSampler(rng, la, ua, true);
+        final int n = 30000;
+        final int[] x = IntStream.generate(s).limit(n).toArray();
+        final double[] y = DoubleStream.generate(a).limit(n).toArray();
+        double[] r1 = new double[n];
+        long t1 = System.nanoTime();
+        for (int i = 0; i < n; i++) {
+            r1[i] = HurwitzZetaTest.zetaNegativeBD(x[i], -y[i]);
+        }
+        t1 = System.nanoTime() - t1;
+        double[] r2 = new double[n];
+        long t2 = System.nanoTime();
+        for (int i = 0; i < n; i++) {
+            r2[i] = HurwitzZetaTest.zetaNegativeDD(x[i], -y[i]);
+        }
+        t2 = System.nanoTime() - t2;
+        // CHECKSTYLE: stop regexp
+        System.out.printf("%2d %2d  %6s %6s : %d   %.6g : %.6g  (%.6gx)%n",
+            ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6, (double) t1 / t2);
+        // CHECKSTYLE: resume regexp
+        Assertions.assertTrue(t2 < t1);
+        for (int i = 0; i < n; i++) {
+            final int ii = i;
+            TestUtils.assertEquals(r1[i], r2[i], -10, null, () -> String.format("%d %s", x[ii], -y[ii]));
+        }
     }
 
     /**
