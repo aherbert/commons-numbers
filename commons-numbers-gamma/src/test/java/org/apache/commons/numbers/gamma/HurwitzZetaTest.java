@@ -777,12 +777,11 @@ class HurwitzZetaTest {
         // TODO - Can this be fixed?
         // 3.0, -2.4994443912584825 = 52.894
         DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0.7, 0.05),
-        DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 1, 0.05),
-        DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 1, 0.05),
-        // TODO - Must be optimised for double-double precision
-        BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 1, 0.05),
-        BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 1, 0.05),
-        BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 1, 0.05),
+        DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
+        DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
+        BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0, 0),
+        BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
+        BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
         // These are within 0.5 ULP as a double-double but rounding puts them at just over 0.5 ulp
         // May require DD.addAsDouble method with a sticky sum to collect terms.
         BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 1),
@@ -1472,10 +1471,11 @@ class HurwitzZetaTest {
         }
 
         // Sum terms in ascending order of magnitude
+        final BiFunction<DD, Integer, DD> pow = c.getDDPow();
         DD sum = DD.ZERO;
         double x = a;
         while (x < b) {
-            sum = sum.add(DD.of(x).pow(-s));
+            sum = sum.add(pow.apply(DD.of(x), -s));
             x += 1.0;
         }
         return sum.add(bn);
@@ -2289,10 +2289,10 @@ class HurwitzZetaTest {
         "3, 9, 50, 100",
     })
     @Disabled("Used to test extended precision implementations")
-//    2 8  0.0 20.0 : 30000   1528.45 : 326.818  (4.67675x)
-//    3 9  0.0 20.0 : 30000   2493.81 : 200.898  (12.4133x)
-//    2 8  50.0 100.0 : 30000   1535.21 : 491.355  (3.12444x)
-//    3 9  50.0 100.0 : 30000   3657.12 : 507.159  (7.21098x)
+//    2  8     0.0   20.0 : 30000   1569.28 : 312.348  (5.02414x)
+//    3  9     0.0   20.0 : 30000   2584.93 : 259.545  (9.95945x)
+//    2  8    50.0  100.0 : 30000   1604.52 : 500.573  (3.20537x)
+//    3  9    50.0  100.0 : 30000   3805.13 : 518.429  (7.33973x)
     void testNegativeSpeed(int ls, int us, double la, double ua) {
         Assertions.assertTrue(ls >= 2);
         Assertions.assertTrue(us >= ls);
