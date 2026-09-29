@@ -475,7 +475,8 @@ class HurwitzZetaTest {
         public static final Context DOUBLE = Context.of(9, 15);
 
         /** Context for double-double precision using the DD zeta implementation. */
-        public static final Context DOUBLE_DOUBLE = Context.of(15, 30).withEpsilon(0x1p-106);
+        public static final Context DOUBLE_DOUBLE = Context.of(15, 30)
+            .withEpsilon(0x1p-106).withExtendedPrecisionPow(true);
 
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with a 1 digit more than the expected 17 per double.
@@ -772,56 +773,48 @@ class HurwitzZetaTest {
         DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         DD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         // TODO - Can this be fixed?
-        DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 1, 0.05),
+        // 3.0, -2.4994443912584825 = 52.894
+        DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0.7, 0.05),
         DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 1, 0.05),
         DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 1, 0.05),
         // TODO - Must be optimised for double-double precision
         BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 1, 0.05),
         BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 1, 0.05),
         BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 1, 0.05),
-        BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0, 0),
-        DD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DOUBLE_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0, 0),
+        // These are within 0.5 ULP as a double-double but rounding puts them at just over 0.5 ulp
+        // May require DD.addAsDouble method with a sticky sum to collect terms.
+        BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 1),
+        DD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 1),
         ;
 
 //        JDK Temurin 25.492-b09
-//        ZETA_5_15                             max    22.7482   RMS    3.32271   mean        1.28523  n 18000
-//        ZETA_6_15                             max    4.03990   RMS   0.517851   mean    -0.00641581  n 18000
-//        ZETA_7_15                             max    3.19219   RMS   0.515154   mean    -0.00790843  n 18000
-//        ZETA_8_15                             max    3.52850   RMS   0.512206   mean    -0.00776736  n 18000
-//        ZETA_9_15                             max    3.03990   RMS   0.523973   mean    -0.00502301  n 18000
-//        ZETA_10_15                            max    3.80492   RMS   0.515456   mean    -0.00676918  n 18000
-//        ZETA_11_15                            max    3.50083   RMS   0.525740   mean    -0.00333901  n 18000
-//        ZETA_12_15                            max    3.16162   RMS   0.521647   mean    -0.00653556  n 18000
-//        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.609868   mean     0.00407202  n 3000
-//        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.675110   mean     -0.0240288  n 3000
-//        ZETA_S1_4_A32_2147483648              max    1.77377   RMS   0.470439   mean    -0.00772827  n 3000
-//        ZETA_S1_4_A0_1                        max    1.83029   RMS   0.483327   mean     -0.0128829  n 3000
-//        ZETA_S1_4_A0                          max   0.952404   RMS   0.107769   mean    -0.00278978  n 3000
-//        ZETA_S4_32_A1_8                       max    3.05405   RMS   0.529045   mean    -0.00324641  n 3000
-//        ZETA_S2_4_N_A1_7                      max   0.653535   RMS  0.0672688   mean    0.000652193  n 3000
-//        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0658265   mean   -0.000869074  n 3000
-//        ZETA_S2_4_N_A8_33                     max   0.633617   RMS  0.0622978   mean    0.000343235  n 3000
-//        ZETA_S3_5_N_A8_33                     max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.589429   RMS  0.0613828   mean     0.00299001  n 3000
-//        ZETA_S3_5_N_A1_7_HALF_B30             max    6.26561   RMS    1.58252   mean     -0.0695818  n 3000
-//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02735   mean     -0.0130644  n 3000
-//        BD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        BD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        BD_ZETA_ROOT_S3_9_N_A0_100            max    0.00000   RMS    0.00000   mean        0.00000  n 1212
-//        DD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        DD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000
-//        DD_ZETA_ROOT_S3_9_N_A0_100            max   0.638297   RMS  0.0362792   mean   -0.000613956  n 1212
-//        zeta  N=8   M=1   6596
-//        zeta  N=8   M=2   170
-//        zeta  N=8   M=3   133
-//        zeta  N=8   M=4   165
-//        zeta  N=8   M=5   1132
-//        zeta  N=8   M=6   1837
-//        zeta  N=8   M=7   1678
-//        zeta  N=8   M=8   2585
-//        zeta  N=8   M=9   3704
+//        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.609868   mean     0.00407202  n 3000  (251ms)
+//        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.675110   mean     -0.0240288  n 3000  (80.9ms)
+//        ZETA_S1_4_A32_2147483648              max    1.77377   RMS   0.470439   mean    -0.00772827  n 3000  (86.3ms)
+//        ZETA_S1_4_A0_1                        max    1.83029   RMS   0.483327   mean     -0.0128829  n 3000  (71.6ms)
+//        ZETA_S1_4_A0                          max   0.952404   RMS   0.107769   mean    -0.00278978  n 3000  (96.0ms)
+//        ZETA_S4_32_A1_8                       max    3.05405   RMS   0.529045   mean    -0.00324641  n 3000  (44.7ms)
+//        ZETA_S2_4_N_A1_7                      max   0.653535   RMS  0.0672688   mean    0.000652193  n 3000  (123ms)
+//        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0658265   mean   -0.000869074  n 3000  (96.7ms)
+//        ZETA_S2_4_N_A8_33                     max   0.633617   RMS  0.0622978   mean    0.000343235  n 3000  (61.6ms)
+//        ZETA_S3_5_N_A8_33                     max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (41.9ms)
+//        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (36.5ms)
+//        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (31.5ms)
+//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.589429   RMS  0.0613828   mean     0.00299001  n 3000  (29.1ms)
+//        ZETA_S3_5_N_A1_7_HALF_B30             max    6.26561   RMS    1.58252   mean     -0.0695818  n 3000  (46.1ms)
+//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02735   mean     -0.0130644  n 3000  (31.6ms)
+//        BD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (517ms)
+//        BD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (326ms)
+//        DD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (78.7ms)
+//        DD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (49.0ms)
+//        DD_ZETA_ROOT_S3_21_N_A0_100           max   0.638297   RMS  0.0366692   mean    -0.00210659  n  303  (16.8ms)
+//        DD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  206  (18.4ms)
+//        DD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   61  (3.88ms)
+//        BD_ZETA_ROOT_S3_21_N_A0_100           max    0.00000   RMS    0.00000   mean        0.00000  n  303  (94.1ms)
+//        BD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  206  (54.5ms)
+//        BD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   61  (18.6ms)
+//        BD_ZETA_IS                            max    0.00000   RMS    0.00000   mean        0.00000  n 6000  (388ms)
+//        DD_ZETA_IS                            max    0.00000   RMS    0.00000   mean        0.00000  n 6000  (101ms)
 
         /** The function. */
         private final DoubleBinaryOperator fun;
@@ -1074,9 +1067,9 @@ class HurwitzZetaTest {
             // The term 0^-s is infinity
             return Double.POSITIVE_INFINITY;
         }
-        double xn = a - ca;
+        double x = a - ca;
         // Intentional float comparison
-        if (odd && xn == -0.5) {
+        if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result
             return zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null,
                 Context.BD_DOUBLE).doubleValue();
@@ -1093,9 +1086,9 @@ class HurwitzZetaTest {
         // while (Double.isFinite(a.pow(s, mc).subtract(b.pow(s, mc), mc).doubleValue())) { s -= 2; }
         // s = -1067 : diff = 5.62e308
 
-        if (s > 1067) {
+        if (s >= 1067) {
             // Compute dominant term using closest to zero
-            return Math.pow(xn > -0.5 ? xn : 1 + xn, -s);
+            return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
         }
 
         // Odd computation requires twice the precision of a double (17 digits).
@@ -1105,10 +1098,10 @@ class HurwitzZetaTest {
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
         // These are the largest terms and contain most of the error of the function.
-        BigDecimal x = new BigDecimal(xn);
-        BigDecimal xp = BigDecimal.ONE.add(x);
+        BigDecimal xn = new BigDecimal(x);
+        BigDecimal xp = BigDecimal.ONE.add(xn);
         MathContext mc = c.getMathContext();
-        final BigDecimal pn = x.pow(-s, mc);
+        final BigDecimal pn = xn.pow(-s, mc);
         final BigDecimal pp = xp.pow(-s, mc);
 
         // Here the remaining series above and below zero are effectively both zeta
@@ -1124,7 +1117,7 @@ class HurwitzZetaTest {
         // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
 
         // Compute the remaining terms passing in the known values:
-        final BigDecimal sn1 = negativeSeriesSum(a, xn, s, pn, c);
+        final BigDecimal sn1 = negativeSeriesSum(a, x, s, pn, c);
         final BigDecimal sp1 = zeta(s, xp, pp, c);
 
         return sp1.add(sn1, mc).doubleValue();
@@ -1286,11 +1279,19 @@ class HurwitzZetaTest {
             return zeta(s, DD.ONE.subtract(a), null, Context.DOUBLE).doubleValue();
         }
 
-        // Compute dominant term using closest to zero.
-        // Note 0.5^-1024 overflows.
-        double d = Math.pow(x > -0.5 ? x : 1 + x, -s);
-        if (!Double.isFinite(d)) {
-            return d;
+        // Handle cancellation as x -> 0.5
+        // Note: 0.5^-1024 overflows.
+        // Limit of [nextDown(0.5)^-s - nextUp(0.5)^-s] may have terms above 2^1024.
+        // The largest odd s where the difference is finite:
+        // var mc = MathContext.DECIMAL128
+        // var a = new BigDecimal(Math.nextDown(0.5))
+        // var b = new BigDecimal(Math.nextUp(0.5))
+        // var s = -1025
+        // while (Double.isFinite(a.pow(s, mc).subtract(b.pow(s, mc), mc).doubleValue())) { s -= 2; }
+        // s = -1067 : diff = 5.62e308
+        if (s >= 1067) {
+            // Compute dominant term using closest to zero
+            return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
         }
 
         // Compute the two terms either side of zero:
@@ -1302,14 +1303,36 @@ class HurwitzZetaTest {
         final long[] expp = {0};
         DD pn = DDMath.pow(xn, -s, expn);
         DD pp = DDMath.pow(xp, -s, expp);
-        pn = pn.scalb((int) expn[0]);
-        pp = pp.scalb((int) expp[0]);
+        // Add the smallest to the largest
+        DD sum;
+        final long diff = expp[0] - expn[0];
+        if (Math.abs(diff) > 106) {
+            // Cannot add in DD precision
+            sum = expp[0] > expn[0] ?
+                pp.scalb((int) expp[0]) :
+                pn.scalb((int) expn[0]);
+        } else {
+            if (diff > 0) {
+                // pp is larger
+                sum = pp.add(pn.scalb((int) -diff)).scalb((int) expp[0]);
+            } else {
+                // pn is equal or larger
+                sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
+            }
+            // Rescale
+            pp = pp.scalb((int) expp[0]);
+            pn = pn.scalb((int) expn[0]);
+        }
 
         // Here the remaining series above and below zero are effectively both zeta
         // evaluations with zeta(s >= 2, a > 1). This is always < 2.
         // Exit early if remaining terms cannot be added.
-        d = pn.add(pp).doubleValue();
-        if (Math.abs(d) > 0x1p54) {
+        // The result can be finite even if the terms are infinite. However
+        // we do not support further computation from infinite terms so check
+        // if anything can be added to these terms.
+        final double d = sum.doubleValue();
+        if (Math.max(-pn.hi(), pp.hi()) > 0x1p106) {
+            // Limit of double-double arithmetic
             return d;
         }
 
