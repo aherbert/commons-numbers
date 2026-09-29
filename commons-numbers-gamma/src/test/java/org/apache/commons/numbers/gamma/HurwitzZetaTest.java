@@ -76,6 +76,8 @@ class HurwitzZetaTest {
         "hzeta_ia2_11_a1_1.csv",
         "hzeta_ia2_11_a40_41.csv",
     };
+    /** ln(2). */
+    private static final double LN2 = Math.log(2);
     /** Flag set when the JVM version is printed. Used for testing.
      * If negative no RMS errors are printed to the console.
      * Set to zero to show RMS errors. */
@@ -1074,7 +1076,7 @@ class HurwitzZetaTest {
         if (odd && xn == -0.5) {
             // Use extended precision but evaluated with precision for a double result
             return zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null,
-                Context.DOUBLE.withMathContext(new MathContext(20))).doubleValue();
+                Context.BD_DOUBLE).doubleValue();
         }
 
         // Compute dominant term using closest to zero.
@@ -1100,7 +1102,7 @@ class HurwitzZetaTest {
         // evaluations with zeta(s >= 2, a > 1). This is always < 2.
         // Exit early if remaining terms cannot be added.
         d = pn.add(pp, mc).doubleValue();
-        if (Math.abs(d) > 0x1p54) {
+        if (Math.abs(d) > 0x1p106) {
             return d;
         }
 
@@ -2236,17 +2238,28 @@ class HurwitzZetaTest {
 
     /**
      * Find roots of the the zeta function.
-     * This uses positive a parameters for convenience.
+     *
+     * <p>The approximate cancellation of the positive and negative terms is computed
+     * in bits. This does not exceed 55 bits. This sets the limit on double-double
+     * computation as 2 ulp in the double result. This would require exact 106-bit
+     * double-double arguments, which is not possible. The DD zeta function can be
+     * optimised to ~105 bits of precision.
+     *
+     * <p>This uses positive a parameters for convenience.
      */
     @ParameterizedTest
     @CsvSource({
+        // As |a| or s increases the root x -> half-integer.
+        // The cancellation for the next x before and after the root grows
+        // to exceed 106 bits.
         "3, 9, 0, 100",
+        "11, 1023, 0, 10",
         // Require evaluation in matlab
-        // Note the root f(x) gets further from zero as |a| or s increases
-        // and the root x -> half-integer
         "3, 9, 1000, 1100",
+        // Root is always x = half-integer
+        // "3, 9, 1000000, 1000003",
     })
-    @Disabled("Used to generate test data")
+//    @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
         // Validate arguments
         Assertions.assertTrue(ls > 2);
@@ -2255,6 +2268,10 @@ class HurwitzZetaTest {
         Assertions.assertEquals(la, Math.floor(la), "lower a must be an integer");
         Assertions.assertEquals(ua, Math.floor(ua), "upper a must be an integer");
         Assertions.assertEquals(1, ls & 1, "s must be odd");
+        // Maximum cancellation
+        double maxc = 0;
+        // Threshold to include the case in the result
+        final double threshold = 45;
         // Lowest tolerance allowed
         final BrentSolver solver = new BrentSolver(0, 0, 0);
         try (PrintStream out = getPrintStream(
@@ -2263,23 +2280,58 @@ class HurwitzZetaTest {
                 final int ss = s;
                 // Assume the function is optimised for accuracy
                 final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
-                for (double a = la; a <= ua; a += 1) {
-                    // a is integer: bracket -(a, a+1)
-                    double min = -a - 1;
-                    double max = -a;
-                    double x = solver.findRoot(f, Math.nextUp(min), Math.nextDown(max));
+                for (double ta = la; ta <= ua; ta += 1) {
+                    // test a is integer: bracket -(a, a+1)
+                    double min = -ta - 1;
+                    double max = -ta;
+                    double xx = solver.findRoot(f, Math.nextUp(min), Math.nextDown(max));
                     // Check the solver found a bracket
-                    double x0 = Math.nextDown(x);
-                    double x1 = Math.nextUp(x);
+                    double x0 = Math.nextDown(xx);
+                    double x1 = Math.nextUp(xx);
                     double f0 = f.applyAsDouble(x0);
+                    double fx = f.applyAsDouble(xx);
                     double f1 = f.applyAsDouble(x1);
                     Assertions.assertTrue(f0 * f1 <= 0);
-                    out.printf("%s, %s%n", s, x0);
-                    out.printf("%s, %s%n", s, x);
-                    out.printf("%s, %s%n", s, x1);
+                    // Compute the cancellation using sides of the computation:
+                    // x = a - ceil(a) : x in -(1, 0)
+                    // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
+                    // Cancellation is the power of 2 magnitude difference.
+                    double[] args = {x0, xx, x1};
+                    double[] results = {f0, fx, f1};
+                    for (int i = 0; i < 3; i++) {
+                        double a = args[i];
+                        double x = a - Math.ceil(a);
+                        if (x == -0.5) {
+                            // Skip the easy total cancellation result
+                            continue;
+                        }
+                        // Get the terms that cancel
+                        BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, Context.BD);
+                        BigDecimal z2 = negativeSeriesSum(a, x, s,
+                            new BigDecimal(x).pow(-s, Context.BD.getMathContext()), Context.BD);
+                        // Verify the terms are correct
+                        TestUtils.assertEquals(results[i],
+                            z1.add(z2, Context.BD.getMathContext()).doubleValue(), 0, null,
+                            () -> String.format("%d %s %s", ss, a, z1.doubleValue()));
+                        // Compute cancellation
+                        double z = Math.max(z1.doubleValue(), Math.abs(z2.doubleValue()));
+                        // TODO: Division can overflow and create infinite cancellation
+                        // Can this be done using the exponent difference instead.
+                        double cx = Math.log(z / Math.abs(fx)) / LN2;
+                        maxc = Math.max(maxc, cx);
+                        // In order to limit the test data size skip any cancellation
+                        // below a threshold
+                        if (cx > threshold) {
+                            out.printf("# log2(|%.6g/z(s,x)|) : %.3f%n", z, cx);
+                            out.printf("%s, %s%n", s, x0);
+                        }
+                    }
                 }
             }
+            out.printf("# Maximum cancellation (x - ceil(x) != -0.5) : %.3f%n", maxc);
         }
+        // This fails
+        // Assertions.assertTrue(maxc < 106, "Maximum cancellation exceeded 106 bits: " + maxc);
     }
 
     /**
