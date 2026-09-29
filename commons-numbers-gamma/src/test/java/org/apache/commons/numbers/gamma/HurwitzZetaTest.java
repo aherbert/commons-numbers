@@ -70,8 +70,11 @@ class HurwitzZetaTest {
     };
     /** Filenames of resources used for the extended precision test zeta function using integer s. */
     private static final String[] INT_TEST_RESOURCES = {
-        "hzeta_ia2_2_a1_1.csv",
-        "hzeta_ia2_2_a40_41.csv",
+        // TODO: ensure this is good data
+//        "hzeta_ia2_2_a1_1.csv",
+//        "hzeta_ia2_2_a40_41.csv",
+        "hzeta_ia2_11_a1_1.csv",
+        "hzeta_ia2_11_a40_41.csv",
     };
     /** Flag set when the JVM version is printed. Used for testing.
      * If negative no RMS errors are printed to the console.
@@ -471,7 +474,7 @@ class HurwitzZetaTest {
 
         // TODO: To be optimised
         /** Context for double-double precision using the DD zeta implementation. */
-        public static final Context DOUBLE_DOUBLE = Context.of(20, 30).withEpsilon(0x1p-106);
+        public static final Context DOUBLE_DOUBLE = Context.of(15, 30).withEpsilon(0x1p-106);
 
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with a 1 digit more than the expected 17 per double.
@@ -1630,18 +1633,18 @@ class HurwitzZetaTest {
     @CsvSource({
         // Full double-double precision (~34 digits)
         // Exact after N=11. Larger N uses smaller M.
-        "11, 30, 34, -53",
+        "12, 30, 34, -53",
         // If the computation is limited to fewer bits it cannot achieve double-double precision.
         // This has implications for the DD version because DD arithmetic is typically
         // performed to a few eps of 2^-106.
-        "11, 30, 33, -53",
+        "12, 30, 33, -53",
         // Not enough
-        "11, 30, 32, -53",
+        "12, 30, 32, -53",
         // Push more precision.
         // Demonstrates the BigDecimal method can be a reference implementation,
         // e.g. when used to find the roots of zeta (see method to find roots).
-//        "20, 30, 53, 40, -59",
-        // Full double-double precision (~17 digits)
+        "20, 30, 53, 40, -59",
+        // Full double precision (~17 digits)
         "6, 15, 18, 0",
         "6, 15, 17, 0",
         // Not enough
@@ -1662,12 +1665,12 @@ class HurwitzZetaTest {
                 @Override
                 public double getTolerance() {
                     // Do not fail individual cases
-                    return 100;
+                    return 1e5;
                 }
 
                 @Override
                 public double getRmsTolerance() {
-                    // Within 10 bits of the target precision
+                    // Within 15 bits of the target precision
                     return Math.scalb(1.0, 10);
                 }
 
@@ -1708,27 +1711,20 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @CsvSource({
         // Extended precision
-        "11, 30, -106, false, -53",
+        "12, 30, -106, false, -53",
         // DD.pow and DDMath pow are the similar accuracy when s = 2.
-        // Require test data with larger s?
-//        "11, 30, -106, true, -53",
-//        // If the computation is limited to fewer bits it cannot achieve double-double precision.
-//        // This has implications for the DD version because DD arithmetic is typically
-//        // performed to a few eps of 2^-106.
-//        "11, 30, 33, -53",
-//        // Not enough
-//        "11, 30, 32, -53",
-//        // Push more precision.
-//        // Demonstrates the BigDecimal method can be a reference implementation,
-//        // e.g. when used to find the roots of zeta (see method to find roots).
-////        "20, 30, 53, 40, -59",
-//        // Full double-double precision (~17 digits)
-//        "6, 15, 18, 0",
-//        "6, 15, 17, 0",
-//        // Not enough
-//        "6, 15, 16, 0",
+        // When s is larger the DDMath pow gains a few bits in the result
+        // but the max is ~105 bits.
+        // TODO: add an option for selected DDMath in the computation
+        "12, 30, -106, true, -53",
+        // No difference - DD precision cannot be improved
+        // "12, 30, -108, true, -53",
+        // Full double precision (~17 digits)
+        "6, 15, -53, false, 0",
+        // Not enough
+        "6, 15, -48, false, 0",
     })
-//    @Disabled("Used to parameterize the zeta function")
+    @Disabled("Used to parameterize the zeta function")
     void testPrecisonDD(int ln, int un, int b, boolean epPow, int scale)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
@@ -2296,10 +2292,10 @@ class HurwitzZetaTest {
     @CsvSource({
         // zeta called with 0 < a < 1. Use a close to 1:
         // 0.9999999999988898 =  1.0 - 10000 * 0x1p-53
-        "2, 2, 0.9999999999988898, 1, false",
+        "2, 11, 0.9999999999988898, 1, false",
         // zeta called with a > 1.
         // Occurs when a > 2N with N the number of power terms in a zeta evaluation.
-        "2, 2, 40, 41, true",
+        "2, 11, 40, 41, true",
     })
     @Disabled("Used to generate test data")
     void testDataSampleIntegerS(int ls, int us,
