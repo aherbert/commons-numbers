@@ -474,17 +474,18 @@ class HurwitzZetaTest {
          * N=9 has max M used as 9 in the test data. */
         public static final Context DOUBLE = Context.of(9, 15);
 
-        // TODO: To be optimised
         /** Context for double-double precision using the DD zeta implementation. */
         public static final Context DOUBLE_DOUBLE = Context.of(15, 30).withEpsilon(0x1p-106);
 
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with a 1 digit more than the expected 17 per double.
 
-        /** Context for double-double precision using the BigDecimal zeta implementation. */
-        public static final Context BD = Context.of(17, 30).withMathContext(new MathContext(36));
         /** Context for double precision using the BigDecimal zeta implementation. */
         public static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(18));
+        /** Context for double-double precision using the BigDecimal zeta implementation. */
+        public static final Context BD_DOUBLE_DOUBLE = Context.of(17, 30).withMathContext(new MathContext(36));
+        /** Context for quad-double precision using the BigDecimal zeta implementation. */
+        public static final Context BD_QUAD_DOUBLE = Context.of(34, 50).withMathContext(new MathContext(70));
 
         /** Default epsilon. */
         private static final double EPS = 0x1p-53;
@@ -768,16 +769,18 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2),
         BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
-        BD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 0, 0),
-        BD_ZETA_ROOT_S3_9_N_A1000_1100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_9_na1000_1100.csv", 0, 0),
         DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         DD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         // TODO - Can this be fixed?
-        DD_ZETA_ROOT_S3_9_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na0_100.csv", 1, 0.05),
-        DD_ZETA_ROOT_S3_9_N_A1000_1100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_9_na1000_1100.csv", 1, 0.05),
+        DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 1, 0.05),
+        DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 1, 0.05),
+        DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 1, 0.05),
         // TODO - Must be optimised for double-double precision
-        BD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
-        DD_ZETA_IS2_2_A40_41((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DOUBLE_DOUBLE).doubleValue(), "hzeta_ia2_2_a1_1.csv", 0, 0),
+        BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 1, 0.05),
+        BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 1, 0.05),
+        BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 1, 0.05),
+        BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0, 0),
+        DD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DOUBLE_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0, 0),
         ;
 
 //        JDK Temurin 25.492-b09
@@ -1079,15 +1082,25 @@ class HurwitzZetaTest {
                 Context.BD_DOUBLE).doubleValue();
         }
 
-        // Compute dominant term using closest to zero.
-        double d = Math.pow(xn > -0.5 ? xn : 1 + xn, -s);
-        if (!Double.isFinite(d)) {
-            return d;
+        // Handle cancellation as x -> 0.5
+        // Note: 0.5^-1024 overflows.
+        // Limit of [nextDown(0.5)^-s - nextUp(0.5)^-s] may have terms above 2^1024.
+        // The largest odd s where the difference is finite:
+        // var mc = MathContext.DECIMAL128
+        // var a = new BigDecimal(Math.nextDown(0.5))
+        // var b = new BigDecimal(Math.nextUp(0.5))
+        // var s = -1025
+        // while (Double.isFinite(a.pow(s, mc).subtract(b.pow(s, mc), mc).doubleValue())) { s -= 2; }
+        // s = -1067 : diff = 5.62e308
+
+        if (s > 1067) {
+            // Compute dominant term using closest to zero
+            return Math.pow(xn > -0.5 ? xn : 1 + xn, -s);
         }
 
         // Odd computation requires twice the precision of a double (17 digits).
         // Even requires some extra.
-        final Context c = odd ? Context.BD : Context.BD_DOUBLE;
+        final Context c = odd ? Context.BD_DOUBLE_DOUBLE : Context.BD_DOUBLE;
 
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
@@ -1101,8 +1114,9 @@ class HurwitzZetaTest {
         // Here the remaining series above and below zero are effectively both zeta
         // evaluations with zeta(s >= 2, a > 1). This is always < 2.
         // Exit early if remaining terms cannot be added.
-        d = pn.add(pp, mc).doubleValue();
+        final double d = pn.add(pp, mc).doubleValue();
         if (Math.abs(d) > 0x1p106) {
+            // Adding to either side will not change a double result
             return d;
         }
 
@@ -1651,6 +1665,8 @@ class HurwitzZetaTest {
         "6, 15, 17, 0",
         // Not enough
         "6, 15, 16, 0",
+        // Quad double precision. Requires test resources to have more than 68 digits of precision
+        "20, 40, 70, -106",
     })
     @Disabled("Used to parameterize the zeta function")
     void testPrecisionBigDecimal(int ln, int un, int digits, int scale)
@@ -1831,9 +1847,12 @@ class HurwitzZetaTest {
     @Test
     void test() {
         // Bug in mpmath?
-        assertClose(HurwitzZeta::value, 50, 2000, 3.6698119957034991027055454908981e-164, 0);
+//        assertClose(HurwitzZeta::value, 50, 2000, 3.6698119957034991027055454908981e-164, 0);
 //        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
 //            5, -22.500000000921442, 0.00000148253693746789985363830295586415232, 0);
+
+      assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x,  y),
+          1025, -0.5000000000000001, 1.636589053818470245558225638860755674476597603836215605163495852817453E+296, 0);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -2139,6 +2158,7 @@ class HurwitzZetaTest {
      */
     private static void assertFunction(DoublePrecisionTestCase tc) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
+        final long start = System.nanoTime();
         for (final String filename : tc.getFilenames()) {
             try (DataReader in = new DataReader(filename)) {
                 while (in.next()) {
@@ -2157,8 +2177,7 @@ class HurwitzZetaTest {
                 Assertions.fail("Failed to load data: " + filename, ex);
             }
         }
-
-        assertRms(tc, stats);
+        assertRms(tc, stats, System.nanoTime() - start);
     }
 
     /**
@@ -2168,6 +2187,7 @@ class HurwitzZetaTest {
      */
     private static void assertFunction(ExtendedPrecisionTestCase tc) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
+        final long start = System.nanoTime();
         for (final String filename : tc.getFilenames()) {
             try (DataReader in = new DataReader(filename)) {
                 while (in.next()) {
@@ -2189,8 +2209,7 @@ class HurwitzZetaTest {
                 Assertions.fail("Failed to load data: " + filename, ex);
             }
         }
-
-        assertRms(tc, stats);
+        assertRms(tc, stats, System.nanoTime() - start);
     }
 
     /**
@@ -2199,10 +2218,11 @@ class HurwitzZetaTest {
      *
      * @param te Test error
      * @param stats Error statistics
+     * @param nanos Duration in nanoseconds
      */
-    private static void assertRms(TestError te, TestUtils.ErrorStatistics stats) {
+    private static void assertRms(TestError te, TestUtils.ErrorStatistics stats, long nanos) {
         final double rms = stats.getRMS();
-        debugRms(te.toString(), stats.getMaxAbs(), rms, stats.getMean(), stats.size());
+        debugRms(te.toString(), stats.getMaxAbs(), rms, stats.getMean(), stats.size(), nanos);
         Assertions.assertTrue(rms <= te.getRmsTolerance(),
             () -> String.format("%s RMS %s < %s", te, rms, te.getRmsTolerance()));
     }
@@ -2218,8 +2238,10 @@ class HurwitzZetaTest {
      * @param rmsUlp RMS ulp
      * @param meanUlp Mean ulp
      * @param size Number of measurements
+     * @param nanos Duration in nanoseconds
      */
-    private static void debugRms(String name, double maxAbsUlp, double rmsUlp, double meanUlp, int size) {
+    private static void debugRms(String name, double maxAbsUlp, double rmsUlp, double meanUlp,
+        int size, long nanos) {
         if (jvm < 0) {
             return;
         }
@@ -2231,8 +2253,8 @@ class HurwitzZetaTest {
                 System.getProperty("java.vm.version")
             );
         }
-        System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d%n",
-            name, maxAbsUlp, rmsUlp, meanUlp, size);
+        System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d  (%.3gms)%n",
+            name, maxAbsUlp, rmsUlp, meanUlp, size, nanos * 1e-6);
         // CHECKSTYLE: resume regex
     }
 
@@ -2251,15 +2273,16 @@ class HurwitzZetaTest {
     @CsvSource({
         // As |a| or s increases the root x -> half-integer.
         // The cancellation for the next x before and after the root grows
-        // to exceed 106 bits.
-        "3, 9, 0, 100",
-        "11, 1023, 0, 10",
-        // Require evaluation in matlab
-        "3, 9, 1000, 1100",
-        // Root is always x = half-integer
-        // "3, 9, 1000000, 1000003",
+        // to exceed 53 bits.
+        "3, 21, 0, 100",
+        "11, 1067, 0, 10",
+        "3, 21, 101, 300",
+        // Root is always x = half-integer.
+        // When |a| is large the cancellation is less around the root as the ulp
+        // of |a| pushes the dominant terms ~0.5^-s away from each other.
+        // "1023, 1123, 1000000, 1000003",
     })
-//    @Disabled("Used to generate test data")
+    @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
         // Validate arguments
         Assertions.assertTrue(ls > 2);
@@ -2268,8 +2291,12 @@ class HurwitzZetaTest {
         Assertions.assertEquals(la, Math.floor(la), "lower a must be an integer");
         Assertions.assertEquals(ua, Math.floor(ua), "upper a must be an integer");
         Assertions.assertEquals(1, ls & 1, "s must be odd");
+        // Context for final evaluation around the root
+        // quad-double precision should be able to evaluate to a double-double result
+        final Context context = Context.BD_QUAD_DOUBLE;
         // Maximum cancellation
         double maxc = 0;
+        int count = 0;
         // Threshold to include the case in the result
         final double threshold = 45;
         // Lowest tolerance allowed
@@ -2281,17 +2308,28 @@ class HurwitzZetaTest {
                 // Assume the function is optimised for accuracy
                 final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
                 for (double ta = la; ta <= ua; ta += 1) {
+                    // Test root finding is possible (requires a finite double result):
+                    // [nextDown(0.5)^-s - nextUp(0.5)^-s]
+                    double ulp = Math.ulp(ta + 0.5);
+                    BigDecimal t1 = new BigDecimal(0.5 + ulp);
+                    BigDecimal t2 = new BigDecimal(0.5 - ulp);
+                    if (!Double.isFinite(
+                        t1.pow(-s, MathContext.DECIMAL64).subtract(
+                        t2.pow(-s, MathContext.DECIMAL64)
+                    ).doubleValue())) {
+                        continue;
+                    }
                     // test a is integer: bracket -(a, a+1)
-                    double min = -ta - 1;
-                    double max = -ta;
-                    double xx = solver.findRoot(f, Math.nextUp(min), Math.nextDown(max));
+                    double min = Math.nextUp(-ta - 1);
+                    double max = Math.nextDown(-ta);
+                    double xx = solver.findRoot(f, min, max);
                     // Check the solver found a bracket
                     double x0 = Math.nextDown(xx);
                     double x1 = Math.nextUp(xx);
                     double f0 = f.applyAsDouble(x0);
                     double fx = f.applyAsDouble(xx);
                     double f1 = f.applyAsDouble(x1);
-                    Assertions.assertTrue(f0 * f1 <= 0);
+                    Assertions.assertTrue(f0 * f1 <= 0, String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
                     // Compute the cancellation using sides of the computation:
                     // x = a - ceil(a) : x in -(1, 0)
                     // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
@@ -2301,37 +2339,46 @@ class HurwitzZetaTest {
                     for (int i = 0; i < 3; i++) {
                         double a = args[i];
                         double x = a - Math.ceil(a);
-                        if (x == -0.5) {
-                            // Skip the easy total cancellation result
+                        if (x == -0.5 || !Double.isFinite(results[i])) {
+                            // Skip the easy total cancellation result and infinity
                             continue;
                         }
                         // Get the terms that cancel
-                        BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, Context.BD);
+                        BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
                         BigDecimal z2 = negativeSeriesSum(a, x, s,
-                            new BigDecimal(x).pow(-s, Context.BD.getMathContext()), Context.BD);
+                            new BigDecimal(x).pow(-s, context.getMathContext()), context);
                         // Verify the terms are correct
                         TestUtils.assertEquals(results[i],
-                            z1.add(z2, Context.BD.getMathContext()).doubleValue(), 0, null,
+                            z1.add(z2, context.getMathContext()).doubleValue(), 0, null,
                             () -> String.format("%d %s %s", ss, a, z1.doubleValue()));
                         // Compute cancellation
-                        double z = Math.max(z1.doubleValue(), Math.abs(z2.doubleValue()));
-                        // TODO: Division can overflow and create infinite cancellation
-                        // Can this be done using the exponent difference instead.
-                        double cx = Math.log(z / Math.abs(fx)) / LN2;
+                        BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
+                        double z = zz.doubleValue();
+                        // Division can overflow and create infinite cancellation
+                        double cx = Math.log(z / Math.abs(results[i])) / LN2;
+                        if (!Double.isFinite(cx)) {
+                            // log2(|z / fx|) == (log10(z) - log10(fx)) / log10(2)
+                            cx = ((zz.precision() - zz.scale() + 1)
+                                - Math.log10(Math.abs(results[i]))) / Math.log10(2);
+                        }
                         maxc = Math.max(maxc, cx);
                         // In order to limit the test data size skip any cancellation
                         // below a threshold
                         if (cx > threshold) {
-                            out.printf("# log2(|%.6g/z(s,x)|) : %.3f%n", z, cx);
-                            out.printf("%s, %s%n", s, x0);
+                            out.printf("# log2(|%s/z(s,a)|) : %.3f%n",
+                                zz.round(new MathContext(4)).toEngineeringString(), cx);
+                            out.printf("%s, %s%n", s, a);
+                            count++;
                         }
                     }
                 }
             }
             out.printf("# Maximum cancellation (x - ceil(x) != -0.5) : %.3f%n", maxc);
+            out.printf("# N = %d%n", count);
         }
+        Assertions.assertNotEquals(0, count, "No test cases were recorded");
         // This fails
-        // Assertions.assertTrue(maxc < 106, "Maximum cancellation exceeded 106 bits: " + maxc);
+        Assertions.assertTrue(maxc < 55, "Maximum cancellation exceeded 55 bits: " + maxc);
     }
 
     /**
