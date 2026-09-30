@@ -1110,6 +1110,9 @@ class HurwitzZetaTest {
         // x = a - ceil(a) : x in -(1, 0)
         // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
 
+        // TODO - move negativeSeriesSum here.
+        // Add 3 terms in magnitude order
+
         // Compute the remaining terms passing in the known values:
         final BigDecimal sn1 = negativeSeriesSum(a, x, s, pn, c);
         final BigDecimal sp1 = zeta(s, xp, pp, c);
@@ -1219,7 +1222,7 @@ class HurwitzZetaTest {
             // Note: The difference incurs cancellation.
             // This should not be an issue as function is called with b in -(1, 0)
             // and the series is strongly converging, e.g.
-            // zeta(2, 0.5)  = 1.6449
+            // zeta(2, 1)  = 1.6449
             // zeta(2, 31.5) = 0.03225
             // Significant cancellation (leading digits the same) is not possible.
             // Take care to change the sign of a provided result for the zeta method.
@@ -1399,9 +1402,9 @@ class HurwitzZetaTest {
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
         // When s is large the loop exits before the rising factorial overflows.
-        // Max expected s is < 1024. This overflows at k=51:
-        // pochammer(1024, 101) = 1.30e+306
-        // pochammer(1024, 102) = 1.46e+309
+        // Max expected s is <= 1065. This overflows after k=51:
+        // pochammer(1065, 101) = 5.75e+307
+        // pochammer(1065, 102) = 6.71e+310
 
         // Rising factorial term : (s)_{2k-1}
         DD f = DD.of(s);
@@ -2422,7 +2425,11 @@ class HurwitzZetaTest {
                         TestUtils.assertEquals(results[i],
                             z1.add(z2, context.getMathContext()).doubleValue(), 0, null,
                             () -> String.format("%d %s %s", ss, a, z1.doubleValue()));
-                        // Compute cancellation
+                        // Compute cancellation:
+                        // r = x - y
+                        // max(exponent(x), exponent(y)) - exponent(r)
+                        // floor(log2(max(|x|, |y|))) - floor(log2(r)) ~ log2(max(|x|, |y|) / r)
+                        // TODO - add explicit and approx.
                         BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
                         double z = zz.doubleValue();
                         // Division can overflow and create infinite cancellation
