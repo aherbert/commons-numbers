@@ -80,10 +80,9 @@ class HurwitzZetaTest {
     };
     /** ln(2). */
     private static final double LN2 = Math.log(2);
-    /** Flag set when the JVM version is printed. Used for testing.
-     * If negative no RMS errors are printed to the console.
-     * Set to zero to show RMS errors. */
-    private static int jvm = 0;
+    /** Flag set when reporting to the console. Used for testing.
+     * If negative no output is printed. */
+    private static int reporting = 0;
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -995,7 +994,7 @@ class HurwitzZetaTest {
         // Alternative implementations for (a+n)^-(2k-1+s).
         // Set using the first two bits of the tail option.
         double apn = 0;
-        int powerTermOption = c.getTailOption() & 0x3;
+        final int powerTermOption = c.getTailOption() & 0x3;
         if (powerTermOption == 0) {
             // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
             // Divide by (a+n)^2 using multiplication
@@ -1067,7 +1066,7 @@ class HurwitzZetaTest {
             // The term 0^-s is infinity
             return Double.POSITIVE_INFINITY;
         }
-        double x = a - ca;
+        final double x = a - ca;
         // Intentional float comparison
         if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result
@@ -1098,9 +1097,9 @@ class HurwitzZetaTest {
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
         // These are the largest terms and contain most of the error of the function.
-        BigDecimal xn = new BigDecimal(x);
-        BigDecimal xp = BigDecimal.ONE.add(xn);
-        MathContext mc = c.getMathContext();
+        final BigDecimal xn = new BigDecimal(x);
+        final BigDecimal xp = BigDecimal.ONE.add(xn);
+        final MathContext mc = c.getMathContext();
         final BigDecimal pn = xn.pow(-s, mc);
         final BigDecimal pp = xp.pow(-s, mc);
 
@@ -1155,13 +1154,13 @@ class HurwitzZetaTest {
         // as all results have the same precision: base 10 exponent = precision - scale - 1
         // Smaller scale is a bigger value.
         if (za.scale() < z.scale()) {
-            BigDecimal tmp = za;
+            final BigDecimal tmp = za;
             za = z;
             z = tmp;
         }
         // za < z
         if (zb.scale() < z.scale()) {
-            BigDecimal tmp = zb;
+            final BigDecimal tmp = zb;
             zb = z;
             z = tmp;
         }
@@ -1220,7 +1219,7 @@ class HurwitzZetaTest {
         // Sum until terms will not impact the result.
         BigDecimal tsum = BigDecimal.ZERO;
         // Used to divide by (a+n)^2
-        BigDecimal apn2 = apn.pow(-2, mc);
+        final BigDecimal apn2 = apn.pow(-2, mc);
         final int stop = sum.scale() + mc.getPrecision();
         int i;
         for (i = 0; i < c.getM(); i++) {
@@ -1322,7 +1321,7 @@ class HurwitzZetaTest {
             // The term 0^-s is infinity
             return Double.POSITIVE_INFINITY;
         }
-        double x = a - ca;
+        final double x = a - ca;
         // Intentional float comparison
         if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result
@@ -1348,8 +1347,8 @@ class HurwitzZetaTest {
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
         // These are the largest terms and contain most of the error of the function.
-        DD xn = DD.of(x);
-        DD xp = DD.ONE.add(x);
+        final DD xn = DD.of(x);
+        final DD xp = DD.ONE.add(x);
         final long[] expn = {0};
         final long[] expp = {0};
         DD pn = DDMath.pow(xn, -s, expn);
@@ -1363,7 +1362,7 @@ class HurwitzZetaTest {
                 pn.scalb((int) expn[0]).hi();
         }
         // Add the smallest to the largest avoiding overflow by re-scaling after the sum
-        DD sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
+        final DD sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
 
         // Rescale terms
         pp = pp.scalb((int) expp[0]);
@@ -1433,13 +1432,13 @@ class HurwitzZetaTest {
 
         // Sum in magnitude order. Here z is positive.
         if (Math.abs(za.hi()) > z.hi()) {
-            DD tmp = za;
+            final DD tmp = za;
             za = z;
             z = tmp;
         }
         // za < z
         if (Math.abs(zb.hi()) > Math.abs(z.hi())) {
-            DD tmp = zb;
+            final DD tmp = zb;
             zb = z;
             z = tmp;
         }
@@ -1511,7 +1510,7 @@ class HurwitzZetaTest {
         // Sum until terms will not impact the result.
         DD tsum = DD.ZERO;
         // Used to divide by (a+n)^2
-        DD apn2 = pow.apply(apn, -2);
+        final DD apn2 = pow.apply(apn, -2);
         final double stop = sum.hi() * c.getEps();
         int i;
         for (i = 0; i < c.getM(); i++) {
@@ -1560,7 +1559,7 @@ class HurwitzZetaTest {
         final Context c = Context.DOUBLE;
         final DoubleTernaryOperator pow = c.getPowNp();
 
-        double x = a - ca;
+        final double x = a - ca;
         // Intentional float comparison
         if (odd && x == -0.5) {
             return zeta(s, 1 - a, pow.applyAsDouble(1, -a, -s), c);
@@ -1635,13 +1634,13 @@ class HurwitzZetaTest {
 
         // Sum in magnitude order. Here z is positive.
         if (Math.abs(za) < z) {
-            double tmp = za;
+            final double tmp = za;
             za = z;
             z = tmp;
         }
         // za < z
         if (Math.abs(zb) < Math.abs(z)) {
-            double tmp = zb;
+            final double tmp = zb;
             zb = z;
             z = tmp;
         }
@@ -2437,14 +2436,15 @@ class HurwitzZetaTest {
      * Check if reporting to stdout. Prints the JDK version on first return of true.
      *
      * @return true if reporting
+     * @see #reporting
      */
     private static boolean doReporting() {
-        if (jvm < 0) {
+        if (reporting < 0) {
             return false;
         }
         // CHECKSTYLE: stop regexp
-        if (jvm == 0) {
-            jvm = 1;
+        if (reporting == 0) {
+            reporting = 1;
             System.out.printf("JDK %s %s%n",
                 System.getProperty("java.vm.vendor"),
                 System.getProperty("java.vm.version")
@@ -2489,21 +2489,21 @@ class HurwitzZetaTest {
         final int[] x = IntStream.generate(s).limit(n).toArray();
         final double[] y = DoubleStream.generate(a).limit(n).toArray();
 
-        double[] r1 = new double[n];
+        final double[] r1 = new double[n];
         long t1 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             r1[i] = HurwitzZetaTest.zetaNegativeBD(x[i], -y[i]);
         }
         t1 = System.nanoTime() - t1;
 
-        double[] r2 = new double[n];
+        final double[] r2 = new double[n];
         long t2 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             r2[i] = HurwitzZetaTest.zetaNegativeDD(x[i], -y[i]);
         }
         t2 = System.nanoTime() - t2;
 
-        double[] r3 = new double[n];
+        final double[] r3 = new double[n];
         long t3 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             r3[i] = HurwitzZetaTest.zetaNegative(x[i], -y[i]);
@@ -2582,9 +2582,9 @@ class HurwitzZetaTest {
                 for (double ta = la; ta <= ua; ta += 1) {
                     // Test root finding is possible (requires a finite double result):
                     // [nextDown(0.5)^-s - nextUp(0.5)^-s]
-                    double ulp = Math.ulp(ta + 0.5);
-                    BigDecimal t1 = new BigDecimal(0.5 + ulp);
-                    BigDecimal t2 = new BigDecimal(0.5 - ulp);
+                    final double ulp = Math.ulp(ta + 0.5);
+                    final BigDecimal t1 = new BigDecimal(0.5 + ulp);
+                    final BigDecimal t2 = new BigDecimal(0.5 - ulp);
                     if (!Double.isFinite(
                         t1.pow(-s, MathContext.DECIMAL64).subtract(
                         t2.pow(-s, MathContext.DECIMAL64)
@@ -2592,32 +2592,32 @@ class HurwitzZetaTest {
                         continue;
                     }
                     // test a is integer: bracket -(a, a+1)
-                    double min = Math.nextUp(-ta - 1);
-                    double max = Math.nextDown(-ta);
-                    double xx = solver.findRoot(f, min, max);
+                    final double min = Math.nextUp(-ta - 1);
+                    final double max = Math.nextDown(-ta);
+                    final double xx = solver.findRoot(f, min, max);
                     // Check the solver found a bracket
-                    double x0 = Math.nextDown(xx);
-                    double x1 = Math.nextUp(xx);
-                    double f0 = f.applyAsDouble(x0);
-                    double fx = f.applyAsDouble(xx);
-                    double f1 = f.applyAsDouble(x1);
+                    final double x0 = Math.nextDown(xx);
+                    final double x1 = Math.nextUp(xx);
+                    final double f0 = f.applyAsDouble(x0);
+                    final double fx = f.applyAsDouble(xx);
+                    final double f1 = f.applyAsDouble(x1);
                     Assertions.assertTrue(f0 * f1 <= 0, String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
                     // Compute the cancellation using sides of the computation:
                     // x = a - ceil(a) : x in -(1, 0)
                     // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
                     // Cancellation is the power of 2 magnitude difference.
-                    double[] args = {x0, xx, x1};
-                    double[] results = {f0, fx, f1};
+                    final double[] args = {x0, xx, x1};
+                    final double[] results = {f0, fx, f1};
                     for (int i = 0; i < 3; i++) {
-                        double a = args[i];
-                        double x = a - Math.ceil(a);
+                        final double a = args[i];
+                        final double x = a - Math.ceil(a);
                         if (x == -0.5 || !Double.isFinite(results[i])) {
                             // Skip the easy total cancellation result and infinity
                             continue;
                         }
                         // Get the terms that cancel
-                        BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
-                        BigDecimal z2 = negativeSeriesSum(a, x, s,
+                        final BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
+                        final BigDecimal z2 = negativeSeriesSum(a, x, s,
                             new BigDecimal(x).pow(-s, context.getMathContext()), context);
                         // Verify the terms are correct
                         TestUtils.assertEquals(results[i],
@@ -2626,8 +2626,8 @@ class HurwitzZetaTest {
                         // Cancellation is the number of matching leading bits:
                         // r = x - y
                         // max(exponent(x), exponent(y)) - exponent(r)
-                        BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
-                        double z = zz.doubleValue();
+                        final BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
+                        final double z = zz.doubleValue();
                         double lz;
                         if (Double.isFinite(z)) {
                             lz = Math.getExponent(z);
@@ -2640,8 +2640,8 @@ class HurwitzZetaTest {
                         }
                         // If result is 0 the exponent is -1023. The cancellation is total and
                         // computed as the number of binary digits in z with trailing zeros.
-                        double lr = Math.getExponent(results[i]);
-                        double cx = lz - lr;
+                        final double lr = Math.getExponent(results[i]);
+                        final double cx = lz - lr;
                         maxc = Math.max(maxc, cx);
                         // In order to limit the test data size skip any cancellation
                         // below a threshold
