@@ -1279,13 +1279,14 @@ class HurwitzZetaTest {
         // Handle cancellation as x -> 0.5
         // Note: 0.5^-1024 overflows.
         // Limit of [nextDown(0.5)^-s - nextUp(0.5)^-s] may have terms above 2^1024.
+        // 0.5 +/- 2^-54 (requires extended precision as ulp(0.5) is 2^-53)
         // The largest odd s where the difference is finite:
         // var mc = MathContext.DECIMAL128
         // var a = new BigDecimal(Math.nextDown(0.5))
-        // var b = new BigDecimal(Math.nextUp(0.5))
+        // var b = BigDecimal.ONE.subtract(a)
         // var s = -1025
         // while (Double.isFinite(a.pow(s, mc).subtract(b.pow(s, mc), mc).doubleValue())) { s -= 2; }
-        // s = -1067 : diff = 5.62e308
+        // s = -1067 : diff = 3.75e308
         if (s >= 1067) {
             // Compute dominant term using closest to zero
             return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
