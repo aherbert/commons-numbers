@@ -78,8 +78,6 @@ class HurwitzZetaTest {
         "hzeta_ia2_11_a1_1.csv",
         "hzeta_ia2_11_a40_41.csv",
     };
-    /** ln(2). */
-    private static final double LN2 = Math.log(2);
     /** Flag set when reporting to the console. Used for testing.
      * If negative no output is printed. */
     private static int reporting = 0;
