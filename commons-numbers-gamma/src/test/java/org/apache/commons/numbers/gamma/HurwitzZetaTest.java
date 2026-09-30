@@ -2605,10 +2605,10 @@ class HurwitzZetaTest {
     })
     @Disabled("Used to test extended precision implementations")
 //    JDK Eclipse Adoptium 21.0.11+10-LTS
-//    2  8     0.0   20.0 : 30000   994.717 : 173.842  (5.72195x) : 33.9590  (29.2917x)
-//    3  9     0.0   20.0 : 30000   1981.83 : 176.531  (11.2265x) : 30.3865  (65.2206x)
-//    2  8    50.0  100.0 : 30000   1619.22 : 318.332  (5.08659x) : 56.4383  (28.6902x)
-//    3  9    50.0  100.0 : 30000   4198.19 : 348.914  (12.0322x) : 52.2353  (80.3709x)
+//    2  8     0.0   20.0 : 30000   1036.85 : 75.6973  (13.6973x) : 55.9317  (18.5378x : 1.35339x )
+//    3  9     0.0   20.0 : 30000   2000.56 : 190.261  (10.5148x) : 44.5924  (44.8633x : 4.26666x )
+//    2  8    50.0  100.0 : 30000   1685.03 : 86.3629  (19.5110x) : 81.6606  (20.6345x : 1.05758x )
+//    3  9    50.0  100.0 : 30000   4128.84 : 389.462  (10.6014x) : 64.4535  (64.0592x : 6.04253x )
     void testNegativeSpeed(int ls, int us, double la, double ua) {
         Assertions.assertTrue(ls >= 2);
         Assertions.assertTrue(us >= ls);
@@ -2640,7 +2640,9 @@ class HurwitzZetaTest {
         final double[] r3 = new double[n];
         long t3 = System.nanoTime();
         for (int i = 0; i < n; i++) {
-            r3[i] = HurwitzZetaTest.zetaNegative(x[i], -y[i], false);
+            // Use the mode which will have a few bits correct.
+            // The standard double method can have complete cancellation.
+            r3[i] = HurwitzZetaTest.zetaNegative(x[i], -y[i], true);
         }
         t3 = System.nanoTime() - t3;
 
@@ -2655,8 +2657,9 @@ class HurwitzZetaTest {
 
         if (doReporting()) {
             // CHECKSTYLE: stop regexp
-            System.out.printf("%2d %2d  %6s %6s : %d   %.6g : %.6g  (%.6gx) : %.6g  (%.6gx)%n",
-                ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6, (double) t1 / t2, t3 * 1e-6, (double) t1 / t3);
+            System.out.printf("%2d %2d  %6s %6s : %d   %.6g : %.6g  (%.6gx) : %.6g  (%.6gx : %.6gx)%n",
+                ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6,
+                (double) t1 / t2, t3 * 1e-6, (double) t1 / t3, (double) t2 / t3);
             // CHECKSTYLE: resume regexp
         }
     }
