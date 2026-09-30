@@ -761,16 +761,18 @@ class HurwitzZetaTest {
         DD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DD_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 0.1),
 
         // No cancellation - all implementations work
-        DOUBLE_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 1.5, 0.5),
-        DOUBLE_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 2.0, 0.5),
+        DOUBLE_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 1.5, 0.5),
+        DOUBLE_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 2.0, 0.5),
         // These use a context to evaluation to double precision
         BD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
         BD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
         DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
         DD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
 
-        // Double arithmetic is max error ~24-bits when cancellation is expected
-        DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p24, 0x1p20),
+        // Double arithmetic is max error ~23-bits when cancellation is expected
+        DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p23, 0x1p20),
+        // Computing the largest terms in extended precision error improves 6 bits
+        DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p17, 0x1p13),
 
         // Extended precision implementations
         BD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
@@ -779,8 +781,10 @@ class HurwitzZetaTest {
         DD_ZETA_S3_5_N_A40_99_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
 
         // Roots are the point of maximum cancellation
-        // Double arithmetic has only a few bits of precision on average.
-        DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0x1p55, 0x1p50),
+        // Double arithmetic has only a few bits of precision on average; and may have no bits correct
+        DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_root_s3_21_na0_100.csv", 0x1p55, 0x1p50),
+        // Computing the largest terms in extended precision allows a few bits of precision
+        DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na0_100.csv", 0x1p48, 0x1p44),
 
         BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0, 0),
         BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
@@ -1200,7 +1204,7 @@ class HurwitzZetaTest {
             z = tmp;
         }
         // za,zb < z
-        return zb.add(za, mc).add(z, mc).doubleValue();
+        return za.add(zb, mc).add(z, mc).doubleValue();
     }
 
     /**
@@ -1478,7 +1482,7 @@ class HurwitzZetaTest {
             z = tmp;
         }
         // za,zb < z
-        return zb.add(za).add(z).doubleValue();
+        return za.add(zb).add(z).doubleValue();
     }
 
     /**
@@ -1574,9 +1578,10 @@ class HurwitzZetaTest {
      *
      * @param s Argument {@code s > 1} and integer
      * @param a Argument {@code a < 0}
+     * @param firstTerm if true use double-double for the first terms
      * @return zeta(s, a)
      */
-    private static double zetaNegative(int s, double a) {
+    private static double zetaNegative(int s, double a, boolean firstTerm) {
         // a < 0 (non-integer) and s is a positive integer.
         // If s is odd then the negative series sum will be negative
         // and the addition of zeta(s, x > 0) has cancellation.
@@ -1601,11 +1606,105 @@ class HurwitzZetaTest {
         }
 
         // Compute the dominant term using closest to zero: x or 1+x
+        if (firstTerm) {
+            // Copy from DD implementation
+            if (s >= 1067) {
+                // Use the dominant term using closest to zero
+                return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+            }
+            // Compute the two terms either side of zero:
+            // -1 < xn < 0 < xn + 1 < 1
+            // These are the largest terms and contain most of the error of the function.
+            final DD xn = DD.of(x);
+            final DD xp = DD.ONE.add(x);
+            final long[] expn = {0};
+            final long[] expp = {0};
+            DD pn = DDMath.pow(xn, -s, expn);
+            DD pp = DDMath.pow(xp, -s, expp);
+            final long diff = expp[0] - expn[0];
+            if (Math.abs(diff) > 106) {
+                // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
+                // All other individual terms are smaller so further DD computation is not possible.
+                return diff > 0 ?
+                    pp.scalb((int) expp[0]).hi() :
+                    pn.scalb((int) expn[0]).hi();
+            }
+            // Add the smallest to the largest avoiding overflow by re-scaling after the sum
+            final DD sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
+
+            // Rescale terms
+            pp = pp.scalb((int) expp[0]);
+            pn = pn.scalb((int) expn[0]);
+
+            // Here the remaining series above and below zero are effectively both zeta
+            // evaluations with zeta(s >= 2, a > 1). This is always < 2; any individual term x^-s < 1.
+            // Exit early if remaining terms cannot be added.
+            if (Math.abs(sum.hi()) > 0x1p53) {
+                // Limit of double arithmetic
+                return sum.hi();
+            }
+
+            // Following is an adaption of the pure double implementation
+            // to compute the zeta terms without the already known first terms in DD precision.
+
+            // x = a - ceil(a) : x in -(1, 0)
+            // (x+1)^-s + zeta(s, x + 2) +/- [ -x^-s + zeta(s, 1-x) - zeta(s, 1 - a) ]
+            // z +/- [ za - zb]
+
+            // We have the two largest power terms for each side.
+            // The remaining terms are increasing smaller.
+
+            DD z = pp.add(zeta(s, x + 2, pow.applyAsDouble(2, x, -s), c));
+
+            DD za;
+            double zb;
+            // A single call to zeta uses many pow operations;
+            // use a direct sum when zeta will use more.
+            if (x - a > 2 * (c.getN() + 2)) {
+                // Note: The difference (za - zb) incurs cancellation.
+                // This should not be an issue as x in -(2, 1)
+                // and the series is strongly converging, e.g.
+                // zeta(2, 2)  = 0.6449
+                // zeta(2, 30) = 0.0339
+                // Significant cancellation (leading digits the same) is not possible.
+                // Take care to change the sign of a provided result for the zeta method.
+                za = pn.abs().add(zeta(s, 1 - x, pow.applyAsDouble(1, -x, -s), c));
+                zb = zeta(s, 1 - a, pow.applyAsDouble(1, -a, -s), c);
+                // Both terms are positive. Correct the sign for final addition.
+                if (odd) {
+                    za = za.negate();
+                } else {
+                    zb = -zb;
+                }
+            } else {
+                // Sum terms in ascending order of magnitude
+                // Using a double to track the iterations is fine as (a+n) is exact until > x.
+                za = pn;
+                zb = 0;
+                for (double aa = a; aa < x; aa += 1.0) {
+                    zb += Math.pow(aa, -s);
+                }
+            }
+
+            // Sum in magnitude order. Here z is positive.
+            if (Math.abs(za.hi()) > z.hi()) {
+                final DD tmp = za;
+                za = z;
+                z = tmp;
+            }
+            // za < z
+            if (Math.abs(zb) > Math.abs(z.hi())) {
+                return za.add(z).add(zb).hi();
+            }
+            // za,zb < z
+            return za.add(zb).add(z).hi();
+        }
+
+        // Pure double implementation
         double d = pow.applyAsDouble(x > -0.5 ? 0 : 1, x, -s);
         if (!Double.isFinite(d)) {
             return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
         }
-
         // Here the all other terms cannot overflow.
         // Add the other dominant term.
         double pn;
@@ -1668,13 +1767,13 @@ class HurwitzZetaTest {
         }
 
         // Sum in magnitude order. Here z is positive.
-        if (Math.abs(za) < z) {
+        if (Math.abs(za) > z) {
             final double tmp = za;
             za = z;
             z = tmp;
         }
         // za < z
-        if (Math.abs(zb) < Math.abs(z)) {
+        if (Math.abs(zb) > Math.abs(z)) {
             final double tmp = zb;
             zb = z;
             z = tmp;
@@ -2541,7 +2640,7 @@ class HurwitzZetaTest {
         final double[] r3 = new double[n];
         long t3 = System.nanoTime();
         for (int i = 0; i < n; i++) {
-            r3[i] = HurwitzZetaTest.zetaNegative(x[i], -y[i]);
+            r3[i] = HurwitzZetaTest.zetaNegative(x[i], -y[i], false);
         }
         t3 = System.nanoTime() - t3;
 
