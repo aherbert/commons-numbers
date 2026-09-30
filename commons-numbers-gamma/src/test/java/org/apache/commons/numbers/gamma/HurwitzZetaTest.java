@@ -811,7 +811,7 @@ class HurwitzZetaTest {
 //        BD_ZETA_ROOT_S3_21_N_A0_100           max    0.00000   RMS    0.00000   mean        0.00000  n  303  (84.0ms)
 //        BD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  206  (36.8ms)
 //        BD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   61  (40.6ms)
-//        DD_ZETA_ROOT_S3_21_N_A0_100           max   0.638297   RMS  0.0366692   mean    -0.00210659  n  303  (17.4ms)
+//        DD_ZETA_ROOT_S3_21_N_A0_100           max   0.500202   RMS  0.0287359   mean     0.00165083  n  303  (24.4ms)
 //        DD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  206  (20.1ms)
 //        DD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   61  (3.33ms)
 //        BD_ZETA_IS                            max   0.538771   RMS  0.0574659   mean     0.00101300  n 6000  (321ms)
@@ -1072,16 +1072,16 @@ class HurwitzZetaTest {
         // Handle cancellation as x -> 0.5
         // Note: 0.5^-1024 overflows.
         // Limit of [nextDown(0.5)^-s - nextUp(0.5)^-s] may have terms above 2^1024.
+        // 0.5 +/- 2^-54 (requires extended precision as ulp(0.5) is 2^-53)
         // The largest odd s where the difference is finite:
         // var mc = MathContext.DECIMAL128
         // var a = new BigDecimal(Math.nextDown(0.5))
-        // var b = new BigDecimal(Math.nextUp(0.5))
+        // var b = BigDecimal.ONE.subtract(a)
         // var s = -1025
         // while (Double.isFinite(a.pow(s, mc).subtract(b.pow(s, mc), mc).doubleValue())) { s -= 2; }
-        // s = -1067 : diff = 5.62e308
-
+        // s = -1067 : diff = 3.75e308
         if (s >= 1067) {
-            // Compute dominant term using closest to zero
+            // Use the dominant term using closest to zero
             return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
         }
 
@@ -1109,15 +1109,58 @@ class HurwitzZetaTest {
 
         // x = a - ceil(a) : x in -(1, 0)
         // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
+        // z +/- [ za - zb]
 
-        // TODO - move negativeSeriesSum here.
-        // Add 3 terms in magnitude order
+        BigDecimal z = zeta(s, xp, pp, c);
+        BigDecimal za;
+        BigDecimal zb;
+        // A single call to zeta uses many pow operations;
+        // use a direct sum when zeta will use more.
+        if (x - a > 2 * (c.getN() + 2)) {
+            // Note: The difference (za - zb) incurs cancellation.
+            // This should not be an issue as x in -(1, 0)
+            // and the series is strongly converging, e.g.
+            // zeta(2, 1)  = 1.6449
+            // zeta(2, 2)  = 0.6449
+            // zeta(2, 30) = 0.0339
+            // Significant cancellation (leading digits the same) is not possible.
+            // Take care to change the sign of a provided result for the zeta method.
+            za = zeta(s, xn.negate(), pn.abs(), c);
+            zb = zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null, c);
+            // Both terms are positive. Correct the sign for final addition.
+            if (odd) {
+                za = za.negate();
+            } else {
+                zb.negate();
+            }
+        } else {
+            // Sum terms in ascending order of magnitude.
+            // Use a double to track the iterations, and mirror with a BigDecimal.
+            za = pn;
+            zb = BigDecimal.ZERO;
+            BigDecimal ba = new BigDecimal(a);
+            for (double aa = a; aa < x; aa += 1.0) {
+                zb = zb.add(ba.pow(-s, mc), mc);
+                ba = ba.add(BigDecimal.ONE);
+            }
+        }
 
-        // Compute the remaining terms passing in the known values:
-        final BigDecimal sn1 = negativeSeriesSum(a, x, s, pn, c);
-        final BigDecimal sp1 = zeta(s, xp, pp, c);
-
-        return sp1.add(sn1, mc).doubleValue();
+        // Sum in magnitude order. Use the scale for a fast comparison of magnitude
+        // as all results have the same precision: base 10 exponent = precision - scale - 1
+        // Smaller scale is a bigger value.
+        if (za.scale() < z.scale()) {
+            BigDecimal tmp = za;
+            za = z;
+            z = tmp;
+        }
+        // za < z
+        if (zb.scale() < z.scale()) {
+            BigDecimal tmp = zb;
+            zb = z;
+            z = tmp;
+        }
+        // za,zb < z
+        return zb.add(za, mc).add(z, mc).doubleValue();
     }
 
     /**
@@ -1205,6 +1248,10 @@ class HurwitzZetaTest {
      *
      * <p>Large ranges may be evaluated using a difference of zeta functions.
      *
+     * <p>This method is a reproduction of the logic in {@link #zetaNegativeBD(int, double)}
+     * so the magnitude of terms that cancel can be computed in the search to find
+     * the roots (see {@link #testDataZetaRoots(int, int, double, double)}).
+     *
      * @param a First term in the series to calculate (negative non-integer).
      * @param b Last term in the series inclusive (negative non-integer); result provided.
      * @param s Exponent (positive integer).
@@ -1288,7 +1335,7 @@ class HurwitzZetaTest {
         // while (Double.isFinite(a.pow(s, mc).subtract(b.pow(s, mc), mc).doubleValue())) { s -= 2; }
         // s = -1067 : diff = 3.75e308
         if (s >= 1067) {
-            // Compute dominant term using closest to zero
+            // Use the dominant term using closest to zero
             return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
         }
 
@@ -1301,19 +1348,18 @@ class HurwitzZetaTest {
         final long[] expp = {0};
         DD pn = DDMath.pow(xn, -s, expn);
         DD pp = DDMath.pow(xp, -s, expp);
-        // Add the smallest to the largest avoiding overflow by re-scaling after the sum
-        DD sum;
         final long diff = expp[0] - expn[0];
-        if (Math.abs(diff) <= 106) {
-            sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
-        } else {
-            // cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106
-            sum = diff > 0 ?
-                pp.scalb((int) expp[0]) :
-                pn.scalb((int) expn[0]);
+        if (Math.abs(diff) > 106) {
+            // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
+            // All other individual terms are smaller so further DD computation is not possible.
+            return diff > 0 ?
+                pp.scalb((int) expp[0]).hi() :
+                pn.scalb((int) expn[0]).hi();
         }
+        // Add the smallest to the largest avoiding overflow by re-scaling after the sum
+        DD sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
 
-        // Rescale
+        // Rescale terms
         pp = pp.scalb((int) expp[0]);
         pn = pn.scalb((int) expn[0]);
 
@@ -1323,7 +1369,7 @@ class HurwitzZetaTest {
         // The result can be finite even if the terms are infinite. However
         // we do not support further computation from infinite terms so check
         // if anything can be added to these terms.
-        final double d = sum.doubleValue();
+        final double d = sum.hi();
         if (Math.max(Math.abs(pn.hi()), pp.hi()) > 0x1p106) {
             // Limit of double-double arithmetic
             return d;
@@ -1331,10 +1377,13 @@ class HurwitzZetaTest {
 
         // x = a - ceil(a) : x in -(1, 0)
         // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
+        // z +/- [ za - zb]
 
         // Worst case single term cancellation:
-        // pow(0.5 + 2^-53, -3) - pow(0.5 - 2^-53, -3)
-        // priority = exponent(max(a, b)) - exponent(a - b) = 50 bits
+        // priority = exponent(max(a, b)) - exponent(a - b)
+        // Cancellation is worst when s is small as the two terms are closer.
+        // pow(0.5 + 2^-54, -3) - pow(0.5 - 2^-54, -3)
+        // exponent(8.0) - exponent(5.33E-15) = 3 - -48 = 51 bits
 
         // We have the two largest power terms for each side.
         // The remaining terms are increasing smaller. Computing with
@@ -1343,11 +1392,53 @@ class HurwitzZetaTest {
         // Evaluate zeta with extra precision
         final Context c = Context.DOUBLE_DOUBLE;
 
-        // Compute the remaining terms passing in the known values:
-        final DD sn1 = negativeSeriesSum(a, x, s, pn, c);
-        final DD sp1 = zeta(s, xp, pp, c);
+        DD z = zeta(s, xp, pp, c);
+        DD za;
+        DD zb;
+        // A single call to zeta uses many pow operations;
+        // use a direct sum when zeta will use more.
+        if (x - a > 2 * (c.getN() + 2)) {
+            // Note: The difference (za - zb) incurs cancellation.
+            // This should not be an issue as x in -(1, 0)
+            // and the series is strongly converging, e.g.
+            // zeta(2, 1)  = 1.6449
+            // zeta(2, 2)  = 0.6449
+            // zeta(2, 30) = 0.0339
+            // Significant cancellation (leading digits the same) is not possible.
+            // Take care to change the sign of a provided result for the zeta method.
+            za = zeta(s, xn.negate(), pn.abs(), c);
+            zb = zeta(s, DD.ONE.subtract(a), null, c);
+            // Both terms are positive. Correct the sign for final addition.
+            if (odd) {
+                za = za.negate();
+            } else {
+                zb.negate();
+            }
+        } else {
+            // Sum terms in ascending order of magnitude
+            // Using a double to track the iterations is fine as (a+n) is exact until > x.
+            za = pn;
+            zb = DD.ZERO;
+            final BiFunction<DD, Integer, DD> pow = c.getDDPow();
+            for (double aa = a; aa < x; aa += 1.0) {
+                zb = zb.add(pow.apply(DD.of(aa), -s));
+            }
+        }
 
-        return sp1.add(sn1).hi();
+        // Sum in magnitude order. Here z is positive.
+        if (Math.abs(za.hi()) < z.hi()) {
+            DD tmp = za;
+            za = z;
+            z = tmp;
+        }
+        // za < z
+        if (Math.abs(zb.hi()) < Math.abs(z.hi())) {
+            DD tmp = zb;
+            zb = z;
+            z = tmp;
+        }
+        // za,zb < z
+        return zb.add(za).add(z).doubleValue();
     }
 
     /**
@@ -1432,57 +1523,6 @@ class HurwitzZetaTest {
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum);
-    }
-
-    /**
-     * Calculates the sum of terms of the power series.
-     *
-     * <pre>
-     *      b     1
-     *   sum     ---
-     *      k=a  k^m
-     * </pre>
-     *
-     * <p>Assumes {@code a} and {@code b} are negative and separated by an integer
-     * distance; and {@code exponent >= 2} and integer.
-     *
-     * <p>Large ranges may be evaluated using a difference of zeta functions.
-     *
-     * @param a First term in the series to calculate (negative non-integer).
-     * @param b Last term in the series inclusive (negative non-integer); result provided.
-     * @param s Exponent (positive integer).
-     * @param bn {@code b^-s}.
-     * @param c Evaluation context.
-     * @return the sum
-     */
-    private static DD negativeSeriesSum(double a, double b, int s,
-            DD bn, Context c) {
-        // This can be computed using a difference of zeta functions.
-        // A single call to zeta uses many pow operations; use zeta when the
-        // sum will use more.
-        if (b - a > 2 * (c.getN() + 2)) {
-            // Note: The difference incurs cancellation.
-            // This should not be an issue as function is called with b in -(1, 0)
-            // and the series is strongly converging, e.g.
-            // zeta(2, 0.5)  = 1.6449
-            // zeta(2, 31.5) = 0.03225
-            // Significant cancellation (leading digits the same) is not possible.
-            // Take care to change the sign of a provided result for the zeta method.
-            final DD zb = zeta(s, DD.of(-b), bn.abs(), c);
-            final DD za = zeta(s, DD.ONE.subtract(a), null, c);
-            final DD r = zb.subtract(za);
-            return (s & 1) == 1 ? r.negate() : r;
-        }
-
-        // Sum terms in ascending order of magnitude
-        final BiFunction<DD, Integer, DD> pow = c.getDDPow();
-        DD sum = DD.ZERO;
-        double x = a;
-        while (x < b) {
-            sum = sum.add(pow.apply(DD.of(x), -s));
-            x += 1.0;
-        }
-        return sum.add(bn);
     }
 
     /**
