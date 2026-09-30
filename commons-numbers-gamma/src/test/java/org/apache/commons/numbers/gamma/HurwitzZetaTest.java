@@ -473,8 +473,10 @@ class HurwitzZetaTest {
          * N=9 has max M used as 9 in the test data. */
         public static final Context DOUBLE = Context.of(9, 15);
 
+        /** Context for double precision using the DD zeta implementation. */
+        public static final Context DD_DOUBLE = Context.of(9, 15).withExtendedPrecisionPow(false);
         /** Context for double-double precision using the DD zeta implementation. */
-        public static final Context DOUBLE_DOUBLE = Context.of(15, 30)
+        public static final Context DD_DOUBLE_DOUBLE = Context.of(15, 30)
             .withEpsilon(0x1p-106).withExtendedPrecisionPow(true);
 
         // BigDecimal implementation is very robust to different N.
@@ -749,42 +751,66 @@ class HurwitzZetaTest {
      * the resource file containing the data.
      */
     private enum ZetaTestCase implements DoublePrecisionTestCase {
+        // Testing implementations for Negative a.
+        // Requires accurate evaluation with integer s.
+
+        // The double implementation is accurate
+        DOUBLE_ZETA_IS((s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, Context.DOUBLE), INT_TEST_RESOURCES, 1.5, 0.5),
+        // These are within 0.5 ULP as a double-double but rounding put single errors at just over 0.5 ulp
+        BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 0.1),
+        DD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DD_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 0.1),
+
+        // No cancellation - all implementations work
+        DOUBLE_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 1.5, 0.5),
+        DOUBLE_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 2.0, 0.5),
+        // These use a context to evaluation to double precision
+        BD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
+        BD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
+        DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
+        DD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
+
+        // Double arithmetic is max error ~24-bits when cancellation is expected
+        DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p24, 0x1p20),
+
+        // Extended precision implementations
+        BD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+        BD_ZETA_S3_5_N_A40_99_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+        DD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+        DD_ZETA_S3_5_N_A40_99_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+
+        // Roots are the point of maximum cancellation
+        // Double arithmetic has only a few bits of precision on average.
+        DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0x1p55, 0x1p50),
+
+        BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0, 0),
+        BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
+        BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
+        // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
+        DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0.7, 0.05),
+        DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
+        DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
+
+        // Final implementation
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
         ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.69),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.9, 0.57),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 3.22, 0.62),
-        ZETA_S2_4_N_A1_7(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-1.csv", 0.7, 0.1),
-        ZETA_S3_5_N_A1_7(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-1.csv", 3, 0.1),
-        ZETA_S2_4_N_A8_33(HurwitzZeta::value, "hzeta_s2_4_na8_33_p0.5_p0x1p-1.csv", 0.75, 0.1),
-        ZETA_S3_5_N_A8_33(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-1.csv", 0, 0),
-        // Extended precision power is exact on the largest term
-        ZETA_S2_4_N_A1_7_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0x1p-30.csv", 0, 0),
-        ZETA_S3_5_N_A1_7_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0x1p-30.csv", 0, 0),
-        ZETA_S2_4_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_7_p0.5_p0x1p-30.csv", 0.63, 0.1),
-        // The method suffers some cancellation here.
-        ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6.5, 1.7),
-        ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2),
-        // Double arithmetic is max error ~20-bits
-        DOUBLE_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 0x1p20, 0x1p17),
-        BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
-        BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
-        DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
-        DD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
-        // roots
-        BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0, 0),
-        BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
-        BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
-        // TODO - Can this be fixed?
-        // 3.0, -2.4994443912584825 = 53
-        DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0.7, 0.05),
-        DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
-        DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
-        // These are within 0.5 ULP as a double-double but rounding puts them at just over 0.5 ulp
-        // May require DD.addAsDouble method with a sticky sum to collect terms.
-        BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 1),
-        DD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, DD.of(a), null, Context.DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 1),
+        // Negative a
+        ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.7, 0.1),
+        ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.75, 0.1),
+        ZETA_S2_4_N_A1_15_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0x1p-30.csv", 0, 0),
+        ZETA_S2_4_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-30.csv", 0.63, 0.1),
+        ZETA_S3_5_N_A1_15(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-1.csv", 3, 0.1),
+        ZETA_S3_5_N_A40_99(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-1.csv", 0, 0),
+        ZETA_S3_5_N_A1_15_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0x1p-30.csv", 0, 0),
+        ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 6.5, 1.7),
+        ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 180, 5.2),
+        // Broken
+        ZETA_ROOT_S3_21_N_A0_100(HurwitzZeta::value, "hzeta_root_s3_21_na0_100.csv", 2e14, 9e12),
+        ZETA_ROOT_S11_1067_N_A0_10(HurwitzZeta::value, "hzeta_root_s11_1067_na0_10.csv", 2e10, 3e9),
+        ZETA_ROOT_S3_21_N_A101_300(HurwitzZeta::value, "hzeta_root_s3_21_na101_300.csv", 1e10, 1e9),
         ;
 
 //        JDK Temurin 25.492-b09
@@ -798,16 +824,16 @@ class HurwitzZetaTest {
 //        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0658265   mean   -0.000869074  n 3000  (85.4ms)
 //        ZETA_S2_4_N_A8_33                     max   0.633617   RMS  0.0622978   mean    0.000343235  n 3000  (61.6ms)
 //        ZETA_S3_5_N_A8_33                     max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (43.4ms)
-//        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (35.8ms)
-//        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (32.4ms)
-//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.589429   RMS  0.0613828   mean     0.00299001  n 3000  (29.4ms)
-//        ZETA_S3_5_N_A1_7_HALF_B30             max    6.26561   RMS    1.58252   mean     -0.0695818  n 3000  (43.5ms)
-//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02735   mean     -0.0130644  n 3000  (33.0ms)
-//        DOUBLE_ZETA_S3_5_N_A1_7_HALF_B30      max     531009   RMS    96565.7   mean        3586.07  n 3000  (110ms)
-//        BD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (542ms)
-//        BD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (327ms)
-//        DD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (97.8ms)
-//        DD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (74.4ms)
+//        ZETA_S2_4_N_A1_15_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (35.8ms)
+//        ZETA_S3_5_N_A1_15_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (32.4ms)
+//        ZETA_S2_4_N_A1_15_HALF_B30             max   0.589429   RMS  0.0613828   mean     0.00299001  n 3000  (29.4ms)
+//        ZETA_S3_5_N_A1_15_HALF_B30             max    6.26561   RMS    1.58252   mean     -0.0695818  n 3000  (43.5ms)
+//        ZETA_S3_5_N_A40_99_HALF_B30            max    173.860   RMS    5.02735   mean     -0.0130644  n 3000  (33.0ms)
+//        DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30      max     531009   RMS    96565.7   mean        3586.07  n 3000  (110ms)
+//        BD_ZETA_S3_5_N_A1_15_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (542ms)
+//        BD_ZETA_S3_5_N_A40_99_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (327ms)
+//        DD_ZETA_S3_5_N_A1_15_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (97.8ms)
+//        DD_ZETA_S3_5_N_A40_99_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (74.4ms)
 //        BD_ZETA_ROOT_S3_21_N_A0_100           max    0.00000   RMS    0.00000   mean        0.00000  n  298  (77.2ms)
 //        BD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  143  (58.8ms)
 //        BD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   57  (25.0ms)
@@ -1323,7 +1349,7 @@ class HurwitzZetaTest {
         // Intentional float comparison
         if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result
-            return zeta(s, DD.ONE.subtract(a), null, Context.DOUBLE).doubleValue();
+            return zeta(s, DD.ONE.subtract(a), null, Context.DD_DOUBLE).doubleValue();
         }
 
         // Handle cancellation as x -> 0.5
@@ -1393,7 +1419,7 @@ class HurwitzZetaTest {
         // double-double (DD) precision for the zeta evaluations should handle cancellation.
 
         // Evaluate zeta with extra precision
-        final Context c = Context.DOUBLE_DOUBLE;
+        final Context c = odd ? Context.DD_DOUBLE_DOUBLE : Context.DD_DOUBLE;
 
         DD z = zeta(s, xp, pp, c);
         DD za;
@@ -2424,7 +2450,7 @@ class HurwitzZetaTest {
         int size, long nanos) {
         if (doReporting()) {
             // CHECKSTYLE: stop regexp
-            System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d  (%.3gms)%n",
+            System.out.printf("%-35s   max %14.6g   RMS %14.6g   mean %14.6g  n %4d  (%.3gms)%n",
                 name, maxAbsUlp, rmsUlp, meanUlp, size, nanos * 1e-6);
             // CHECKSTYLE: resume regex
         }
@@ -2743,35 +2769,35 @@ class HurwitzZetaTest {
      *
      * <p>The parameter {@code a} is a uniform integer sample in a range. This has an
      * offset applied and a uniform wobble. This allows sampling around the poles
-     * for at integer values, or the location of greatest cancellation when {@code s}
+     * at integer values, or the location of greatest cancellation when {@code s}
      * is odd at half-integer values.
      *
      * <p>Note: Evaluation of large negative a is not possible using the resource
      * script {@code hzeta.py}. Use of mpmath returns complex results when abs(a) >> dps
-     * (dps is the mpmath digits of decimal precision).
+     * (dps is the mpmath digits of decimal precision). Using dps=70 is sufficient.
      */
     @ParameterizedTest
     @CsvSource({
-        // a = -[1.5, 7.5] +/- 0.5
-        "2, 4, 1, 7, 0.5, 1",
-        "3, 5, 1, 7, 0.5, 1",
-        // a = -[8.5, 33.5] +/- 0.5
-        "2, 4, 8, 33, 0.5, 1",
-        "3, 5, 8, 33, 0.5, 1",
-        // a = -[1, 7] +/- 9.31e-10
+        // a = -[1.5, 15.5] +/- 0.5
+        "2, 4, 1, 15, 0.5, 1",
+        "3, 5, 1, 15, 0.5, 1",
+        // a = -[40.5, 99.5] +/- 0.5
+        "2, 4, 40, 99, 0.5, 1",
+        "3, 5, 40, 99, 0.5, 1",
+        // a = -[1, 15] +/- 9.31e-10
         // This approaches the pole at a = -1, -2, -3, ... and is easy to compute as
         // a single term dominates the result
-        "2, 4, 1, 7, 0.0, 30",
-        "3, 5, 1, 7, 0.0, 30",
-        // a = -[1.5, 7.5] +/- 9.31e-10
+        "2, 4, 1, 15, 0.0, 30",
+        "3, 5, 1, 15, 0.0, 30",
+        // a = -[1.5, 15.5] +/- 9.31e-10
         // This creates large cancellation when a ~ half-integer and requires
         // an extended precision power function to maintain precision over all
         // terms that cancel. The implementation only uses extended precision on
         // the most significant terms.
-        "2, 4, 1, 7, 0.5, 30",
-        "3, 5, 1, 7, 0.5, 30",
-        // a = -[8.5, 33.5] +/- 9.31e-10
-        "3, 5, 8, 33, 0.5, 30",
+        "2, 4, 1, 15, 0.5, 30",
+        "3, 5, 1, 15, 0.5, 30",
+        // a = -[40.5, 99.5] +/- 9.31e-10
+        "3, 5, 40, 99, 0.5, 30",
     })
     @Disabled("Used to generate test data")
     void testDataNegativeASample(int ls, int us,
