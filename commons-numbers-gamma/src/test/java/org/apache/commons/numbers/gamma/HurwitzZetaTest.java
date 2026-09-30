@@ -769,6 +769,8 @@ class HurwitzZetaTest {
         // The method suffers some cancellation here.
         ZETA_S3_5_N_A1_7_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 6.5, 1.7),
         ZETA_S3_5_N_A8_33_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 180, 5.2),
+        // Double arithmetic is max error ~20-bits
+        DOUBLE_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a), "hzeta_s3_5_na1_7_p0.5_p0x1p-30.csv", 0x1p20, 0x1p17),
         BD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         BD_ZETA_S3_5_N_A8_33_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
         DD_ZETA_S3_5_N_A1_7_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na8_33_p0.5_p0x1p-30.csv", 0, 0),
@@ -778,7 +780,7 @@ class HurwitzZetaTest {
         BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
         BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
         // TODO - Can this be fixed?
-        // 3.0, -2.4994443912584825 = 52.894
+        // 3.0, -2.4994443912584825 = 53
         DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0.7, 0.05),
         DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
         DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
@@ -789,33 +791,34 @@ class HurwitzZetaTest {
         ;
 
 //        JDK Temurin 25.492-b09
-//        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.609868   mean     0.00407202  n 3000  (273ms)
-//        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.675110   mean     -0.0240288  n 3000  (91.4ms)
-//        ZETA_S1_4_A32_2147483648              max    1.77377   RMS   0.470439   mean    -0.00772827  n 3000  (130ms)
-//        ZETA_S1_4_A0_1                        max    1.83029   RMS   0.483327   mean     -0.0128829  n 3000  (40.6ms)
-//        ZETA_S1_4_A0                          max   0.952404   RMS   0.107769   mean    -0.00278978  n 3000  (95.6ms)
-//        ZETA_S4_32_A1_8                       max    3.05405   RMS   0.529045   mean    -0.00324641  n 3000  (68.1ms)
-//        ZETA_S2_4_N_A1_7                      max   0.653535   RMS  0.0672688   mean    0.000652193  n 3000  (116ms)
-//        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0658265   mean   -0.000869074  n 3000  (103ms)
-//        ZETA_S2_4_N_A8_33                     max   0.633617   RMS  0.0622978   mean    0.000343235  n 3000  (71.2ms)
-//        ZETA_S3_5_N_A8_33                     max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (40.0ms)
-//        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (38.6ms)
-//        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (32.5ms)
-//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.589429   RMS  0.0613828   mean     0.00299001  n 3000  (29.3ms)
+//        ZETA_S1_4_A1_8                        max    2.81580   RMS   0.609868   mean     0.00407202  n 3000  (257ms)
+//        ZETA_S1_4_A8_32                       max    3.52850   RMS   0.675110   mean     -0.0240288  n 3000  (81.6ms)
+//        ZETA_S1_4_A32_2147483648              max    1.77377   RMS   0.470439   mean    -0.00772827  n 3000  (93.7ms)
+//        ZETA_S1_4_A0_1                        max    1.83029   RMS   0.483327   mean     -0.0128829  n 3000  (49.5ms)
+//        ZETA_S1_4_A0                          max   0.952404   RMS   0.107769   mean    -0.00278978  n 3000  (95.2ms)
+//        ZETA_S4_32_A1_8                       max    3.05405   RMS   0.529045   mean    -0.00324641  n 3000  (74.5ms)
+//        ZETA_S2_4_N_A1_7                      max   0.653535   RMS  0.0672688   mean    0.000652193  n 3000  (120ms)
+//        ZETA_S3_5_N_A1_7                      max    2.89123   RMS  0.0658265   mean   -0.000869074  n 3000  (85.4ms)
+//        ZETA_S2_4_N_A8_33                     max   0.633617   RMS  0.0622978   mean    0.000343235  n 3000  (61.6ms)
+//        ZETA_S3_5_N_A8_33                     max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (43.4ms)
+//        ZETA_S2_4_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (35.8ms)
+//        ZETA_S3_5_N_A1_7_B30                  max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (32.4ms)
+//        ZETA_S2_4_N_A1_7_HALF_B30             max   0.589429   RMS  0.0613828   mean     0.00299001  n 3000  (29.4ms)
 //        ZETA_S3_5_N_A1_7_HALF_B30             max    6.26561   RMS    1.58252   mean     -0.0695818  n 3000  (43.5ms)
-//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02735   mean     -0.0130644  n 3000  (62.4ms)
-//        BD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (534ms)
-//        BD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (330ms)
-//        DD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (97.1ms)
-//        DD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (70.5ms)
-//        BD_ZETA_ROOT_S3_21_N_A0_100           max    0.00000   RMS    0.00000   mean        0.00000  n  303  (84.0ms)
-//        BD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  206  (36.8ms)
-//        BD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   61  (40.6ms)
-//        DD_ZETA_ROOT_S3_21_N_A0_100           max   0.500202   RMS  0.0287359   mean     0.00165083  n  303  (24.4ms)
-//        DD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  206  (20.1ms)
-//        DD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   61  (3.33ms)
-//        BD_ZETA_IS                            max   0.538771   RMS  0.0574659   mean     0.00101300  n 6000  (321ms)
-//        DD_ZETA_IS                            max   0.528186   RMS  0.0549271   mean    -0.00211411  n 6000  (93.2ms)
+//        ZETA_S3_5_N_A8_33_HALF_B30            max    173.860   RMS    5.02735   mean     -0.0130644  n 3000  (33.0ms)
+//        DOUBLE_ZETA_S3_5_N_A1_7_HALF_B30      max     531009   RMS    96565.7   mean        3586.07  n 3000  (110ms)
+//        BD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (542ms)
+//        BD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (327ms)
+//        DD_ZETA_S3_5_N_A1_7_HALF_B30          max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (97.8ms)
+//        DD_ZETA_S3_5_N_A8_33_HALF_B30         max    0.00000   RMS    0.00000   mean        0.00000  n 3000  (74.4ms)
+//        BD_ZETA_ROOT_S3_21_N_A0_100           max    0.00000   RMS    0.00000   mean        0.00000  n  298  (77.2ms)
+//        BD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  143  (58.8ms)
+//        BD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   57  (25.0ms)
+//        DD_ZETA_ROOT_S3_21_N_A0_100           max   0.638297   RMS  0.0369756   mean    -0.00214194  n  298  (22.7ms)
+//        DD_ZETA_ROOT_S11_1067_N_A0_10         max    0.00000   RMS    0.00000   mean        0.00000  n  143  (5.77ms)
+//        DD_ZETA_ROOT_S3_21_N_A101_300         max    0.00000   RMS    0.00000   mean        0.00000  n   57  (1.78ms)
+//        BD_ZETA_IS                            max   0.538771   RMS  0.0574659   mean     0.00101300  n 6000  (310ms)
+//        DD_ZETA_IS                            max   0.528186   RMS  0.0549271   mean    -0.00211411  n 6000  (91.9ms)
 
         /** The function. */
         private final DoubleBinaryOperator fun;
@@ -903,22 +906,25 @@ class HurwitzZetaTest {
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a > 0}
+     * @param a0 {@code a^-s} (can be nan)
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
-    static double zeta(double s, double a, Context c) {
+    static double zeta(double s, double a, double a0, Context c) {
         final int n = c.getN();
+
+        // First term may be provided
+        final double t0 = Double.isNaN(a0) ? Math.pow(a, -s) : a0;
 
         // Asymptotic Behavior as a -> inf
         // https://dlmf.nist.gov/25.11#E43
         // When a is large the series cannot use a+k.
         // This reduces to N=0, the I term and the first term of T.
         if (a > 1e15) {
-            return Math.pow(a, 1 - s) / (s - 1) + Math.pow(a, -s) * 0.5;
+            return Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5;
         }
 
         // Can overflow if 0 < a < 1.
-        final double t0 = Math.pow(a, -s);
         if (!Double.isFinite(t0)) {
             return t0;
         }
@@ -1131,7 +1137,7 @@ class HurwitzZetaTest {
             if (odd) {
                 za = za.negate();
             } else {
-                zb.negate();
+                zb = zb.negate();
             }
         } else {
             // Sum terms in ascending order of magnitude.
@@ -1382,11 +1388,11 @@ class HurwitzZetaTest {
         // Worst case single term cancellation:
         // priority = exponent(max(a, b)) - exponent(a - b)
         // Cancellation is worst when s is small as the two terms are closer.
-        // pow(0.5 + 2^-54, -3) - pow(0.5 - 2^-54, -3)
+        // pow(0.5 + 2^-54, -3) - pow(0.5 - 2^-54, -3)  // 0.5+2^-54 requires extended precision
         // exponent(8.0) - exponent(5.33E-15) = 3 - -48 = 51 bits
 
         // We have the two largest power terms for each side.
-        // The remaining terms are increasing smaller. Computing with
+        // The remaining terms are increasingly smaller. Computing with
         // double-double (DD) precision for the zeta evaluations should handle cancellation.
 
         // Evaluate zeta with extra precision
@@ -1412,7 +1418,7 @@ class HurwitzZetaTest {
             if (odd) {
                 za = za.negate();
             } else {
-                zb.negate();
+                zb = zb.negate();
             }
         } else {
             // Sum terms in ascending order of magnitude
@@ -1426,13 +1432,13 @@ class HurwitzZetaTest {
         }
 
         // Sum in magnitude order. Here z is positive.
-        if (Math.abs(za.hi()) < z.hi()) {
+        if (Math.abs(za.hi()) > z.hi()) {
             DD tmp = za;
             za = z;
             z = tmp;
         }
         // za < z
-        if (Math.abs(zb.hi()) < Math.abs(z.hi())) {
+        if (Math.abs(zb.hi()) > Math.abs(z.hi())) {
             DD tmp = zb;
             zb = z;
             z = tmp;
@@ -1523,6 +1529,124 @@ class HurwitzZetaTest {
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum);
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
+     * when {@code a} is negative. Uses double arithmetic.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     * The domain of {@code a} is expected to be negative.
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @return zeta(s, a)
+     */
+    private static double zetaNegative(int s, double a) {
+        // a < 0 (non-integer) and s is a positive integer.
+        // If s is odd then the negative series sum will be negative
+        // and the addition of zeta(s, x > 0) has cancellation.
+        // This is largest when a is close to half-integer.
+
+        // Check case of total cancellation.
+        final boolean odd = (s & 1) == 1;
+        final double ca = Math.ceil(a);
+        if (ca == a) {
+            // The term 0^-s is infinity
+            return Double.POSITIVE_INFINITY;
+        }
+
+        // Evaluate context for zeta
+        final Context c = Context.DOUBLE;
+        final DoubleTernaryOperator pow = c.getPowNp();
+
+        double x = a - ca;
+        // Intentional float comparison
+        if (odd && x == -0.5) {
+            return zeta(s, 1 - a, pow.applyAsDouble(1, -a, -s), c);
+        }
+
+        // Compute the dominant term using closest to zero: x or 1+x
+        double d = pow.applyAsDouble(x > -0.5 ? 0 : 1, x, -s);
+        if (!Double.isFinite(d)) {
+            return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+        }
+
+        // Here the all other terms cannot overflow.
+        // Add the other dominant term.
+        double pn;
+        double pp;
+        if (x > -0.5) {
+            pn = d;
+            pp = pow.applyAsDouble(1, x, -s);
+            d += pp;
+        } else {
+            pn = Math.pow(x, -s);
+            pp = d;
+            d += pn;
+        }
+
+        // Here the remaining series above and below zero are effectively both zeta
+        // evaluations with zeta(s >= 2, a > 1). This is always < 2; any individual term x^-s < 1.
+        // Exit early if remaining terms cannot be added.
+        if (Math.abs(d) > 0x1p53) {
+            // Limit of double arithmetic
+            return d;
+        }
+
+        // x = a - ceil(a) : x in -(1, 0)
+        // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
+        // z +/- [ za - zb]
+
+        // We have the two largest power terms for each side.
+        // The remaining terms are increasing smaller.
+
+        double z = zeta(s, x + 1, pp, c);
+        double za;
+        double zb;
+        // A single call to zeta uses many pow operations;
+        // use a direct sum when zeta will use more.
+        if (x - a > 2 * (c.getN() + 2)) {
+            // Note: The difference (za - zb) incurs cancellation.
+            // This should not be an issue as x in -(1, 0)
+            // and the series is strongly converging, e.g.
+            // zeta(2, 1)  = 1.6449
+            // zeta(2, 2)  = 0.6449
+            // zeta(2, 30) = 0.0339
+            // Significant cancellation (leading digits the same) is not possible.
+            // Take care to change the sign of a provided result for the zeta method.
+            za = zeta(s, -x, Math.abs(pn), c);
+            zb = zeta(s, 1 - a, pow.applyAsDouble(1, -a, -s), c);
+            // Both terms are positive. Correct the sign for final addition.
+            if (odd) {
+                za = -za;
+            } else {
+                zb = -zb;
+            }
+        } else {
+            // Sum terms in ascending order of magnitude
+            // Using a double to track the iterations is fine as (a+n) is exact until > x.
+            za = pn;
+            zb = 0;
+            for (double aa = a; aa < x; aa += 1.0) {
+                zb += Math.pow(aa, -s);
+            }
+        }
+
+        // Sum in magnitude order. Here z is positive.
+        if (Math.abs(za) < z) {
+            double tmp = za;
+            za = z;
+            z = tmp;
+        }
+        // za < z
+        if (Math.abs(zb) < Math.abs(z)) {
+            double tmp = zb;
+            zb = z;
+            z = tmp;
+        }
+        // za,zb < z
+        return DD.ofSum(za, zb).add(z).hi();
     }
 
     /**
@@ -1669,7 +1793,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public DoubleBinaryOperator getFunction() {
-                    return (s, a) -> HurwitzZetaTest.zeta(s, a, c);
+                    return (s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, c);
                 }
 
                 @Override
@@ -2301,8 +2425,22 @@ class HurwitzZetaTest {
      */
     private static void debugRms(String name, double maxAbsUlp, double rmsUlp, double meanUlp,
         int size, long nanos) {
+        if (doReporting()) {
+            // CHECKSTYLE: stop regexp
+            System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d  (%.3gms)%n",
+                name, maxAbsUlp, rmsUlp, meanUlp, size, nanos * 1e-6);
+            // CHECKSTYLE: resume regex
+        }
+    }
+
+    /**
+     * Check if reporting to stdout. Prints the JDK version on first return of true.
+     *
+     * @return true if reporting
+     */
+    private static boolean doReporting() {
         if (jvm < 0) {
-            return;
+            return false;
         }
         // CHECKSTYLE: stop regexp
         if (jvm == 0) {
@@ -2312,9 +2450,8 @@ class HurwitzZetaTest {
                 System.getProperty("java.vm.version")
             );
         }
-        System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d  (%.3gms)%n",
-            name, maxAbsUlp, rmsUlp, meanUlp, size, nanos * 1e-6);
         // CHECKSTYLE: resume regex
+        return true;
     }
 
     /**
@@ -2333,10 +2470,11 @@ class HurwitzZetaTest {
         "3, 9, 50, 100",
     })
     @Disabled("Used to test extended precision implementations")
-//    2  8     0.0   20.0 : 30000   1569.28 : 312.348  (5.02414x)
-//    3  9     0.0   20.0 : 30000   2584.93 : 259.545  (9.95945x)
-//    2  8    50.0  100.0 : 30000   1604.52 : 500.573  (3.20537x)
-//    3  9    50.0  100.0 : 30000   3805.13 : 518.429  (7.33973x)
+//    JDK Eclipse Adoptium 21.0.11+10-LTS
+//    2  8     0.0   20.0 : 30000   994.717 : 173.842  (5.72195x) : 33.9590  (29.2917x)
+//    3  9     0.0   20.0 : 30000   1981.83 : 176.531  (11.2265x) : 30.3865  (65.2206x)
+//    2  8    50.0  100.0 : 30000   1619.22 : 318.332  (5.08659x) : 56.4383  (28.6902x)
+//    3  9    50.0  100.0 : 30000   4198.19 : 348.914  (12.0322x) : 52.2353  (80.3709x)
     void testNegativeSpeed(int ls, int us, double la, double ua) {
         Assertions.assertTrue(ls >= 2);
         Assertions.assertTrue(us >= ls);
@@ -2350,26 +2488,42 @@ class HurwitzZetaTest {
         final int n = 30000;
         final int[] x = IntStream.generate(s).limit(n).toArray();
         final double[] y = DoubleStream.generate(a).limit(n).toArray();
+
         double[] r1 = new double[n];
         long t1 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             r1[i] = HurwitzZetaTest.zetaNegativeBD(x[i], -y[i]);
         }
         t1 = System.nanoTime() - t1;
+
         double[] r2 = new double[n];
         long t2 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             r2[i] = HurwitzZetaTest.zetaNegativeDD(x[i], -y[i]);
         }
         t2 = System.nanoTime() - t2;
-        // CHECKSTYLE: stop regexp
-        System.out.printf("%2d %2d  %6s %6s : %d   %.6g : %.6g  (%.6gx)%n",
-            ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6, (double) t1 / t2);
-        // CHECKSTYLE: resume regexp
+
+        double[] r3 = new double[n];
+        long t3 = System.nanoTime();
+        for (int i = 0; i < n; i++) {
+            r3[i] = HurwitzZetaTest.zetaNegative(x[i], -y[i]);
+        }
+        t3 = System.nanoTime() - t3;
+
         Assertions.assertTrue(t2 < t1);
+        Assertions.assertTrue(t3 < t1);
+
         for (int i = 0; i < n; i++) {
             final int ii = i;
             TestUtils.assertEquals(r1[i], r2[i], -10, null, () -> String.format("%d %s", x[ii], -y[ii]));
+            Assertions.assertEquals(r1[i], r3[i], Math.abs(r1[i]) * 1e-9, () -> String.format("%d %s", x[ii], -y[ii]));
+        }
+
+        if (doReporting()) {
+            // CHECKSTYLE: stop regexp
+            System.out.printf("%2d %2d  %6s %6s : %d   %.6g : %.6g  (%.6gx) : %.6g  (%.6gx)%n",
+                ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6, (double) t1 / t2, t3 * 1e-6, (double) t1 / t3);
+            // CHECKSTYLE: resume regexp
         }
     }
 
