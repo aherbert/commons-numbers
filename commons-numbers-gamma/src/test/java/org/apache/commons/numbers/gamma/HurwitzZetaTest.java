@@ -2809,22 +2809,36 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @CsvSource({
         // Notes on cancellation in the computation of sum_(n=0)^infty (a+n)^-s
-        // using two terms as the sum of (a+n) > 0 and (a+n) < 0, i.e. positive and negative sums.
+        // when a < 0 and s is odd.
         //
-        // As |a| or s increases the root x -> half-integer.
+        // Sides of the computation (i.e. positive and negative sums)
+        //   x = a - ceil(a) : x in -(1, 0)
+        //   zeta(s, x + 1) - [ zeta(s, -x) - zeta(s, 1 - a) ]
+        //
+        // The most significant terms on each side are: -1 < x < 0 < 1 + x < 1.
+        // The positive side is larger than the negative side when x = -0.5
+        // as the series is infinite on one side and not the other.
+        // The root must be x >= -0.5 to bias the most significant term to be larger
+        // on the negative side.
+        //
+        // As s increases the magnitude of each side increases as the terms with (0, 1)^-s
+        // increase in size. For the two sides to cancel x -> -0.5.
         // When s is large the two terms (0.5 +/- ulp(a))^-s dominate the two sides.
         // If s >= 1067 the difference between terms overflows for any a.
-        // If |a| is large the cancellation is less around the root as the ulp
-        // of |a| pushes the dominant terms ~0.5^-s away from each other.
+        // The true root is never at a half-integer as total cancellation will result
+        // in the positive value zeta(s, 1 - a). However in double precision
+        // the value of x is limited by ulp(a). So the smallest value may be computed
+        // when x is half-integer. Thus zeta(s, 1 - a) is the upper bound on the value at
+        // the root.
+        //
+        // If |a| is large the cancellation is less around (0.5 +/- ulp(a))^-s as the ulp
+        // of |a| pushes the dominant terms ~0.5^-s away from each other. However the
+        // sides have more terms and cancellation can still be large.
+        //
         // The following cases should find roots where cancellation is high and record
         // them to be verified using e.g. mpmath or MATLAB zeta functions.
         // Note: Inspection of the output from an independent zeta evaluation should
         // see a sign change for each case as they are roots in double precision.
-
-        // TODO: explain why root is always > half-integer midpoint. Assert this is true
-        // when finding the root.
-        // Can we speed up the search by breaking the double loop when a half-integer
-        // root is found.
 
         // Max cancellation 55-bits
         "3, 21, 0, 100",
@@ -2855,11 +2869,13 @@ class HurwitzZetaTest {
         double maxc = 0;
         // Cases to record
         final ArrayList<String> cases = new ArrayList<String>();
+        final ArrayList<String> maxRecorded = new ArrayList<String>();
         // Threshold to include the case in the results
         final double threshold = 45;
         // Lowest tolerance allowed
         final BrentSolver solver = new BrentSolver(0, 0, 0);
         for (int s = ls; s <= us; s += 2) {
+            double maxA = 0;
             final int ss = s;
             // Assume the function is optimised for accuracy
             final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
@@ -2883,13 +2899,17 @@ class HurwitzZetaTest {
                 final double mid = -ta - 0.5;
                 final double max = Math.nextDown(-ta);
                 final double xx = solver.findRoot(f, min, mid, max);
+                Assertions.assertTrue(xx - Math.ceil(xx) >= -0.5,
+                    () -> "Root should be at x >= half-integer: " + xx);
                 // Check the solver found a bracket
                 final double x0 = Math.nextDown(xx);
                 final double x1 = Math.nextUp(xx);
                 final double f0 = f.applyAsDouble(x0);
                 final double fx = f.applyAsDouble(xx);
                 final double f1 = f.applyAsDouble(x1);
-                Assertions.assertTrue(f0 * f1 <= 0, String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
+                // Root should be bracketed by a sign change
+                Assertions.assertTrue(f0 > 0 && f1 < 0,
+                    () -> String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
                 // Compute the cancellation using sides of the computation:
                 // x = a - ceil(a) : x in -(1, 0)
                 // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
@@ -2946,7 +2966,11 @@ class HurwitzZetaTest {
                 }
                 if (save) {
                     cases.addAll(record);
+                    maxA = xx;
                 }
+            }
+            if (maxA < 0) {
+                maxRecorded.add(String.format("# %d %s%n", s, maxA));
             }
         }
         Assertions.assertFalse(cases.isEmpty(), "No test cases were recorded");
@@ -2957,8 +2981,11 @@ class HurwitzZetaTest {
             out.printf("# Cancellation of terms (x - y) computed using:%n");
             out.printf("# max(exponent(x), exponent(y)) - exponent(x - y)%n");
             out.printf("# Comment shows max(|x|, |y|) and number of bits%n");
-            out.printf("# Maximum cancellation (a - ceil(a) != -0.5) : %s%n", shortFormat(maxc));
+            out.printf("# Cancellation threshold = %s%n", shortFormat(threshold));
+            out.printf("# Maximum cancellation (a - ceil(a) != -0.5) = %s%n", shortFormat(maxc));
             out.printf("# N = %d%n", cases.size());
+            out.printf("# s min(a)%n");
+            maxRecorded.forEach(out::print);
             cases.forEach(out::print);
         }
     }
