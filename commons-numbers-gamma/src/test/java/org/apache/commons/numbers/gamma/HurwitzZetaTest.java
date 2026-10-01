@@ -1039,56 +1039,88 @@ class HurwitzZetaTest {
 
         // tsum can use extended precision.
         DD tsum = DD.ZERO;
+        final double stop = sum.hi() * c.getEps();
+        int i;
         add = (c.getTailOption() & 4) != 0 ?
             DD::add :
             (x, y) -> DD.of(x.hi() + y);
 
-        final double stop = sum.hi() * c.getEps();
-
-        // Alternative implementations for (a+n)^-(2k-1+s).
-        // Set using the first two bits of the tail option.
-        double apn = 0;
-        final int powerTermOption = c.getTailOption() & 0x3;
-        if (powerTermOption == 0) {
+        // Option for tsum in DD precision
+        if ((c.getTailOption() & 8) != 0) {
             // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
             // Divide by (a+n)^2 using multiplication
-            p = pow.applyAsDouble(a, n, -s - 1);
-            apn = pow.applyAsDouble(a, n, -2);
-        } else if (powerTermOption == 1) {
-            // Initialise (a+n)^-(2k-1+s) to (a+n)^-s
-            // Divide by (a+n) twice inside the loop
-            apn = a + n;
+            DD apn = DD.ofSum(a, n);
+            DD pp = DD.of(pow.applyAsDouble(a, n, -s)).divide(apn);
+            apn = apn.pow(-2);
+            for (i = 0; i < c.getM(); i++) {
+                // p = (a+n)^-(2k-1+s)
+                // Note that this uses divide by F rather than multiply by FM.
+                // Testing shows negligible difference. The first 6/7 terms of
+                // M are exact so divide is used.
+                final DD t = pp.multiply(f).multiply(FDD[i]);
+                tsum = tsum.add(t);
+                if (Math.abs(t.hi()) <= stop) {
+                    break;
+                }
+                // Q. Can f be DD?
+                // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+                f *= s + k2;
+                k2 += 1.0;
+                f *= s + k2;
+                k2 += 1.0;
+                // p = (a+n)^-(2k-1+s)
+                pp = pp.multiply(apn);
+            }
         } else {
-            // Compute using the power function
-            p = pow.applyAsDouble(a, n, -(k2 + s));
-        }
+            add = (c.getTailOption() & 4) != 0 ?
+                DD::add :
+                (x, y) -> DD.of(x.hi() + y);
 
-        int i;
-        for (i = 0; i < c.getM(); i++) {
-            // p = (a+n)^-(2k-1+s)
-            if (powerTermOption == 1) {
-                p /= apn;
-            }
-            // Note that this uses divide by F rather than multiply by FM.
-            // Testing shows negligible difference. The first 6/7 terms of
-            // M are exact so divide is used.
-            final double t = f * p / F[i];
-            tsum = add.apply(tsum, t);
-            if (Math.abs(t) <= stop) {
-                break;
-            }
-            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-            f *= s + k2;
-            k2 += 1.0;
-            f *= s + k2;
-            k2 += 1.0;
-            // Update (a+n)^-(2k-1+s)
-            if (powerTermOption == 0) {
-                p *= apn;
-            } else if (powerTermOption == 1) {
-                p /= apn;
-            } else {
+            // Alternative implementations for (a+n)^-(2k-1+s).
+            // Set using the first two bits of the tail option.
+            double apn = 0;
+            final int powerTermOption = c.getTailOption() & 0x3;
+            if (powerTermOption == 2) {
+                // Compute using the power function
                 p = pow.applyAsDouble(a, n, -(k2 + s));
+            } else if (powerTermOption == 1) {
+                // Initialise (a+n)^-(2k-1+s) to (a+n)^-s
+                // Divide by (a+n) twice inside the loop
+                apn = a + n;
+            } else {
+                // powerTermOption == 0 or 3
+                // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+                // Divide by (a+n)^2 using multiplication
+                p = pow.applyAsDouble(a, n, -s - 1);
+                apn = pow.applyAsDouble(a, n, -2);
+            }
+
+            for (i = 0; i < c.getM(); i++) {
+                // p = (a+n)^-(2k-1+s)
+                if (powerTermOption == 1) {
+                    p /= apn;
+                }
+                // Note that this uses divide by F rather than multiply by FM.
+                // Testing shows negligible difference. The first 6/7 terms of
+                // M are exact so divide is used.
+                final double t = f * p / F[i];
+                tsum = add.apply(tsum, t);
+                if (Math.abs(t) <= stop) {
+                    break;
+                }
+                // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+                f *= s + k2;
+                k2 += 1.0;
+                f *= s + k2;
+                k2 += 1.0;
+                // Update (a+n)^-(2k-1+s)
+                if (powerTermOption == 2) {
+                    p = pow.applyAsDouble(a, n, -(k2 + s));
+                } else if (powerTermOption == 1) {
+                    p /= apn;
+                } else {
+                    p *= apn;
+                }
             }
         }
         // Used to histogram convergence when testing
@@ -1894,24 +1926,27 @@ class HurwitzZetaTest {
         //   the other N=8 is OK.
 
         // Extended precision power function (difference)
-        "5, 15, -53, 0, 0, false",
-        "5, 15, -53, 1, 0, false",
+        "6, 15, -53, 0, 0, false",
+        "6, 15, -53, 1, 0, false",
         // Extended precision sum (small difference with/without the power function)
         // RMS drops as N increases. Max error is variable.
-        "5, 15, -53, 0, 0, true",
-        "5, 15, -53, 1, 0, true",
+        "6, 15, -53, 0, 0, true",
+        "6, 15, -53, 1, 0, true", // <== Optimum
 //        // Using divide in the tail series (no difference)
-//        "5, 12, -53, 0, 1, false",
-//        "5, 12, -53, 1, 1, false",
+//        "6, 12, -53, 0, 1, false",
+//        "6, 12, -53, 1, 1, false",
 //        // Use power in the tail series (no difference)
-//        "5, 12, -53, 0, 2, true",
-//        "5, 12, -53, 1, 2, true",
+//        "6, 12, -53, 0, 2, true",
+//        "6, 12, -53, 1, 2, true",
 //        // Use extended precision sum in the tail series (no difference)
-//        "5, 12, -53, 0, 4, true",
-//        "5, 12, -53, 1, 4, true",
-//        "5, 12, -53, 0, 6, true",
-//        "5, 12, -53, 1, 6, true",
-//        // Convergence (negligible error change unless to high, does increase required M)
+//        "6, 12, -53, 0, 4, true",
+//        "6, 12, -53, 1, 4, true",
+//        "6, 12, -53, 0, 6, true",
+//        "6, 12, -53, 1, 6, true",
+//        // Using DD for the tail series (no difference)
+//        "6, 15, -53, 0, 8, true",
+//        "6, 15, -53, 1, 8, true",
+//        // Convergence (negligible error change unless too high, does increase required M)
 //        "8, 10, -49, 1, 0, true",
 //        "8, 10, -50, 1, 0, true",
 //        "8, 10, -51, 1, 0, true",
@@ -1919,7 +1954,7 @@ class HurwitzZetaTest {
 //        "8, 10, -53, 1, 0, true",
 //        "8, 10, -54, 1, 0, true",
     })
-    @Disabled("Used to parameterize the zeta function")
+//    @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int b,
         int pow, int tail, boolean epSum)
         throws IOException {
