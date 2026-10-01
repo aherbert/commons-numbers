@@ -2796,9 +2796,11 @@ class HurwitzZetaTest {
                         continue;
                     }
                     // test a is integer: bracket -(a, a+1)
+                    // The half-integer point is a good first approximation
                     final double min = Math.nextUp(-ta - 1);
+                    final double mid = -ta - 0.5;
                     final double max = Math.nextDown(-ta);
-                    final double xx = solver.findRoot(f, min, max);
+                    final double xx = solver.findRoot(f, min, mid, max);
                     // Check the solver found a bracket
                     final double x0 = Math.nextDown(xx);
                     final double x1 = Math.nextUp(xx);
