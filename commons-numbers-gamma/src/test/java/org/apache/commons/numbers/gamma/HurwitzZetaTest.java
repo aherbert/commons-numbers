@@ -2648,6 +2648,40 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Test the cancellation for negative half-integer a using {@code a = 0.5 - 2^b}.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "2, 8, 30",
+        "20, 20, 30",
+    })
+    @Disabled("Used to show cancellation at half-integer a")
+    void testCancellation(int ls, int us, int maxB) {
+        Assertions.assertTrue(ls >= 2);
+        Assertions.assertTrue(us >= ls);
+        Assertions.assertTrue(maxB >= 0);
+        int maxCancellation = 0;
+        for (int s = ls; s <= us; s++) {
+            for (int b = 0; b <= maxB; b++) {
+                final double a = 0.5 - Math.scalb(1.0, b);
+                // Cancellation: max(exponent(a), exponent(b)) - exponent(a - b)
+                // We know the largest term is the zeta evaluation at 0.5
+                final double z = HurwitzZetaTest.zeta(s, 0.5, Double.NaN, Context.DOUBLE);
+                final double r = HurwitzZetaTest.zeta(s, 1 - a, Double.NaN, Context.DOUBLE);
+                final int cancellation = Math.getExponent(z) - Math.getExponent(r);
+                maxCancellation = Math.max(maxCancellation, cancellation);
+                if (doReporting()) {
+                    // CHECKSTYLE: stop regexp
+                    System.out.printf("|%2d|%s|%.4g|%.4g|%d|%n",
+                        s, a, z, r, cancellation);
+                    // CHECKSTYLE: resume regexp
+                }
+            }
+        }
+        Assertions.assertTrue(maxCancellation > 53);
+    }
+
+    /**
      * Test the speed of the BigDecimal and DD implementations for negative a.
      * This is an approximate test. Benchmarking should ideally use JMH.
      *
