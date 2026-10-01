@@ -19,8 +19,12 @@
 # Cancellation of terms (x - y) computed using:
 # max(exponent(x), exponent(y)) - exponent(x - y)
 # Comment shows max(|x|, |y|) and number of bits
-# Maximum cancellation (a - ceil(a) != -0.5) : 51
+# Cancellation threshold = 45
+# Maximum cancellation (a - ceil(a) != -0.5) = 51
 # N = 360
+# s min(a)
+# 3 -298.4999999425848
+# 5 -290.49999999999994
 # 8.414 : 43
 3, -101.49999950664478, 0.00000000000161418629009548439741132415466
 # 8.414 : 45
