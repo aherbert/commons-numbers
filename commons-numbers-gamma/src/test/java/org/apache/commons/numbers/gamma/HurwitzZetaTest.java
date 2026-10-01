@@ -24,6 +24,7 @@ import java.math.BigInteger;
 import java.math.MathContext;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.SplittableRandom;
 import java.util.function.BiFunction;
@@ -70,10 +71,17 @@ class HurwitzZetaTest {
         "hzeta_s1_4_a8_32.csv",
         "hzeta_s4_32_a1_8.csv",
     };
-    /** Filenames of resources used for the extended precision test zeta function using integer s. */
+    /** Filenames of resources used for the extended precision zeta function using integer s. */
     private static final String[] INT_TEST_RESOURCES = {
         "hzeta_ia2_11_a1_1.csv",
         "hzeta_ia2_11_a40_41.csv",
+    };
+    /** Filenames of resources used for the roots of the zeta function using integer s. */
+    private static final String[] ROOT_TEST_RESOURCES = {
+        "hzeta_root_s3_21_na0_100.csv",
+        "hzeta_root_s23_1067_na0_50.csv",
+        "hzeta_root_s3_21_na101_300.csv",
+        "hzeta_root_s3_5_na301_1000.csv",
     };
     /** Flag set when reporting to the console. Used for testing.
      * If negative no output is printed. */
@@ -794,13 +802,9 @@ class HurwitzZetaTest {
         // Computing the largest terms in extended precision allows a few bits of precision
         DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na0_100.csv", 0x1p48, 0x1p44),
 
-        BD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0, 0),
-        BD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
-        BD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
+        BD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), ROOT_TEST_RESOURCES, 0, 0),
         // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
-        DD_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na0_100.csv", 0.7, 0.05),
-        DD_ZETA_ROOT_S11_1067_N_A0_10((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s11_1067_na0_10.csv", 0, 0),
-        DD_ZETA_ROOT_S3_21_N_A101_300((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_root_s3_21_na101_300.csv", 0, 0),
+        DD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), ROOT_TEST_RESOURCES, 0.7, 0.05),
 
         // Final implementation
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
@@ -821,7 +825,7 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 180, 5.2),
         // Broken
         ZETA_ROOT_S3_21_N_A0_100(HurwitzZeta::value, "hzeta_root_s3_21_na0_100.csv", 2e14, 9e12),
-        ZETA_ROOT_S11_1067_N_A0_10(HurwitzZeta::value, "hzeta_root_s11_1067_na0_10.csv", 2e10, 3e9),
+        ZETA_ROOT_S23_1067_N_A0_50(HurwitzZeta::value, "hzeta_root_s23_1067_na0_50.csv", 2e10, 3e9),
         ZETA_ROOT_S3_21_N_A101_300(HurwitzZeta::value, "hzeta_root_s3_21_na101_300.csv", 1e10, 1e9),
         ;
 
@@ -844,10 +848,10 @@ class HurwitzZetaTest {
 //        DOUBLE_ZETA_ROOT_S3_21_N_A0_100       max    1.30515e+16   RMS    9.84059e+14   mean    3.82128e+13  n  298  (5.05ms)
 //        DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100     max    1.02450e+14   RMS    1.06801e+13   mean   -2.71725e+11  n  298  (10.7ms)
 //        BD_ZETA_ROOT_S3_21_N_A0_100           max        0.00000   RMS        0.00000   mean        0.00000  n  298  (25.5ms)
-//        BD_ZETA_ROOT_S11_1067_N_A0_10         max        0.00000   RMS        0.00000   mean        0.00000  n  143  (12.1ms)
+//        BD_ZETA_ROOT_S23_1067_N_A0_50         max        0.00000   RMS        0.00000   mean        0.00000  n  143  (12.1ms)
 //        BD_ZETA_ROOT_S3_21_N_A101_300         max        0.00000   RMS        0.00000   mean        0.00000  n   57  (11.0ms)
 //        DD_ZETA_ROOT_S3_21_N_A0_100           max       0.638297   RMS      0.0369756   mean    -0.00214194  n  298  (4.46ms)
-//        DD_ZETA_ROOT_S11_1067_N_A0_10         max        0.00000   RMS        0.00000   mean        0.00000  n  143  (1.91ms)
+//        DD_ZETA_ROOT_S23_1067_N_A0_50         max        0.00000   RMS        0.00000   mean        0.00000  n  143  (1.91ms)
 //        DD_ZETA_ROOT_S3_21_N_A101_300         max        0.00000   RMS        0.00000   mean        0.00000  n   57  (1.27ms)
 //        ZETA_S1_4_A1_8                        max        2.81580   RMS       0.615101   mean     0.00944203  n 3000  (18.0ms)
 //        ZETA_S1_4_A8_32                       max        3.52850   RMS       0.689257   mean     -0.0216926  n 3000  (17.2ms)
@@ -865,7 +869,7 @@ class HurwitzZetaTest {
 //        ZETA_S3_5_N_A1_15_HALF_B30            max        5.50817   RMS        1.38617   mean      0.0414323  n 3000  (19.6ms)
 //        ZETA_S3_5_N_A40_99_HALF_B30           max        93.0785   RMS        1.81247   mean      0.0185033  n 3000  (37.9ms)
 //        ZETA_ROOT_S3_21_N_A0_100              max    1.05554e+14   RMS    8.60179e+12   mean   -9.87321e+11  n  298  (2.73ms)
-//        ZETA_ROOT_S11_1067_N_A0_10            max    1.98623e+10   RMS    2.04904e+09   mean    2.29772e+08  n  143  (0.988ms)
+//        ZETA_ROOT_S23_1067_N_A0_50            max    1.98623e+10   RMS    2.04904e+09   mean    2.29772e+08  n  143  (0.988ms)
 //        ZETA_ROOT_S3_21_N_A101_300            max    5.16435e+09   RMS    8.46715e+08   mean    1.72524e+08  n   57  (1.60ms)
 
         /** The function. */
@@ -2765,7 +2769,7 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Find roots of the the zeta function.
+     * Create test data by finding roots of the the zeta function.
      *
      * <p>The approximate cancellation of the positive and negative terms is computed
      * in bits. This does not exceed 55 bits. This sets the limit on double-double
@@ -2773,22 +2777,38 @@ class HurwitzZetaTest {
      * double-double arguments, which is not possible. The DD zeta function can be
      * optimised to ~105 bits of precision.
      *
-     * <p>This uses positive a parameters for convenience.
+     * <p>This uses positive a parameters for convenience. Cases with cancellation
+     * below a threshold are ignored.
      */
     @ParameterizedTest
     @CsvSource({
+        // Notes on cancellation in the computation of sum_(n=0)^infty (a+n)^-s
+        // using two terms as the sum of (a+n) > 0 and (a+n) < 0, i.e. positive and negative sums.
+        //
         // As |a| or s increases the root x -> half-integer.
-        // The cancellation for the next x before and after the root grows
-        // to exceed 53 bits.
-        "3, 21, 0, 100",
-        "11, 1067, 0, 10",
-        "3, 21, 101, 300",
-        // Root is always x = half-integer.
-        // When |a| is large the cancellation is less around the root as the ulp
+        // When s is large the two terms (0.5 +/- ulp(a))^-s dominate the two sides.
+        // If s >= 1067 the difference between terms overflows for any a.
+        // If |a| is large the cancellation is less around the root as the ulp
         // of |a| pushes the dominant terms ~0.5^-s away from each other.
-        // "1023, 1123, 1000000, 1000003",
+        // The following cases should find roots where cancellation is high and record
+        // them to be verified using e.g. mpmath or MATLAB zeta functions.
+        // Note: Inspection of the output from an independent zeta evaluation should
+        // see a sign change for each case as they are roots in double precision.
+
+        // Max cancellation 55-bits
+        "3, 21, 0, 100",
+        // Max cancellation 53-bits (this is slow)
+        "23, 1067, 0, 50",
+        // Max cancellation 51-bits
+        "3, 21, 101, 300",
+        // Max cancellation 52-bits
+        "3, 5, 301, 1000",
+//        // Max Cancellation 46-bits
+//        "3, 5, 3001, 3010",
+//        // No cases above 45-bits
+//        "3, 5, 30001, 30010",
     })
-    @Disabled("Used to generate test data")
+//    @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
         // Validate arguments
         Assertions.assertTrue(ls > 2);
@@ -2802,102 +2822,114 @@ class HurwitzZetaTest {
         final Context context = Context.BD_QUAD_DOUBLE;
         // Maximum cancellation
         double maxc = 0;
-        int count = 0;
-        // Threshold to include the case in the result
+        // Cases to record
+        final ArrayList<String> cases = new ArrayList<String>();
+        // Threshold to include the case in the results
         final double threshold = 45;
         // Lowest tolerance allowed
         final BrentSolver solver = new BrentSolver(0, 0, 0);
-        try (PrintStream out = getPrintStream(
-            String.format("hzeta_root_s%d_%d_na%s_%s.txt", ls, us, shortFormat(la), shortFormat(ua)))) {
-            out.printf("# Cancellation of terms (a - b) computed using:%n");
-            out.printf("# max(exponent(a), exponent(b)) - exponent(a - b)%n");
-            out.printf("# Comment shows max(|a|, |b|) and number of bits%n");
-            for (int s = ls; s <= us; s += 2) {
-                final int ss = s;
-                // Assume the function is optimised for accuracy
-                final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
-                for (double ta = la; ta <= ua; ta += 1) {
-                    // Test root finding is possible (requires a finite double result):
-                    // [nextDown(0.5)^-s - nextUp(0.5)^-s]
-                    final double ulp = Math.ulp(ta + 0.5);
-                    final BigDecimal t1 = new BigDecimal(0.5 + ulp);
-                    final BigDecimal t2 = new BigDecimal(0.5 - ulp);
-                    if (!Double.isFinite(
-                        t1.pow(-s, MathContext.DECIMAL64).subtract(
-                        t2.pow(-s, MathContext.DECIMAL64)
-                    ).doubleValue())) {
+        for (int s = ls; s <= us; s += 2) {
+            final int ss = s;
+            // Assume the function is optimised for accuracy
+            final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
+            for (double ta = la; ta <= ua; ta += 1) {
+                // Test root finding is possible (requires a finite double result):
+                // [nextDown(0.5)^-s - nextUp(0.5)^-s]
+                final double ulp = Math.ulp(ta + 0.5);
+                final BigDecimal t1 = new BigDecimal(0.5 + ulp);
+                final BigDecimal t2 = new BigDecimal(0.5 - ulp);
+                if (!Double.isFinite(
+                    t1.pow(-s, MathContext.DECIMAL64).subtract(
+                    t2.pow(-s, MathContext.DECIMAL64)
+                ).doubleValue())) {
+                    // As |a| increases the ulp will increase and the difference between
+                    // the terms t1 and t2 will increase so we can stop
+                    break;
+                }
+                // test a is integer: bracket -(a, a+1)
+                // The half-integer point is a good first approximation
+                final double min = Math.nextUp(-ta - 1);
+                final double mid = -ta - 0.5;
+                final double max = Math.nextDown(-ta);
+                final double xx = solver.findRoot(f, min, mid, max);
+                // Check the solver found a bracket
+                final double x0 = Math.nextDown(xx);
+                final double x1 = Math.nextUp(xx);
+                final double f0 = f.applyAsDouble(x0);
+                final double fx = f.applyAsDouble(xx);
+                final double f1 = f.applyAsDouble(x1);
+                Assertions.assertTrue(f0 * f1 <= 0, String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
+                // Compute the cancellation using sides of the computation:
+                // x = a - ceil(a) : x in -(1, 0)
+                // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
+                // Cancellation is the power of 2 magnitude difference.
+                final double[] args = {x0, xx, x1};
+                final double[] results = {f0, fx, f1};
+                // Record the root (if not half-integer) and both sides.
+                // Only do this when cancellation of is above the threshold for 1 of the results.
+                final ArrayList<String> record = new ArrayList<String>();
+                boolean save = false;
+                for (int i = 0; i < 3; i++) {
+                    final double a = args[i];
+                    final double x = a - Math.ceil(a);
+                    if (x == -0.5 || !Double.isFinite(results[i])) {
+                        // Skip computing cancellation.
+                        // Include the case so it can be evaluated for test resource data.
+                        record.add(String.format("%s, %s%n", s, a));
                         continue;
                     }
-                    // test a is integer: bracket -(a, a+1)
-                    // The half-integer point is a good first approximation
-                    final double min = Math.nextUp(-ta - 1);
-                    final double mid = -ta - 0.5;
-                    final double max = Math.nextDown(-ta);
-                    final double xx = solver.findRoot(f, min, mid, max);
-                    // Check the solver found a bracket
-                    final double x0 = Math.nextDown(xx);
-                    final double x1 = Math.nextUp(xx);
-                    final double f0 = f.applyAsDouble(x0);
-                    final double fx = f.applyAsDouble(xx);
-                    final double f1 = f.applyAsDouble(x1);
-                    Assertions.assertTrue(f0 * f1 <= 0, String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
-                    // Compute the cancellation using sides of the computation:
-                    // x = a - ceil(a) : x in -(1, 0)
-                    // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
-                    // Cancellation is the power of 2 magnitude difference.
-                    final double[] args = {x0, xx, x1};
-                    final double[] results = {f0, fx, f1};
-                    for (int i = 0; i < 3; i++) {
-                        final double a = args[i];
-                        final double x = a - Math.ceil(a);
-                        if (x == -0.5 || !Double.isFinite(results[i])) {
-                            // Skip the easy total cancellation result and infinity
-                            continue;
-                        }
-                        // Get the terms that cancel
-                        final BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
-                        final BigDecimal z2 = negativeSeriesSum(a, x, s,
-                            new BigDecimal(x).pow(-s, context.getMathContext()), context);
-                        // Verify the terms are correct
-                        TestUtils.assertEquals(results[i],
-                            z1.add(z2, context.getMathContext()).doubleValue(), 0, null,
-                            () -> String.format("%d %s %s", ss, a, z1.doubleValue()));
-                        // Cancellation is the number of matching leading bits:
-                        // r = x - y
-                        // max(exponent(x), exponent(y)) - exponent(r)
-                        final BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
-                        final double z = zz.doubleValue();
-                        double lz;
-                        if (Double.isFinite(z)) {
-                            lz = Math.getExponent(z);
-                        } else {
-                            // floor(log2(max(|x|, |y|))) - floor(log2(r)) ~ log2(max(|x|, |y|) / r)
-                            // log2(z) == log10(z) / log10(2)
-                            // precision - scale = floor(log10(z))
-                            // The floor operation is before conversion to base 2 so is approximate
-                            lz = (zz.precision() - zz.scale()) / Math.log10(2);
-                        }
-                        // If result is 0 the exponent is -1023. The cancellation is total and
-                        // computed as the number of binary digits in z with trailing zeros.
-                        final double lr = Math.getExponent(results[i]);
-                        final double cx = lz - lr;
-                        maxc = Math.max(maxc, cx);
-                        // In order to limit the test data size skip any cancellation
-                        // below a threshold
-                        if (cx > threshold) {
-                            out.printf("# %s : %s%n",
-                                zz.round(new MathContext(4)).toEngineeringString(), shortFormat(cx));
-                            out.printf("%s, %s%n", s, a);
-                            count++;
-                        }
+                    // Get the terms that cancel
+                    final BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
+                    final BigDecimal z2 = negativeSeriesSum(a, x, s,
+                        new BigDecimal(x).pow(-s, context.getMathContext()), context);
+                    // Verify the terms are correct
+                    TestUtils.assertEquals(results[i],
+                        z1.add(z2, context.getMathContext()).doubleValue(), 0, null,
+                        () -> String.format("%d %s %s", ss, a, z1.doubleValue()));
+                    // Cancellation is the number of matching leading bits:
+                    // r = x - y
+                    // max(exponent(x), exponent(y)) - exponent(r)
+                    final BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
+                    final double z = zz.doubleValue();
+                    double lz;
+                    if (Double.isFinite(z)) {
+                        lz = Math.getExponent(z);
+                    } else {
+                        // floor(log2(max(|x|, |y|))) - floor(log2(r)) ~ log2(max(|x|, |y|) / r)
+                        // log2(z) == log10(z) / log10(2)
+                        // precision - scale = floor(log10(z))
+                        // The floor operation is before conversion to base 2 so is approximate
+                        lz = (zz.precision() - zz.scale()) / Math.log10(2);
                     }
+                    // If result is 0 the exponent is -1023. The cancellation is total and
+                    // computed as the number of binary digits in z with trailing zeros.
+                    final double lr = Math.getExponent(results[i]);
+                    final double cx = lz - lr;
+                    maxc = Math.max(maxc, cx);
+                    // Record the case
+                    record.add(String.format("# %s : %s%n%s, %s%n",
+                        zz.round(new MathContext(4)).toEngineeringString(), shortFormat(cx),
+                        s, a));
+                    // Only include if at least one is above threshold
+                    save |= cx >= threshold;
+                }
+                if (save) {
+                    cases.addAll(record);
                 }
             }
-            out.printf("# Maximum cancellation (a - ceil(a) != -0.5) : %s%n", shortFormat(maxc));
-            out.printf("# N = %d%n", count);
         }
-        Assertions.assertNotEquals(0, count, "No test cases were recorded");
+        Assertions.assertFalse(cases.isEmpty(), "No test cases were recorded");
         Assertions.assertTrue(maxc <= 55, "Maximum cancellation exceeded 55 bits: " + maxc);
+
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_root_s%d_%d_na%s_%s.txt", ls, us, shortFormat(la), shortFormat(ua)))) {
+            out.printf("# Cancellation of terms (x - y) computed using:%n");
+            out.printf("# max(exponent(x), exponent(y)) - exponent(x - y)%n");
+            out.printf("# Comment shows max(|x|, |y|) and number of bits%n");
+            out.printf("# Maximum cancellation (a - ceil(a) != -0.5) : %s%n", shortFormat(maxc));
+            out.printf("# N = %d%n", cases.size());
+            cases.forEach(out::print);
+        }
     }
 
     /**
