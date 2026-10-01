@@ -72,9 +72,6 @@ class HurwitzZetaTest {
     };
     /** Filenames of resources used for the extended precision test zeta function using integer s. */
     private static final String[] INT_TEST_RESOURCES = {
-        // TODO: ensure this is good data
-        "hzeta_ia2_2_a1_1.csv",
-        "hzeta_ia2_2_a40_41.csv",
         "hzeta_ia2_11_a1_1.csv",
         "hzeta_ia2_11_a40_41.csv",
     };
@@ -2106,7 +2103,9 @@ class HurwitzZetaTest {
         "12, 30, -106, 1, -53",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
-        // be selectively used for the same precision.
+        // be selectively used for the *same* precision. However zeta evaluations
+        // with a above 1 are only used as a term added to a much larger
+        // zeta evaluation and precision does not require all the bits.
         "12, 30, -106, 3, -53",
 //        // No difference - DD precision cannot be improved
 //        // "12, 30, -108, true, -53",
