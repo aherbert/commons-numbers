@@ -82,6 +82,7 @@ class HurwitzZetaTest {
         "hzeta_root_s23_1067_na0_50.csv",
         "hzeta_root_s3_21_na101_300.csv",
         "hzeta_root_s3_5_na301_1000.csv",
+        "hzeta_root_s3_3_na1001_16384.csv",
     };
     /** Flag set when reporting to the console. Used for testing.
      * If negative no output is printed. */
@@ -2839,6 +2840,10 @@ class HurwitzZetaTest {
         // them to be verified using e.g. mpmath or MATLAB zeta functions.
         // Note: Inspection of the output from an independent zeta evaluation should
         // see a sign change for each case as they are roots in double precision.
+        //
+        // When s is large, search small |a|.
+        // When s is small, search larger |a|.
+        // When |a| is very large, all roots are at half-integer
 
         // Max cancellation 55-bits
         "3, 21, 0, 100",
@@ -2846,12 +2851,18 @@ class HurwitzZetaTest {
         "23, 1067, 0, 50",
         // Max cancellation 51-bits
         "3, 21, 101, 300",
-        // Max cancellation 52-bits
+        // Max cancellation 52-bits; no cases with s=5
         "3, 5, 301, 1000",
-//        // Max Cancellation 46-bits
-//        "3, 5, 3001, 3010",
-//        // No cases above 45-bits
-//        "3, 5, 30001, 30010",
+        // Max Cancellation 51-bits
+        "3, 3, 1001, 16384",
+//        // Max Cancellation 51-bits
+//        "3, 3, 1001, 2048",
+//        // Max Cancellation 51-bits
+//        "3, 3, 2049, 4096",
+//        // Max Cancellation 50-bits
+//        "3, 3, 4097, 8192",
+//        // Max Cancellation 49-bits
+//        "3, 3, 8193, 16384",
     })
     @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
@@ -2867,6 +2878,7 @@ class HurwitzZetaTest {
         final Context context = Context.BD_QUAD_DOUBLE;
         // Maximum cancellation
         double maxc = 0;
+        boolean nonHalfIntegerRoot = false;
         // Cases to record
         final ArrayList<String> cases = new ArrayList<String>();
         final ArrayList<String> maxRecorded = new ArrayList<String>();
@@ -2910,6 +2922,7 @@ class HurwitzZetaTest {
                 // Root should be bracketed by a sign change
                 Assertions.assertTrue(f0 > 0 && f1 < 0,
                     () -> String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
+                nonHalfIntegerRoot |= xx - Math.ceil(xx) != -0.5;
                 // Compute the cancellation using sides of the computation:
                 // x = a - ceil(a) : x in -(1, 0)
                 // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
@@ -2973,8 +2986,10 @@ class HurwitzZetaTest {
                 maxRecorded.add(String.format("# %d %s%n", s, maxA));
             }
         }
-        Assertions.assertFalse(cases.isEmpty(), "No test cases were recorded");
-        Assertions.assertTrue(maxc <= 55, "Maximum cancellation exceeded 55 bits: " + maxc);
+        final String msg = String.format("max cancellation %s; non-half-integer root=%s", shortFormat(maxc), nonHalfIntegerRoot);
+        Assertions.assertFalse(cases.isEmpty(), () -> "No test cases recorded: " + msg);
+        Assertions.assertTrue(nonHalfIntegerRoot);
+        Assertions.assertTrue(maxc <= 55, "Exceeded 55 bits: " + msg);
 
         try (PrintStream out = getPrintStream(
             String.format("hzeta_root_s%d_%d_na%s_%s.txt", ls, us, shortFormat(la), shortFormat(ua)))) {
