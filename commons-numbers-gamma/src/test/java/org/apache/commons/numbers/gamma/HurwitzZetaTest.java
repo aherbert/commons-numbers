@@ -1954,7 +1954,7 @@ class HurwitzZetaTest {
 //        "8, 10, -53, 1, 0, true",
 //        "8, 10, -54, 1, 0, true",
     })
-//    @Disabled("Used to parameterize the zeta function")
+    @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int b,
         int pow, int tail, boolean epSum)
         throws IOException {
