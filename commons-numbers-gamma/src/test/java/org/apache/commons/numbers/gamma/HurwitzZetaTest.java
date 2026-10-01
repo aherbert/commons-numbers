@@ -2681,16 +2681,16 @@ class HurwitzZetaTest {
      */
     @ParameterizedTest
     @CsvSource({
-        "2, 8, 30",
-        "20, 20, 30",
+        "3, 9, 30",
+        "21, 21, 30",
     })
     @Disabled("Used to show cancellation at half-integer a")
     void testCancellation(int ls, int us, int maxB) {
-        Assertions.assertTrue(ls >= 2);
+        Assertions.assertTrue(ls >= 3);
         Assertions.assertTrue(us >= ls);
         Assertions.assertTrue(maxB >= 0);
         int maxCancellation = 0;
-        for (int s = ls; s <= us; s++) {
+        for (int s = ls; s <= us; s += 2) {
             for (int b = 0; b <= maxB; b++) {
                 final double a = 0.5 - Math.scalb(1.0, b);
                 // Cancellation: max(exponent(a), exponent(b)) - exponent(a - b)
@@ -2701,7 +2701,7 @@ class HurwitzZetaTest {
                 maxCancellation = Math.max(maxCancellation, cancellation);
                 if (doReporting()) {
                     // CHECKSTYLE: stop regexp
-                    System.out.printf("|%2d|%s|%.4g|%.4g|%d|%n",
+                    System.out.printf("|%d|%s|%.4g|%.4g|%d|%n",
                         s, a, z, r, cancellation);
                     // CHECKSTYLE: resume regexp
                 }
