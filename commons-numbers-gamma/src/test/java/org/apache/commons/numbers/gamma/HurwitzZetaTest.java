@@ -466,8 +466,6 @@ class HurwitzZetaTest {
         DD.ofSum(4.942696565159462E-85, -2.8094990080509668E-101), // (36373903172617414408151820151593427169231298640581690038930816378281879873386202346572901 / 642) / 106!
     };
 
-    // TODO - refactor Context to double, double-double and BigDecimal implementations
-
     /** Context for the zeta implementation.
      * This is used to control how the test zeta implementation is computed.
      * Contains options for double, double-double and BigDecimal implementations. */
@@ -669,7 +667,13 @@ class HurwitzZetaTest {
                     return r.scalb((int) exp[0]);
                 };
             }
-            return DD::pow;
+            // This function is computed using reciprocal(x^s).
+            // So large x or s can break even if the result is finite 
+            // when using the standard DD.pow.
+            // Use the scaled pow instead. It is not much slower as the implementations
+            // are the same DD computation but with a check for intermediate overflow and
+            // rescaling.
+            return Context::pow;
         }
 
         /**
@@ -705,13 +709,29 @@ class HurwitzZetaTest {
             // (s+ss)^y = s^y * (1+ss/s)^y
             //          = s^y * exp(y*log1p(ss/s))
             // ss/s < machine epsilon : log1p(ss/s) ~ ss/s
+            //          = s^y * (exp(y*log1p(ss/s)) - 1) + s^y
+            // expm1(x) = x when x < machine epsilon
             final DD s = DD.ofSum(x, y);
             double r = Math.pow(s.hi(), z);
             // This does not check all pow edge cases and assumes the round-off is finite
-            if (s.lo() != 0) {
-                r *= Math.exp(z * s.lo() / s.hi());
+            final double t = z * s.lo();
+            if (Math.abs(t) > 0x1p-53 * s.hi()) {
+                r *= Math.exp(t / s.hi());
             }
             return r;
+        }
+
+        /**
+         * Helper function to compute {@code x^z} avoiding overflow of intermediates.
+         *
+         * @param x the x
+         * @param y the y
+         * @return the result
+         */
+        static DD pow(DD x, int y) {
+            final long[] exp = {0};
+            final DD r = x.pow(y, exp);
+            return r.scalb((int) exp[0]);
         }
     }
 
@@ -1052,7 +1072,7 @@ class HurwitzZetaTest {
             // Divide by (a+n)^2 using multiplication
             DD apn = DD.ofSum(a, n);
             DD pp = DD.of(pow.applyAsDouble(a, n, -s)).divide(apn);
-            apn = apn.pow(-2);
+            apn = Context.pow(apn, -2);
             for (i = 0; i < c.getM(); i++) {
                 // p = (a+n)^-(2k-1+s)
                 // Note that this uses divide by F rather than multiply by FM.
@@ -1557,8 +1577,16 @@ class HurwitzZetaTest {
 
         final BiFunction<DD, Integer, DD> pow = c.getDDPow();
         // Power function for the series.
-        // Allow switching to the faster DD::pow. The configured pow is used for the most important terms.
-        final BiFunction<DD, Integer, DD> powS = (c.getPowOption() & 2) == 2 ? DD::pow : pow;
+        // Allow switching to the faster DD pow. The configured pow is used for the most important terms.
+        final BiFunction<DD, Integer, DD> powS = (c.getPowOption() & 2) == 2 ? Context::pow : pow;
+
+        // First term may be provided
+        final DD t0 = a0 == null ? pow.apply(a, -s) : a0;
+
+        // This can overflow when the function is called from the complete cancellation case
+        if (!t0.isFinite()) {
+            return t0;
+        }
 
         final int n = c.getN();
         final DD apn = a.add(n);
@@ -1571,8 +1599,6 @@ class HurwitzZetaTest {
             // Descending k sums in order of magnitude for increased precision
             sum = sum.add(powS.apply(a.add(k), -s));
         }
-        // First term may be provided
-        final DD t0 = a0 == null ? pow.apply(a, -s) : a0;
 
         // I : (a+p)^(1-s) / (s-1)
         final DD ti = pow.apply(apn, 1 - s).divide(s - 1);
@@ -2795,6 +2821,11 @@ class HurwitzZetaTest {
         // Note: Inspection of the output from an independent zeta evaluation should
         // see a sign change for each case as they are roots in double precision.
 
+        // TODO: explain why root is always > half-integer midpoint. Assert this is true
+        // when finding the root.
+        // Can we speed up the search by breaking the double loop when a half-integer
+        // root is found.
+
         // Max cancellation 55-bits
         "3, 21, 0, 100",
         // Max cancellation 53-bits (this is slow)
@@ -2808,7 +2839,7 @@ class HurwitzZetaTest {
 //        // No cases above 45-bits
 //        "3, 5, 30001, 30010",
     })
-//    @Disabled("Used to generate test data")
+    @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
         // Validate arguments
         Assertions.assertTrue(ls > 2);
