@@ -16,6 +16,7 @@
  */
 package org.apache.commons.numbers.gamma;
 
+import java.util.Arrays;
 import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.core.DDMath;
 
@@ -79,7 +80,7 @@ import org.apache.commons.numbers.core.DDMath;
  */
 public final class HurwitzZeta {
     /** Number of terms of the series summation S. */
-    private static final int N = 8;
+    private static final int N = 9;
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. */
     private static final double EPS = 0x1.0p-53;
@@ -96,29 +97,133 @@ public final class HurwitzZeta {
     private static final int MAX_TERMS = 2 * (N + 2);
 
     /**
-     * Precomputed factors for {@code k}-th element of the tail function {@code T}.
-     * Uses {@code 2k!} divided by Bernoulli number {@code B_2k}.
-     * Provides M=14 terms. The test suite uses max 9 before convergence.
+     * Precomputed factors for {@code k}-th element of the tail function {@code T}
+     * in double-double (DD) precision.
+     * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
+     * Provides M=51 terms. The rising factorial overflows after k=51 for s=1065.
+     * The test suite uses max 9 before convergence on double data and
+     * 20 on double-double data.
      */
-    private static final double[] F = {
-        12.0, // 2! / (1 / 6)
-        -720.0, // 4! / (-1 / 30)
-        30240.0, // 6! / (1 / 42)
-        -1209600.0, // 8! / (-1 / 30)
-        4.790016E7, // 10! / (5 / 66)
-        -1.8924375803183792E9, // 12! / (-691 / 2730)
-        7.47242496E10, // 14! / (7 / 6)
-        -2.950130727918164E12, // 16! / (-3617 / 510)
-        1.1646782814350067E14, // 18! / (43867 / 798)
-        -4.597978722407473E15, // 20! / (-174611 / 330)
-        1.81521054019435456E17, // 22! / (854513 / 138)
-        -7.1661652561756672E18, // 24! / (-236364091 / 2730)
-        2.82908877253043E20, // 26! / (8553103 / 6)
-        -1.1168794925000445E22, // 28! / (-23749461029 / 870)
+    private static final DD[] FDD = {
+        DD.ofSum(0.08333333333333333, 4.625929269271485E-18), // (1 / 6) / 2!
+        DD.ofSum(-0.001388888888888889, 5.300543954373577E-20), // (-1 / 30) / 4!
+        DD.ofSum(3.306878306878307E-5, -2.2300719288557665E-21), // (1 / 42) / 6!
+        DD.ofSum(-8.267195767195768E-7, 3.457597454003665E-23), // (-1 / 30) / 8!
+        DD.ofSum(2.08767569878681E-8, -1.2073450591132599E-24), // (5 / 66) / 10!
+        DD.ofSum(-5.284190138687493E-10, 3.517096671929869E-27), // (-691 / 2730) / 12!
+        DD.ofSum(1.3382536530684679E-11, -2.828354019907999E-29), // (7 / 6) / 14!
+        DD.ofSum(-3.3896802963225827E-13, -1.4986928409964295E-29), // (-3617 / 510) / 16!
+        DD.ofSum(8.586062056277845E-15, -6.05252374381974E-31), // (43867 / 798) / 18!
+        DD.ofSum(-2.174868698558062E-16, 4.961617782549996E-33), // (-174611 / 330) / 20!
+        DD.ofSum(5.5090028283602295E-18, -1.49827152194499E-35), // (854513 / 138) / 22!
+        DD.ofSum(-1.3954464685812522E-19, -1.0350590497256251E-35), // (-236364091 / 2730) / 24!
+        DD.ofSum(3.534707039629467E-21, 1.894231142684204E-37), // (8553103 / 6) / 26!
+        DD.ofSum(-8.953517427037546E-23, -5.728752743153026E-39), // (-23749461029 / 870) / 28!
+        DD.ofSum(2.267952452337683E-24, 1.3043458462619563E-40), // (8615841276005 / 14322) / 30!
+        DD.ofSum(-5.744790668872202E-26, 1.663242973708004E-43), // (-7709321041217 / 510) / 32!
+        DD.ofSum(1.455172475614865E-27, -5.613265715443096E-44), // (2577687858367 / 6) / 34!
+        DD.ofSum(-3.6859949406653103E-29, 1.0778256413554197E-45), // (-26315271553053477373 / 1919190) / 36!
+        DD.ofSum(9.336734257095045E-31, -3.9347970210731877E-47), // (2929993913841559 / 6) / 38!
+        DD.ofSum(-2.36502241570063E-32, 2.0347170931532494E-49), // (-261082718496449122051 / 13530) / 40!
+        DD.ofSum(5.990671762482134E-34, 1.6265467158179092E-50), // (1520097643918070802691 / 1806) / 42!
+        DD.ofSum(-1.5174548844682903E-35, 5.493014407946745E-52), // (-27833269579301024235023 / 690) / 44!
+        DD.ofSum(3.843758125454189E-37, -3.685053096067968E-53), // (596451111593912163277961 / 282) / 46!
+        DD.ofSum(-9.736353072646691E-39, 2.258059165188444E-55), // (-5609403368997817686249127547 / 46410) / 48!
+        DD.ofSum(2.466247044200681E-40, -1.505641802268162E-56), // (495057205241079648212477525 / 66) / 50!
+        DD.ofSum(-6.247076741820743E-42, -2.7106815859687654E-58), // (-801165718135489957347924991853 / 1590) / 52!
+        DD.ofSum(1.5824030244644914E-43, 2.545428531496969E-60), // (29149963634884862421418123812691 / 798) / 54!
+        DD.ofSum(-4.008273685948936E-45, -2.2124211668946826E-61), // (-2479392929313226753685415739663229 / 870) / 56!
+        DD.ofSum(1.0153075855569557E-46, -9.404269751258486E-63), // (84483613348880041862046775994036021 / 354) / 58!
+        DD.ofSum(-2.5718041582418717E-48, -6.537655454012542E-65), // (-1215233140483755572040304994079820246041491 / 56786730) / 60!
+        DD.ofSum(6.514456035233815E-50, -2.763626172529861E-66), // (12300585434086858541953039857403386151 / 6) / 62!
+        DD.ofSum(-1.6501309906896525E-51, 3.1794529475063687E-68), // (-106783830147866529886385444979142647942017 / 510) / 64!
+        DD.ofSum(4.179830628539476E-53, 2.617556823159939E-69), // (1472600022126335654051619428551932342241899101 / 64722) / 66!
+        DD.ofSum(-1.058763466770291E-54, 6.6915528436035195E-71), // (-78773130858718728141909149208474606244347001 / 30) / 68!
+        DD.ofSum(2.6818791912607708E-56, -8.70695425146146E-73), // (1505381347333367003803076567377857208511438160235 / 4686) / 70!
+        DD.ofSum(-6.793279351107421E-58, 2.795667911354165E-74), // (-5827954961669944110438277244641067365282488301844260429 / 140100870) / 72!
+        DD.ofSum(1.7207577616681404E-59, 4.65433497191727E-76), // (34152417289221168014330073731472635186688307783087 / 6) / 74!
+        DD.ofSum(-4.358730329348894E-61, 2.8840522874209336E-77), // (-24655088825935372707687196040585199904365267828865801 / 30) / 76!
+        DD.ofSum(1.1040792903684666E-62, 6.624841731022409E-79), // (414846365575400828295179035549542073492199375372400483487 / 3318) / 78!
+        DD.ofSum(-2.7966655133781345E-64, 2.628041826403209E-81), // (-4603784299479457646935574969019046849794257872751288919656867 / 230010) / 80!
+        DD.ofSum(7.084036501679471E-66, -5.026235239023924E-82), // (1677014149185145836823154509786269900207736027570253414881613 / 498) / 82!
+        DD.ofSum(-1.794407408289224E-67, 1.5372719769275798E-84), // (-2024576195935290360231131160111731009989917391198090877281083932477 / 3404310) / 84!
+        DD.ofSum(4.545287063611096E-69, 9.87696151726261E-87), // (660714619417678653573847847426261496277830686653388931761996983 / 6) / 86!
+        DD.ofSum(-1.1513346631982051E-70, -7.192856523313341E-87), // (-1311426488674017507995511424019311843345750275572028644296919890574047 / 61410) / 88!
+        DD.ofSum(2.9163647710923614E-72, -3.8911087510195904E-89), // (1179057279021082799884123351249215083775254949669647116231545215727922535 / 272118) / 90!
+        DD.ofSum(-7.387238263497337E-74, -6.923136687699924E-90), // (-1295585948207537527989427828538576749659341483719435143023316326829946247 / 1410) / 92!
+        DD.ofSum(1.8712093117637953E-75, 1.5886680102062367E-92), // (1220813806579744469607301679413201203958508415202696621436215105284649447 / 6) / 94!
+        DD.ofSum(-4.739828557761799E-77, -9.517121002177184E-94), // (-211600449597266513097597728109824233673043954389060234150638733420050668349987259 / 4501770) / 96!
+        DD.ofSum(1.2006125993354507E-78, -1.109850335891779E-95), // (67908260672905495624051117546403605607342195728504487509073961249992947058239 / 6) / 98!
+        DD.ofSum(-3.0411872415142924E-80, 5.125117133572647E-97), // (-94598037819122125295227433069493721872702841533066936133385696204311395415197247711 / 33330) / 100!
+        DD.ofSum(7.703417274705106E-82, 3.948211996024456E-99), // (3204019410860907078243020782116241775491817197152717450679002501086861530836678158791 / 4326) / 102!
     };
+
+    /**
+     * Precomputed factors for {@code k}-th element of the tail function {@code T}.
+     * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
+     * This is the high part of {@link #FDD}.
+     */
+    private static final double[] F;
+
+    static {
+        F = Arrays.stream(FDD).mapToDouble(DD::hi).toArray();
+    }
+
+    /**
+     * Compute the power function {@code (x+y)^z}.
+     */
+    @FunctionalInterface
+    interface PowOperator {
+        /**
+         * Applies this operator to the given operands.
+         *
+         * @param x the first operand
+         * @param y the second operand
+         * @param z the third operand
+         * @return the operator result
+         */
+        double apply(int x, double y, double z);
+    }
 
     /** No instances. */
     private HurwitzZeta() {}
+
+    /**
+     * Extended precision {@code (x+y)^z}.
+     *
+     * <p>Warning: This does not check all pow edge cases and
+     * assumes {@code (x+y)} is finite.
+     *
+     * @param x the first operand
+     * @param y the second operand
+     * @param z the third operand
+     * @return the result
+     */
+    private static double extendedPowNp(int x, double y, double z) {
+        // (s+ss)^z = s^z * (1+ss/s)^z
+        //          = s^z * exp(z*log1p(ss/s))
+        // ss/s < machine epsilon : log1p(ss/s) ~ ss/s
+        // exp(x) = 1 when x < machine epsilon
+        final DD s = DD.ofSum(x, y);
+        double r = Math.pow(s.hi(), z);
+        final double t = z * s.lo();
+        if (Math.abs(t) > EPS * s.hi()) {
+            r *= Math.exp(t / s.hi());
+        }
+        return r;
+    }
+
+    /**
+     * Standard precision {@code (x+y)^z}.
+     *
+     * @param x the first operand
+     * @param y the second operand
+     * @param z the third operand
+     * @return the result
+     */
+    private static double powNp(int x, double y, double z) {
+        return Math.pow(x + y, z);
+    }
 
     /**
      * Computes the value of \( \zeta(s, a) \) over the domain \( s \gt 1 \) and
@@ -306,37 +411,58 @@ public final class HurwitzZeta {
      */
     // package-private for testing using a == 1 (Riemann zeta function)
     static double zetaImp(double s, double a) {
+        // First term
+        final double t0 = Math.pow(a, -s);
+
+        // Can overflow if 0 < a < 1.
+        if (!Double.isFinite(t0)) {
+            return t0;
+        }
+
         // Asymptotic Behavior as a -> inf
         // https://dlmf.nist.gov/25.11#E43
         // When a is large the series cannot use a+k.
-        // This reduces to N=0, the I term and the first term of T.
+        // This reduces to N=0 (no series sum S), the I term and the first term of T.
         if (a > LARGE_A) {
-            return Math.pow(a, 1 - s) / (s - 1) + Math.pow(a, -s) * 0.5;
+            return Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5;
         }
 
-        final double apn = a + N;
-        double p = Math.pow(apn, -s);
+        // Now any (a+n)^-s cannot overflow and the sum cannot overflow.
+
+        // Two methods are used to increase precision
+        // - Extended precision summation (low cost)
+        // - Extended precision power function using round-off from (a+n) (selectively applied)
+        // Use of either reduces maximum error by 1 ulp.
+        // Typical RMS error < 0.4 ulp : Max error < 2 ulp.
+
+        // Check the extended precision power will make a difference.
+        // If a < 1 then the term a^-s dominates the result and a few extra digits
+        // of precision from the power function on remaining terms is lost.
+        // This will also be false if (a+n) is exact, or the round-off
+        // cannot be used when s is small.
+        final PowOperator pow =
+            a > 1 && Math.abs(s * DD.ofSum(a, N).lo()) >= EPS ?
+            HurwitzZeta::extendedPowNp :
+            HurwitzZeta::powNp;
+
+        double p = pow.apply(N, a, -s);
 
         // Initialise sum with the first tail term
-        double sum = 0.5 * p;
+        DD sum = DD.of(0.5 * p);
         // S : k in [0, n-1]
         for (int k = N - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
-            sum += Math.pow(a + k, -s);
+            sum = sum.add(pow.apply(k, a, -s));
         }
-        // Final term
-        final double t0 = Math.pow(a, -s);
 
         // I
-        final double ti = Math.pow(apn, 1 - s) / (s - 1);
+        final double ti = pow.apply(N, a, 1 - s) / (s - 1);
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (t0 > ti) {
-            sum += ti;
-            sum += t0;
+            sum = sum.add(ti).add(t0);
         } else {
-            sum += t0;
-            sum += ti;
+            sum = sum.add(t0).add(ti);
         }
 
         // T
@@ -344,6 +470,9 @@ public final class HurwitzZeta {
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
         // When s is large the loop exits before the rising factorial overflows.
+        p = pow.apply(N, a, -s - 1);
+        // Use to divide by (a+n)^2
+        final double apn = pow.apply(N, a, -2);
 
         // Rising factorial term : (s)_{2k-1}
         double f = s;
@@ -351,25 +480,25 @@ public final class HurwitzZeta {
         double k2 = 1;
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
+        // Note: an extended precision sum here has no effect.
         double tsum = 0;
-        final double stop = sum * EPS;
+        final double stop = sum.hi() * EPS;
         int i;
         for (i = 0; i < F.length; i++) {
-            // p = (a+n)^-(2k-1+s)
-            p /= apn;
-            final double t = f * p / F[i];
+            final double t = f * p * F[i];
             tsum += t;
             if (Math.abs(t) <= stop) {
                 break;
             }
-            p /= apn;
+            // Update (a+n)^-(2k-1+s)
+            p *= apn;
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             f *= s + k2;
             k2 += 1.0;
             f *= s + k2;
             k2 += 1.0;
         }
-        return sum + tsum;
+        return sum.add(tsum).hi();
     }
 
     /**
