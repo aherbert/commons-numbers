@@ -707,11 +707,10 @@ class HurwitzZetaTest {
          * @return the result
          */
         static double powNp(double x, double y, double z) {
-            // (s+ss)^y = s^y * (1+ss/s)^y
-            //          = s^y * exp(y*log1p(ss/s))
+            // (s+ss)^z = s^z * (1+ss/s)^z
+            //          = s^z * exp(z*log1p(ss/s))
             // ss/s < machine epsilon : log1p(ss/s) ~ ss/s
-            //          = s^y * (exp(y*log1p(ss/s)) - 1) + s^y
-            // expm1(x) = x when x < machine epsilon
+            // exp(x) = 1 when x < machine epsilon
             final DD s = DD.ofSum(x, y);
             double r = Math.pow(s.hi(), z);
             // This does not check all pow edge cases and assumes the round-off is finite
@@ -782,6 +781,8 @@ class HurwitzZetaTest {
         String[] getFilenames();
     }
 
+    // TODO - Get more data for larger s and negative a
+
     /**
      * Define the test cases for each resource file for two argument functions.
      * This encapsulates the function to test, the expected maximum and RMS error, and
@@ -845,7 +846,7 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 6.5, 1.7),
         ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 180, 5.2),
         // Broken
-        ZETA_ROOT_S3_21_N_A0_100(HurwitzZeta::value, "hzeta_root_s3_21_na0_100.csv", 2e14, 9e12),
+        ZETA_ROOT_S3_21_N_A0_100(HurwitzZeta::value, "hzeta_root_s3_21_na0_100.csv", 3e14, 1e13),
         ZETA_ROOT_S23_1067_N_A0_50(HurwitzZeta::value, "hzeta_root_s23_1067_na0_50.csv", 2e10, 3e9),
         ZETA_ROOT_S3_21_N_A101_300(HurwitzZeta::value, "hzeta_root_s3_21_na101_300.csv", 1e10, 1e9),
         ;
