@@ -275,7 +275,8 @@ public final class HurwitzZeta {
             }
             return zetaNegativeImp(s, a, ca);
         }
-        // Use the faster and more accurate Riemann zeta function if applicable.
+        // Use the faster Riemann zeta function if applicable (accuracy is similar).
+        // Creates a consistent output between zeta(s, 1) and zeta(s).
         // Done after domain validation, e.g.
         // this function will return NaN for s < 1 even when a==1.
         if (a == 1) {
