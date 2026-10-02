@@ -123,8 +123,9 @@ class RiemannZetaTest {
     private enum TestCase implements TestError {
         // Hurwitz zeta is accurate for all s > 1 including s -> 1.
         // Require by passing public API which can call the zeta function when a==1.
-        HURWITZ_ZETA_1_32(s -> HurwitzZeta.zetaImp(s, 1), "zeta_1_32.csv", 1.62, 0.43),
-        HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_above1.csv", 1.7, 0.52),
+        // Better than RiemannZeta unless s -> 1
+        HURWITZ_ZETA_1_32(s -> HurwitzZeta.zetaImp(s, 1), "zeta_1_32.csv", 0.95, 0.13),
+        HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_above1.csv", 1.45, 0.42),
 //        // Require by-passing s <= 1
 //        HURWITZ_ZETA_BELOW_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_below1.csv", 2.13, 0.63),
 //        HURWITZ_ZETA_0_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_0_1.csv", 27, 4.3),
