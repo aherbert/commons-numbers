@@ -86,6 +86,12 @@ public final class HurwitzZeta {
     private static final double EPS = 0x1.0p-53;
     /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate. */
     private static final double LARGE_A = (1L << 53) - N;
+    /** Threshold used when {@code a < 1} where {@code a^-s} == zeta(s, a) with the smallest supported
+     * {@code s = 1 + 2^-52}. Set using zeta(s, 1) * 2^54. No possible evaluation of
+     * all remaining terms for any s could be added to {@code a^-s} when {@code a < 1}.
+     * Approximately equal to 2^106 thus remaining terms (all less than 1) cannot be added in
+     * double-double precision. */
+    private static final double LARGE_T0 = 8.11296384146066920939820185959e+31;
     /** 0.5. */
     private static final double HALF = 0.5;
     /** Maximum exponent above which 0.5^-s will be infinity. */
@@ -414,26 +420,26 @@ public final class HurwitzZeta {
         // First term
         final double t0 = Math.pow(a, -s);
 
-        // Can overflow if 0 < a < 1.
-        if (!Double.isFinite(t0)) {
+        // Can overflow if 0 <= a < 1
+        if (t0 >= LARGE_T0) {
             return t0;
         }
 
-        // Asymptotic Behavior as a -> inf
+        // Asymptotic behavior as a -> inf
         // https://dlmf.nist.gov/25.11#E43
         // When a is large the series cannot use a+k.
-        // This reduces to N=0 (no series sum S), the I term and the first term of T.
+        // This reduces to N=0 (no series sum S): the I term and the first term of T.
         if (a > LARGE_A) {
             return Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5;
         }
 
-        // Now any (a+n)^-s cannot overflow and the sum cannot overflow.
+        // Now any (a+n)^-s cannot overflow and the sum cannot overflow
 
         // Two methods are used to increase precision
         // - Extended precision summation (low cost)
-        // - Extended precision power function using round-off from (a+n) (selectively applied)
+        // - Extended precision power function using round-off from (a+k) (selectively applied)
         // Use of either reduces maximum error by 1 ulp.
-        // Typical RMS error < 0.4 ulp : Max error < 2 ulp.
+        // Typical RMS error < 0.4 ulp : max error < 2 ulp until the result is sub-normal.
 
         // Check the extended precision power will make a difference.
         // If a < 1 then the term a^-s dominates the result and a few extra digits
@@ -469,18 +475,22 @@ public final class HurwitzZeta {
         // The following recycles the power term p: (a+n)^-(2k-1+s).
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        // When s is large the loop exits before the rising factorial overflows.
         p = pow.apply(N, a, -s - 1);
         // Use to divide by (a+n)^2
         final double apn = pow.apply(N, a, -2);
 
         // Rising factorial term : (s)_{2k-1}
+        // Note: When s is large the loop exits before the rising factorial overflows.
+        // (a+n) >= 9 : 9^-340 = 0 : max (2k-1+s) = 339
+        // (339)_{2k-1}; k=50 = Pochammer(339, 99) = 1.5e256
+        // The rising factorial will not overflow for k <= 50 before (a+n)^-(2k-1+s) is
+        // zero. This is within the length of table F.
         double f = s;
         // 2k - 1
         double k2 = 1;
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
-        // Note: an extended precision sum here has no effect.
+        // Note: an extended precision sum here has no effect on the final result.
         double tsum = 0;
         final double stop = sum.hi() * EPS;
         int i;
