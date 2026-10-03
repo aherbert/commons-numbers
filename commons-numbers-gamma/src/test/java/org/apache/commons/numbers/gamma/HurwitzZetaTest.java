@@ -509,7 +509,7 @@ class HurwitzZetaTest {
         private final int n;
         /** M. */
         private final int m;
-        /** Epsion for convergence of the tail series. */
+        /** Epsilon for convergence of the tail series. */
         private final double eps;
         /** Math context for extended precision evaluations. */
         private final MathContext mc;
