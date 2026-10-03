@@ -422,7 +422,7 @@ public final class HurwitzZeta {
     }
 
     /**
-     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} for positive {@code a}.
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
@@ -528,7 +528,7 @@ public final class HurwitzZeta {
     }
 
     /**
-     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} for negative {@code a}.
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be negative.
@@ -552,8 +552,8 @@ public final class HurwitzZeta {
             // TODO - what does this gain?
             // Can this use s up to Integer.MAX_VALUE?
             // Use extended precision but evaluated with precision for a double result
-            if (s < LARGE_S) {
-                return zeta((int) s, DD.ONE.subtract(a), null, Context.DOUBLE).hi();
+            if (s <= Integer.MAX_VALUE) {
+                return zetaImp((int) s, DD.ONE.subtract(a), null, Context.DOUBLE).hi();
             }
             return zetaImp(s, 1 - a);
         }
@@ -616,7 +616,7 @@ public final class HurwitzZeta {
         // Evaluate zeta with extra precision when cancellation occurs
         final Context c = odd ? Context.DOUBLE_DOUBLE : Context.DOUBLE;
 
-        DD z = zeta(is, xp, pp, c);
+        DD z = zetaImp(is, xp, pp, c);
         DD za;
         DD zb;
         // A single call to zeta uses many pow operations;
@@ -630,8 +630,8 @@ public final class HurwitzZeta {
             // zeta(2, 30) = 0.0339
             // Significant cancellation (leading digits the same) is not possible.
             // Take care to change the sign of a provided result for the zeta method.
-            za = zeta(is, xn.negate(), pn.abs(), c);
-            zb = zeta(is, DD.ONE.subtract(a), null, c);
+            za = zetaImp(is, xn.negate(), pn.abs(), c);
+            zb = zetaImp(is, DD.ONE.subtract(a), null, c);
             // Both terms are positive. Correct the sign for final addition.
             if (odd) {
                 za = za.negate();
@@ -666,7 +666,7 @@ public final class HurwitzZeta {
     }
 
     /**
-     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} for positive {@code a}
      * using double-double (DD) arithmetic.
      *
      * <p><strong>Warning</strong>: No parameter validation is performed.
@@ -678,7 +678,7 @@ public final class HurwitzZeta {
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
-    private static DD zeta(int s, DD a, DD a0, Context c) {
+    private static DD zetaImp(int s, DD a, DD a0, Context c) {
         // Note:
         // Closest sum of terms when cancellation occurs and we need full DD accuracy
         // s = 3, a ~ 0.5:
@@ -686,7 +686,6 @@ public final class HurwitzZeta {
         // Computing with the standard DD pow function has enough accuracy to not accumulate
         // error to the zeta result when a < 1.
         // When a >> 1 then the terms are all similar magnitude and we may benefit from DDmath.
-        // This is only used to compute
 
         final DDPowOperator pow = c.getDDPow();
         // Power function for the series.
@@ -696,10 +695,18 @@ public final class HurwitzZeta {
         // First term may be provided
         final DD t0 = a0 == null ? pow.apply(a, -s) : a0;
 
+        // Note:
+        // This function is never called with 0 < a < 1 unless t0 is provided and finite.
+        // No check for overflow/large t0 is required.
+
+        // TODO: Is this possible? It is called with at least a=1.5
         // This can overflow when the function is called from the complete cancellation case
         if (!t0.isFinite()) {
             return t0;
         }
+
+        // TODO:
+        // Test asymptotic behaviour. Should this be included
 
         final int n = c.getN();
         final DD apn = a.add(n);
@@ -713,7 +720,7 @@ public final class HurwitzZeta {
             sum = sum.add(powS.apply(a.add(k), -s));
         }
 
-        // I : (a+p)^(1-s) / (s-1)
+        // I
         final DD ti = pow.apply(apn, 1 - s).divide(s - 1);
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
@@ -731,16 +738,9 @@ public final class HurwitzZeta {
         // Use to divide by (a+n)^2
         final DD apn2 = pow.apply(apn, -2);
 
-        // The following recycles the power term p: (a+n)^-(2k-1+s).
-        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
-        // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        // When s is large the loop exits before the rising factorial overflows.
-        // Max expected s is <= 1065. This overflows after k=51:
-        // pochammer(1065, 101) = 5.75e+307
-        // pochammer(1065, 102) = 6.71e+310
-
         // Rising factorial term : (s)_{2k-1}
         // Note: When s is large the loop exits before the rising factorial overflows.
+        // (see zeta method for double precision)
         DD f = DD.of(s);
         // s+2k-1
         long s2k = s + 1L;
@@ -758,7 +758,7 @@ public final class HurwitzZeta {
             // p = (a+n)^-(2k-1+s)
             p = p.multiply(apn2);
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-            // compute the multiplicand as a long as it cannot overflow when M is small
+            // compute the multiplicand as a long as it cannot overflow when 2k is small
             f = f.multiply(s2k * (s2k + 1L));
             s2k += 2L;
         }
