@@ -675,7 +675,7 @@ class RiemannZetaTest {
         // Created using mpmath (1.14.1) zeta
         // from mpmath import zeta, mp
         // mp.pretty = True
-        // for i in range(1, 131): # double limit of Bernoulli B_2n
+        // for i in range(1, 135):
         //   print(f'"{-2*i+1}, {zeta(-2*i+1)}",')
         "-1, -0.0833333333333333333333333333333",
         "-3, 0.00833333333333333333333333333333",
@@ -806,22 +806,27 @@ class RiemannZetaTest {
         "-253, -1.89288666446856573885385316552e+297",
         "-255, 3.10555175960489268960251418622e+300",
         "-257, -5.1754977470366797965163888379e+303",
-        // B_2n for n=130 is not a double
-        // "-259, 8.76015634462292151490407301349e+306",
+        // B_2n for n=130 is not a double but zeta(-259) is finite
+         "-259, 8.76015634462292151490407301349e+306",
+         // Overflow
+         "-261, -1.50579543360546802830668914367e+310",
+         "-263, 2.62822945914037958563322916274e+313",
+         "-265, -4.65750514126904069071074368503e+316",
+         "-267, 8.37889029540787223694025360457e+319",
     })
     void testZetaNegativeOddInteger(int s, double z) {
-        // Uses the Bernoulli numbers divided by an integer
-        assertClose(RiemannZeta::value, s, z, 1);
+        assertClose(RiemannZeta::value, s, z, 0);
         // Check the function is monotonic in s (relevant when precomputed values are used).
         // This works for close s but not next s
         double zl;
         double zu;
+        final int u = 4;
         // ULP  Fails
         // 3    -7
-        // 2    -5, -7, -225, -227, -251
-        // 3    16 cases
-        zl = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) + 4));
-        zu = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) - 4));
+        // 2    -5, -7, -227, -251
+        // 1    16 cases
+        zl = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) + u));
+        zu = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) - u));
         // Values alternate sign so test [zl, zu] contains z
         if (z <= zu) {
             Assertions.assertTrue(z >= zl, () -> String.format("%s, %s, %s", zl, z, zu));
