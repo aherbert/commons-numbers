@@ -36,6 +36,14 @@ package org.apache.commons.numbers.gamma;
  * Boost C++ Riemann Zeta Function</a>
  */
 public final class BoostZeta {
+    /** ln(2pi). Computed to 30-digits precision. */
+    private static final double LOG_2PI = 1.83787706640934548356065947281;
+    /** Value for {@code s < 0} where zeta(s) is +/- infinity for all
+     * {@code s != -2n}. Note the zeta function for negative arguments oscillates
+     * above and below zero with roots at even {@code s}. The value is increasingly
+     * large with larger negative {@code s} until all non-zero values cannot be represented
+     * as a double. */
+    private static final double LARGE_NEGATIVE_S = -267;
     /** Bernoulli numbers for 2n. Computed using mpmath (1.14.1) method bernoulli(2n).
      * Max n = 129. */
     private static final double[] B2N = {
@@ -243,25 +251,41 @@ public final class BoostZeta {
         if (Math.abs(s) < BoostGamma.ROOT_EPSILON) {
             result = -0.5 - BoostGamma.LOG_ROOT_TWO_PI * s;
         } else if (s < 0) {
-            // Negative odd integer (all negative even integers handled above).
+            // Negative; |s| > small; and not an even integer (all even integers handled above).
+            // This ensures s/2 is not odd and avoids sin(pi * s/2) = 0.
+            // This would generate 0 * infinity = NaN for large |s|.
+
+            // Change from Boost implementation.
+            // zeta(s) where the value either side of even s overflows
+            if (s <= LARGE_NEGATIVE_S) {
+                // Set the sign without using sinp.
+                // Bypasses infinity * sinp(0.5 * s) when the reflection formula will overflow.
+                // Assumes 0.5 * s is non-integer since zeta(-2n) = 0.0.
+                return SpecialMath.isOdd(Math.floor(0.5 * s)) ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+            }
+
             // Swap: s is now positive; sc = 1 - s
             final double tmp = s;
             s = sc;
             sc = tmp;
+
             if (s > BoostGamma.MAX_FACTORIAL) {
                 // This has been simplified from the Boost implementation which will
                 // catch overflow conditions when compiled with an appropriate evaluation
                 // policy and return signed infinity, or raise an error. Java floating-point
                 // arithmetic does not create overflow exceptions and will return infinity.
-                final double mult = BoostGamma.sinp(0.5 * sc) * 2 * zetaImp(s, sc);
+                // Note that zeta(s > 170) == 1.0
+                final double mult = BoostGamma.sinp(0.5 * sc) * 2; // * zeta(s)
                 result = LogGamma.value(s);
-                result -= s * Math.log(2 * Math.PI);
+                result -= s * LOG_2PI;
                 // Possible overflow if result > 709
-                result = Math.exp(result);
-                // Possible overflow.
-                // Needs result to be just on the verge of overflow when /s/ is
-                // very close to a half integer.
-                result *= mult;
+                // Use exp(2x) = exp(x) * exp(x) knowing |mult| in (0, 2]
+                if (result > BoostGamma.LOG_MAX_VALUE) {
+                    result = Math.exp(result * 0.5);
+                    result = result * mult * result;
+                } else {
+                    result = Math.exp(result) * mult;
+                }
             } else {
                 result = BoostGamma.sinp(0.5 * sc) *
                     2 * Math.pow(2 * Math.PI, -s) *
@@ -288,6 +312,7 @@ public final class BoostZeta {
     static double zetaImp53(double s, double sc) {
         double result;
         if (s < 1) {
+            // [-0.5, -9007199254740991.42278433509847]
             // Rational Approximation
             // Maximum Deviation Found:                     2.020e-18
             // Expected Error Term:                        -2.020e-18
@@ -311,6 +336,7 @@ public final class BoostZeta {
             result += sc;
             result /= sc;
         } else if (s <= 2) {
+            // [4503599627370496.57721566490153, 1.64493406684822643647241516665]
             // Maximum Deviation Found:                     9.007e-20
             // Expected Error Term:                         9.007e-20
             double P;
@@ -330,6 +356,7 @@ public final class BoostZeta {
             result = P / Q;
             result += 1 / -sc;
         } else if (s <= 4) {
+            // [1.64493406684822602011735171122, 1.08232323371113819151600369654]
             // Maximum Deviation Found:                     5.946e-22
             // Expected Error Term:                        -5.946e-22
             final double Y = 0.6986598968505859375;
@@ -352,6 +379,7 @@ public final class BoostZeta {
             result = P / Q;
             result += Y + 1 / -sc;
         } else if (s <= 7) {
+            // [1.08232323371113813031050445339, 1.00834927738192282683979754985]
             // Maximum Deviation Found:                     2.955e-17
             // Expected Error Term:                         2.955e-17
             // Max error found at double precision:         2.009135e-16
@@ -376,6 +404,7 @@ public final class BoostZeta {
             result = P / Q;
             result = 1 + Math.exp(result);
         } else if (s < 15) {
+            // [1.00834927738192282148095799031, 1.00003058823630702053126571251]
             // Maximum Deviation Found:                     7.117e-16
             // Expected Error Term:                         7.117e-16
             // Max error found at double precision:         9.387771e-16
@@ -401,6 +430,7 @@ public final class BoostZeta {
             result = P / Q;
             result = 1 + Math.exp(result);
         } else if (s < 36) {
+            // [1.00003058823630702049355172851, 1.00000000001455192189104205591]
             // Max error in interpolated form:              1.668e-17
             // Max error found at long double precision:    1.669714e-17
             final double x = s - 15;
@@ -425,6 +455,7 @@ public final class BoostZeta {
             result = P / Q;
             result = 1 + Math.exp(result);
         } else {
+            // [1.00000000001455192189104198424, 1.0]
             // Change from: 1 + Math.pow(2, -s);
             // Adding 3^-s increases ULP accuracy as the result approaches 1.0
             result = Math.pow(3, -s) + Math.pow(2, -s) + 1;

@@ -669,7 +669,7 @@ class HurwitzZetaTest {
                 };
             }
             // This function is computed using reciprocal(x^s).
-            // So large x or s can break even if the result is finite 
+            // So large x or s can break even if the result is finite
             // when using the standard DD.pow.
             // Use the scaled pow instead. It is not much slower as the implementations
             // are the same DD computation but with a check for intermediate overflow and
