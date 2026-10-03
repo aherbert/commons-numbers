@@ -245,6 +245,7 @@ class RiemannZetaTest {
             FUN = testFMA(op) ? op : (a, b, c) -> a * b + c;
         }
 
+        /** Fused-mutiply-add (FMA) operator. */
         @FunctionalInterface
         interface FMAOperator {
             /**
@@ -262,15 +263,18 @@ class RiemannZetaTest {
         private MathExt() {}
 
         /**
-         * Gets a method to compute the high 64-bits of an unsigned 64-bit multiplication
-         * using the Math unsignedMultiplyHigh method from JDK 18.
+         * Gets a method to compute the fused-mutiply-add (FMA) operator {@code a * b + c}
+         * using JDK 9 {@code Math.fma}.
          *
          * @return the method, or null
          */
         private static FMAOperator getMathFMA() {
             try {
                 // JDK 18 method
-                final MethodHandle mh = getMathMethod("fma");
+                final MethodHandle mh = MethodHandles.publicLookup()
+                    .findStatic(Math.class,
+                        "fma",
+                        MethodType.methodType(double.class, double.class, double.class, double.class));
                 return (a, b, c) -> {
                     try {
                         return (double) mh.invokeExact(a, b, c);
@@ -281,24 +285,6 @@ class RiemannZetaTest {
             } catch (NoSuchMethodException | IllegalAccessException ignored) {
                 return null;
             }
-        }
-
-        /**
-         * Gets the named method from the {@link Math} class.
-         *
-         * <p>The look-up assumes the named method accepts two long arguments and returns
-         * a long.
-         *
-         * @param methodName Method name.
-         * @return the method
-         * @throws NoSuchMethodException if the method does not exist
-         * @throws IllegalAccessException if the method cannot be accessed
-         */
-        static MethodHandle getMathMethod(String methodName) throws NoSuchMethodException, IllegalAccessException {
-            return MethodHandles.publicLookup()
-                .findStatic(Math.class,
-                            methodName,
-                            MethodType.methodType(double.class, double.class, double.class, double.class));
         }
 
         /**
@@ -854,6 +840,7 @@ class RiemannZetaTest {
     }
 
     static Stream<Arguments> testZetaSpot() {
+        final double inf = Double.POSITIVE_INFINITY;
         return Stream.of(
             // Reference values from mpmath version 1.4.1.
             // from mpmath import mp, zeta
@@ -942,9 +929,51 @@ class RiemannZetaTest {
 
             // First negative odd integer where the Bernoulli number B_2n is not a double
             Arguments.of(-259, 8.76015634462292151490407301349e+306, 230),
-            // Large integer that is not an int:
-            //Arguments.of(-2147483649.0, -9.10272023221439406602025581451e+17393448289, 0)
-            Arguments.of(-2147483649.0, Double.NEGATIVE_INFINITY, 0)
+
+            // negative s where all non-even integer s are infinite
+            // ulp(256.0) = 2^-44
+            // s = [260, ..., 279] +/- 2^-44
+            Arguments.of(-259.99999999999994, 3.23672203649249092579959999713e+295, 2000),
+            Arguments.of(-260.00000000000006, -3.23672203649386152340660559854e+295, 100),
+            Arguments.of(-260.99999999999994, -inf, 0), // -1.506e+310
+            Arguments.of(-261.00000000000006, -inf, 0), // -1.506e+310
+            Arguments.of(-261.99999999999994, -5.60644371609767122810421786295e+298, 800),
+            Arguments.of(-262.00000000000006, 5.60644371610005016477340909107e+298, 900),
+            Arguments.of(-262.99999999999994, inf, 0), // 2.628e+313
+            Arguments.of(-263.00000000000006, inf, 0), // 2.628e+313
+            Arguments.of(-263.99999999999994, 9.86023816854118284188165213917e+301, 400),
+            Arguments.of(-264.00000000000006, -9.86023816854537526497042934683e+301, 1000),
+            Arguments.of(-264.99999999999994, -inf, 0), // -4.658e+316
+            Arguments.of(-265.00000000000006, -inf, 0), // -4.658e+316
+            Arguments.of(-265.99999999999994, -1.76057762868325214824948501855e+305, 30),
+            Arguments.of(-266.00000000000006, 1.7605776286840022268025364876e+305, 120),
+            Arguments.of(-266.99999999999994, inf, 0), // 8.379e+319
+            Arguments.of(-267.00000000000006, inf, 0), // 8.379e+319
+            Arguments.of(-267.99999999999994, inf, 0), // 3.191e+308
+            Arguments.of(-268.00000000000006, -inf, 0), // -3.191e+308
+            Arguments.of(-268.99999999999994, -inf, 0), // -1.53e+323
+            Arguments.of(-269.00000000000006, -inf, 0), // -1.53e+323
+            Arguments.of(-270.00000000000006, inf, 0), // 5.871e+311
+            Arguments.of(-270.99999999999994, inf, 0), // 2.836e+326
+            Arguments.of(-271.00000000000006, inf, 0), // 2.836e+326
+            Arguments.of(-271.99999999999994, inf, 0), // 1.096e+315
+            Arguments.of(-272.00000000000006, -inf, 0), // -1.096e+315
+            Arguments.of(-272.99999999999994, -inf, 0), // -5.334e+329
+            Arguments.of(-273.00000000000006, -inf, 0), // -5.334e+329
+            Arguments.of(-273.99999999999994, -inf, 0), // -2.077e+318
+            Arguments.of(-274.00000000000006, inf, 0), // 2.077e+318
+            Arguments.of(-274.99999999999994, inf, 0), // 1.018e+333
+            Arguments.of(-275.00000000000006, inf, 0), // 1.018e+333
+            Arguments.of(-275.99999999999994, inf, 0), // 3.993e+321
+            Arguments.of(-276.00000000000006, -inf, 0), // -3.993e+321
+            Arguments.of(-276.99999999999994, -inf, 0), // -1.972e+336
+            Arguments.of(-277.00000000000006, -inf, 0), // -1.972e+336
+            Arguments.of(-277.99999999999994, -inf, 0), // -7.789e+324
+            Arguments.of(-278.00000000000006, inf, 0), // 7.789e+324
+            Arguments.of(-278.99999999999994, inf, 0), // 3.873e+339
+            Arguments.of(-279.00000000000006, inf, 0), // 3.873e+339
+            // Large negative integer s that is not an int:
+            Arguments.of(-2147483649.0, Double.NEGATIVE_INFINITY, 0) // -9.10e+17393448289
         );
     }
 
