@@ -40,6 +40,7 @@ import org.apache.commons.numbers.core.DDMath;
 import org.apache.commons.numbers.fraction.BigFraction;
 import org.apache.commons.numbers.rootfinder.BrentSolver;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -59,7 +60,7 @@ class HurwitzZetaTest {
     /** Seed for data generation. */
     private static final long SEED = 6516587940839803692L;
     /** Table used to create a histogram of the number of steps to converge the tail series.
-     * Used in the {@link #zeta(double, double, Context)} implementation. */
+     * Used in the test zeta implementation. */
     private static final int[] M = new int[54];
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
@@ -848,8 +849,7 @@ class HurwitzZetaTest {
         // Broken
         ZETA_ROOT_S3_21_N_A0_100(HurwitzZeta::value, "hzeta_root_s3_21_na0_100.csv", 3e14, 1e13),
         ZETA_ROOT_S23_1067_N_A0_50(HurwitzZeta::value, "hzeta_root_s23_1067_na0_50.csv", 2e10, 3e9),
-        ZETA_ROOT_S3_21_N_A101_300(HurwitzZeta::value, "hzeta_root_s3_21_na101_300.csv", 1e10, 1e9),
-        ;
+        ZETA_ROOT_S3_21_N_A101_300(HurwitzZeta::value, "hzeta_root_s3_21_na101_300.csv", 1e10, 1e9);
 
 //        JDK Oracle Corporation 25.503-b01
 //        DOUBLE_ZETA_IS                        max        1.09783   RMS       0.262393   mean      0.0465531  n 6000  (92.2ms)
@@ -898,7 +898,7 @@ class HurwitzZetaTest {
         private final DoubleBinaryOperator fun;
 
         /** The filenames containing the test data. */
-        private final String[] filename;
+        private final String[] filenames;
 
         /** The maximum allowed ulp. */
         private final double maxUlp;
@@ -916,7 +916,7 @@ class HurwitzZetaTest {
          */
         ZetaTestCase(DoubleBinaryOperator fun, String filename, double maxUlp, double rmsUlp) {
             this.fun = fun;
-            this.filename = new String[] {filename};
+            this.filenames = new String[] {filename};
             this.maxUlp = maxUlp;
             this.rmsUlp = rmsUlp;
         }
@@ -925,27 +925,25 @@ class HurwitzZetaTest {
          * Create an instance.
          *
          * @param fun function to test
-         * @param filename Filename of the test data
+         * @param filenames Filenames of the test data
          * @param maxUlp maximum allowed ulp
          * @param rmsUlp maximum allowed RMS ulp
          */
-        ZetaTestCase(DoubleBinaryOperator fun, String[] filename, double maxUlp, double rmsUlp) {
+        ZetaTestCase(DoubleBinaryOperator fun, String[] filenames, double maxUlp, double rmsUlp) {
             this.fun = fun;
-            this.filename = filename;
+            this.filenames = filenames;
             this.maxUlp = maxUlp;
             this.rmsUlp = rmsUlp;
         }
 
         @Override
-        public
-        DoubleBinaryOperator getFunction() {
+        public DoubleBinaryOperator getFunction() {
             return fun;
         }
 
         @Override
-        public
-        String[] getFilenames() {
-            return filename;
+        public String[] getFilenames() {
+            return filenames;
         }
 
         @Override
@@ -1307,6 +1305,8 @@ class HurwitzZetaTest {
 
         // I : (a+p)^(1-s) / (s-1)
         final BigDecimal ti = apn.pow(1 - s, mc).divide(BigDecimal.valueOf(s - 1), mc);
+        System.out.println(sum.add(t0).doubleValue());
+        System.out.println(ti.doubleValue());
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (t0.compareTo(ti) > 0) {
@@ -1343,6 +1343,9 @@ class HurwitzZetaTest {
             // compute the multiplicand as a long as it cannot overflow when M is small
             f = f.multiply(BigDecimal.valueOf((s + (2L * i) + 1) * (s + (2L * i) + 2)), mc);
         }
+        System.out.println(tsum.doubleValue());
+        System.out.println(i);
+        System.out.println(sum.add(tsum, mc).doubleValue());
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum, mc);
@@ -2240,25 +2243,49 @@ class HurwitzZetaTest {
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
         assertClose(HurwitzZeta::value, s, a, z, ulp);
-        // TODO - remove
-//        if (a < 0 && s < Integer.MAX_VALUE) {
-//            //assertClose((x, y) -> HurwitzZetaTest.zetaNegative((int) x, y), s, a, z, 0);
-//            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y), s, a, z, 0);
-//        }
     }
 
-    // TODO - remove
-    @Test
-    void test() {
-        // Bug in mpmath?
-//        assertClose(HurwitzZeta::value, 50, 2000, 3.6698119957034991027055454908981e-164, 0);
-//        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
-//            5, -22.500000000921442, 0.00000148253693746789985363830295586415232, 0);
+    /**
+     * Spot tests for the zeta function using {@code a = 1}. Uses data from the Riemman zeta test.
+     */
+    @ParameterizedTest
+    @MethodSource(value = "org.apache.commons.numbers.gamma.RiemannZetaTest#testZetaSpot")
+    void testZeta1Spot(double s, double z, int ulp) {
+        // Cannot be called with s < 1
+        Assumptions.assumeTrue(s >= 1);
+        assertClose(HurwitzZeta::value, s, 1.0, z, ulp);
+    }
 
-//      assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x,  y),
-//          1025, -0.5000000000000001, 1.636589053818470245558225638860755674476597603836215605163495852817453E+296, 0);
-      assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x,  y),
-          7, -53.00002375903286, -2.339907519661991E32, 0);
+    /**
+     * Spot tests for the negative zeta test implementations.
+     */
+    @ParameterizedTest
+    @MethodSource(value = "testZetaSpot")
+    void testZetaNegativeSpot(double s, double a, double z, int ulp) {
+        if (a < 0 && s < Integer.MAX_VALUE) {
+            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeBD((int) x, y), s, a, z, ulp);
+            assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y), s, a, z, ulp);
+        }
+    }
+
+    /**
+     * Test zeta negative extreme cases. Random spot checks using mpmath disagree with
+     * this implementation for the total cancellation case.
+     */
+    // TODO - remove this
+    @Test
+    void testZetaNegativeExtremeCases() {
+        // ULP required in quad-double precision is the same.
+        // This case cannot be computed in MATLAB. It requires an alternative implementation.
+        // Note: tracing this in a debugger finds the sum: S + I + T
+        // S = 3.1911325032940403E-69
+        // I = 1.2414050048624338E-72
+        // T = 4.345052861867923E-75
+        // sum = 3.1923782533517644E-69
+        // M = 26
+        Context context = Context.BD_QUAD_DOUBLE;
+        assertClose((x, y) -> HurwitzZetaTest.zeta((int) x, new BigDecimal(y), null, context).doubleValue(),
+            33, 1 - -123.5, 3.19237825509754559298777006642e-69, 3400000);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -2436,9 +2463,14 @@ class HurwitzZetaTest {
             Arguments.of(19, -0.9999999999999998, 2.61598781051334795153424084243e+297, 0),
             Arguments.of(20, -0.9999999999999998, inf, 0), // 1.178e313
             Arguments.of(21, -0.9999999999999998, inf, 0), // 5.31e328
-            // 0.5^-s overflows with odd or even s
+            // s > 1024 0.5^-s overflows with odd or even s
             Arguments.of(1025, -1.25, -inf, 0), // -1.29e617
             Arguments.of(1024, -1.75, inf, 0), // 3.23e616
+            // s > 1065 (0.5+/-u)^-s with u=2^-54 overflows with odd or even s
+            Arguments.of(1095, -1.25, -inf, 0), // -4.61e+661
+            Arguments.of(1098, -1.75, inf, 0), // 1.15e+661
+            Arguments.of(1067, -0.49999999999999994, -inf, 0), // -3.75e+308
+            Arguments.of(1068, -0.49999999999999994, inf, 0), // 6.33e+321
             // very large s: will be odd if cast to a long which triggers the cancellation path with s half-integer
             Arguments.of(1e+19, -1.25, inf, 0), // 1.88e+6020599913279623904
             Arguments.of(1e+19, -1.5, inf, 0), // 2.74e+3010299956639811952
@@ -2450,6 +2482,48 @@ class HurwitzZetaTest {
             // mp.dps = 70
             Arguments.of(2, -66.26738, 17.78437226907544744370996767080669047664124490204306137519070727420819, 0),
             Arguments.of(3, -66.26738, -50.12250472489562851240391661869509127911964240532672215389564430564016, 0),
+
+            // s is odd and a is half-integer -> total cancellation
+            // Test with large s: zeta(s, a) = zeta(s, 1 - a)
+            // Note: mpmath or MATLAB do not recognise this case and compute
+            // with the configured decimal precision. This can suffer cancellation
+            // so cases are checked using f(s, 1 - a)
+            Arguments.of(1199, -0.5, 7.35496130541141006844938414845e-212, 0),
+            Arguments.of(1599, -0.5, 2.69201062691590466247243270165e-282, 0),
+            Arguments.of(1799, -0.5, 1.62863948177150213207306826673e-317, 0),
+            Arguments.of(1821, -0.5, 2.17679363860391259822822464064e-321, 0),
+            Arguments.of(1831, -0.5, 3.77489320044438771289217773716e-323, 0),
+            Arguments.of(1835, -0.5, 7.45657916137163005015738812279e-324, 0),
+            Arguments.of(1837, -0.5, 3.31403518283183557784772805457e-324, 0),
+            Arguments.of(1839, -0.5, 0, 0), // 1.47e-324
+            Arguments.of(1841, -0.5, 0, 0), // 6.55e-325
+            Arguments.of(25, -1.5, 1.12615058406163209167415852865e-10, 0),
+            Arguments.of(13, -11.5, 8.94160424473182258196042781849e-15, 0),
+
+            // Large s computed using zeta(s, 1 - a)
+            // a = -1.5 : zeta(s, 2.5).
+            // Verified using WolframAlpha HurwitzZeta without the identity (1 - a)
+            // https://www.wolframalpha.com/input?i=HurwitzZeta%28327%2C-1.5%29
+            Arguments.of(327, -1.5, 7.47510270791220464622169555878e-131, 0),
+            Arguments.of(679, -1.5, 6.29120897946407243273186899998e-271, 0),
+            Arguments.of(779, -1.5, 1.01095830534845946704119374011e-310, 0),
+            Arguments.of(791, -1.5, 1.69610658558250597457949882757e-315, 0),
+            Arguments.of(801, -1.5, 1.77849665908376178480067256262e-319, 0),
+            Arguments.of(805, -1.5, 4.55295144725443016908972176031e-321, 0),
+            Arguments.of(1099, -1.5, 0, 0), // 4.61e-438
+            // a = -123.5 : zeta(s, 124.5)
+            // *** Mismatch bits: ceil(log2(ulp)) ***
+            Arguments.of(33, -123.5, 3.19237825509754559298777006642e-69, 3400000), // 22-bits
+            Arguments.of(133, -123.5, 3.36756171921967259297351128082e-279, 0),
+            Arguments.of(143, -123.5, 3.61590594362399955089661789179e-300, 1750), // 11-bits
+            Arguments.of(153, -123.5, 3.89993978254564232599612355239e-321, 0),
+            Arguments.of(155, -123.5, 0, 0), // 2.50e-325
+
+            // Computed using https://www.wolframalpha.com/input?i=HurwitzZeta
+            Arguments.of(33, -123.5, 3.192378253351764442262703039055841594302566e-69, 0),
+            // Note: WolframAlpha is the same using HurwitzZeta(143, 124.5)
+            // TODO: this is fixed using a higher N in the Context
+            Arguments.of(143, -123.5, 3.615905943623999550732130915723115628045590e-300, 1712), // 11-bits
 
             // -------
 
