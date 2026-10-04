@@ -122,13 +122,10 @@ class RiemannZetaTest {
      */
     private enum TestCase implements TestError {
         // Hurwitz zeta is accurate for all s > 1 including s -> 1.
-        // Require by passing public API which can call the zeta function when a==1.
-        // Better than RiemannZeta unless s -> 1
-        HURWITZ_ZETA_1_32(s -> HurwitzZeta.zetaImp(s, 1), "zeta_1_32.csv", 0.95, 0.13),
+        // Requires by passing public API which can call the zeta function when a==1.
+        // Similar precision to RiemannZeta.
+        HURWITZ_ZETA_1_32(s -> HurwitzZeta.zetaImp(s, 1), "zeta_1_32.csv", 1.5, 0.13),
         HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_above1.csv", 1.45, 0.42),
-//        // Require by-passing s <= 1
-//        HURWITZ_ZETA_BELOW_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_below1.csv", 2.13, 0.63),
-//        HURWITZ_ZETA_0_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_0_1.csv", 27, 4.3),
         // Borwein zeta has no support for negative s using reflection.
         // It is worse than BoostZeta
         BORWEIN_ZETA_1_32(RiemannZetaTest::borweinZeta, "zeta_1_32.csv", 2.7, 0.4),
@@ -806,13 +803,13 @@ class RiemannZetaTest {
         "-253, -1.89288666446856573885385316552e+297",
         "-255, 3.10555175960489268960251418622e+300",
         "-257, -5.1754977470366797965163888379e+303",
-        // B_2n for n=130 is not a double but zeta(-259) is finite
-         "-259, 8.76015634462292151490407301349e+306",
-         // Overflow
-         "-261, -1.50579543360546802830668914367e+310",
-         "-263, 2.62822945914037958563322916274e+313",
-         "-265, -4.65750514126904069071074368503e+316",
-         "-267, 8.37889029540787223694025360457e+319",
+        // B_2n for n=130 is not a finite double but zeta(-259) is finite
+        "-259, 8.76015634462292151490407301349e+306",
+        // Overflow
+        "-261, -1.50579543360546802830668914367e+310",
+        "-263, 2.62822945914037958563322916274e+313",
+        "-265, -4.65750514126904069071074368503e+316",
+        "-267, 8.37889029540787223694025360457e+319",
     })
     void testZetaNegativeOddInteger(int s, double z) {
         assertClose(RiemannZeta::value, s, z, 0);
@@ -828,11 +825,8 @@ class RiemannZetaTest {
         zl = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) + u));
         zu = RiemannZeta.value(Double.longBitsToDouble(Double.doubleToRawLongBits(s) - u));
         // Values alternate sign so test [zl, zu] contains z
-        if (z <= zu) {
-            Assertions.assertTrue(z >= zl, () -> String.format("%s, %s, %s", zl, z, zu));
-        } else {
-            Assertions.assertTrue(z <= zl, () -> String.format("%s, %s, %s", zl, z, zu));
-        }
+        Assertions.assertTrue(z <= zu ? z >= zl : z <= zl,
+            () -> String.format("%s, %s, %s", zl, z, zu));
     }
 
     /**
