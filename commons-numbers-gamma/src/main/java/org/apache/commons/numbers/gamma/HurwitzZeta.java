@@ -100,8 +100,13 @@ public final class HurwitzZeta {
      * Note that {@code 0.5^-1024} overflows and at least one term uses {@code x < 0.5}.
      * So 0.5 values separated by more than +/- 2^-54 will also overflow. */
     private static final int LARGE_S = 1067;
-    /** 0.5. */
+    /** Maximum {@code s} value where {@code zeta(s, 1.5) > 0}. Used in the reflection
+     * identity when {@code s} is odd and {@code a} is negative and half-integer. */
+    private static final int MAX_REFLECTION_S = 1837;
+    /** 1/2. */
     private static final double HALF = 0.5;
+    /** Maximum difference in exponents to support double-double addition. */
+    private static final int MAX_EXP_DELTA = 106;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}
@@ -191,6 +196,7 @@ public final class HurwitzZeta {
          * <ul>
          * <li>106-bits to stop the tail series
          * <li>Accurate {@link DDMath} power function for the most important terms
+         * <li>Regular {@link DD} power function for the series
          * </ul>
          * <p>Note that accuracy is limited to approximately 105-bits.
          */
@@ -210,15 +216,15 @@ public final class HurwitzZeta {
         private final int n;
         /** Epsilon for convergence of the tail series. */
         private final double eps;
-        /** Power option: Math.pow(n + x, y); or DDMath pow. */
+        /** Option for DD power function. */
         private final int powOption;
 
         /**
          * Create an instance.
          *
-         * @param n the n
-         * @param eps the eps
-         * @param powOption option for power function
+         * @param n Number of terms to sum
+         * @param eps Convergence epsilon for the tail series T
+         * @param powOption Option for power function
          */
         Context(int n, double eps, int powOption) {
             this.n = n;
@@ -243,35 +249,36 @@ public final class HurwitzZeta {
         }
 
         /**
-         * Get the function to compute {@code (x+y)^z} terms.
+         * Get the function to compute {@code x^y} terms.
          * @return function
          */
         DDPowOperator getDDPow() {
-            return (powOption & 1) != 0 ?
-                Context::accuratePow :
-                Context::pow;
+            return (powOption & 1) == 0 ?
+                Context::pow :
+                Context::accuratePow;
         }
 
         /**
-         * Get the function to compute {@code (x+y)^z} in a summation of terms
-         * {@code x^-s}. Note that the terms may be of a similar magnitude or
-         * different magnitude allowing the accuracy of the power function to
-         * be adapted for the series.
+         * Get the function to compute {@code x^y} in a summation of terms {@code x^-s}.
+         * Note that the terms {@code x^y, (x+1)^y, (x+2)^y, ...} may be of a similar
+         * magnitude or differing magnitudes depending on whether {@code x} is close to zero.
+         * The accuracy of the power function can be adapted for the series.
+         *
          * @return function
          */
         DDPowOperator getSeriesDDPow() {
-            return (powOption & 2) != 0 ?
-                Context::accuratePow :
-                Context::pow;
+            return (powOption & 2) == 0 ?
+                Context::pow :
+                Context::accuratePow;
         }
 
         /**
-         * Helper function to compute {@code x^z} avoiding overflow of intermediates.
+         * Helper function to compute {@code x^y} avoiding overflow of intermediates.
          *
          * <p>Uses {@link DD#pow(int, long[])}.
          *
-         * @param x the x
-         * @param y the y
+         * @param x Argument.
+         * @param y Argument.
          * @return the result
          */
         private static DD pow(DD x, int y) {
@@ -281,12 +288,12 @@ public final class HurwitzZeta {
         }
 
         /**
-         * Helper function to compute {@code x^z} avoiding overflow of intermediates.
+         * Helper function to compute {@code x^y} avoiding overflow of intermediates.
          *
          * <p>Uses {@link DDMath#pow(DD, int, long[])}.
          *
-         * @param x the x
-         * @param y the y
+         * @param x Argument.
+         * @param y Argument.
          * @return the result
          */
         private static DD accuratePow(DD x, int y) {
@@ -331,7 +338,8 @@ public final class HurwitzZeta {
     private HurwitzZeta() {}
 
     /**
-     * Extended precision {@code (x+y)^z}.
+     * Extended precision {@code (x+y)^z}. Uses the round-off from {@code x + y} to adjust
+     * the result of {@link Math#pow(double, double)}.
      *
      * <p>Warning: This does not check all pow edge cases and
      * assumes {@code (x+y)} is finite.
@@ -549,13 +557,12 @@ public final class HurwitzZeta {
         final double x = a - ca;
         // Intentional float comparison
         if (odd && x == -HALF) {
-            // TODO - what does this gain?
-            // Can this use s up to Integer.MAX_VALUE?
-            // Use extended precision but evaluated with precision for a double result
-            if (s <= Integer.MAX_VALUE) {
+            if (s <= MAX_REFLECTION_S) {
+                // Use extended precision but evaluated with precision for a double result
                 return zetaImp((int) s, DD.ONE.subtract(a), null, Context.DOUBLE).hi();
             }
-            return zetaImp(s, 1 - a);
+            // All possible zeta(s, 1-a >= 1.5) underflow
+            return 0.0;
         }
 
         // Handle cancellation as x -> 0.5 using double-double precision.
@@ -577,18 +584,18 @@ public final class HurwitzZeta {
         final long[] expp = {0};
         DD pn = DDMath.pow(xn, -is, expn);
         DD pp = DDMath.pow(xp, -is, expp);
-        final long diff = expp[0] - expn[0];
-        if (Math.abs(diff) > 106) {
+        final long delta = expp[0] - expn[0];
+        if (Math.abs(delta) > MAX_EXP_DELTA) {
             // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
             // All other individual terms are smaller so further DD computation is not possible.
-            return diff > 0 ?
+            return delta > 0 ?
                 pp.scalb((int) expp[0]).hi() :
                 pn.scalb((int) expn[0]).hi();
         }
-        // Add the smallest to the largest avoiding overflow by re-scaling after the sum
-        final DD sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
+        // Add to a scaled term to avoid overflow, then re-scale after the sum
+        final DD sum = pn.add(pp.scalb((int) delta)).scalb((int) expn[0]);
 
-        // Rescale terms
+        // Rescale terms (may over/underflow)
         pp = pp.scalb((int) expp[0]);
         pn = pn.scalb((int) expn[0]);
 
