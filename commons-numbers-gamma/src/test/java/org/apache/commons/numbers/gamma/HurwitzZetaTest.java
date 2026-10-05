@@ -993,35 +993,6 @@ class HurwitzZetaTest {
         }
 
         /**
-         * Get the function to compute {@code (x+y)^z}.
-         * @return function
-         */
-        DoubleTernaryOperator getPowNp() {
-            return (powOption & 1) == 1 ? Context::powNp : (x, y, z) -> Math.pow(x + y, z);
-        }
-
-        /**
-         * Get the function to compute {@code (x+y)^z} using DD.
-         * @return function
-         */
-        BiFunction<DD, Integer, DD> getDDPow() {
-            if ((powOption & 1) == 1) {
-                return (x, y) -> {
-                    final long[] exp = {0};
-                    final DD r = DDMath.pow(x, y, exp);
-                    return r.scalb((int) exp[0]);
-                };
-            }
-            // This function is computed using reciprocal(x^s).
-            // So large x or s can break even if the result is finite
-            // when using the standard DD.pow.
-            // Use the scaled pow instead. It is not much slower as the implementations
-            // are the same DD computation but with a check for intermediate overflow and
-            // rescaling.
-            return Context::pow;
-        }
-
-        /**
          * Gets the option to use in the tail series.
          * Implementations may use this as a bit flag to change multiple options.
          * @return the option
@@ -1050,7 +1021,7 @@ class HurwitzZetaTest {
          * @param z the z
          * @return the result
          */
-        static double powNp(double x, double y, double z) {
+        static double extPow(double x, double y, double z) {
             // (s+ss)^z = s^z * (1+ss/s)^z
             //          = s^z * exp(z*log1p(ss/s))
             // ss/s < machine epsilon : log1p(ss/s) ~ ss/s
@@ -1066,13 +1037,40 @@ class HurwitzZetaTest {
         }
 
         /**
+         * Standard precision {@code (x+y)^z}.
+         *
+         * @param x the x
+         * @param y the y
+         * @param z the z
+         * @return the result
+         */
+        static double stdPow(double x, double y, double z) {
+            return Math.pow(x + y, z);
+        }
+
+        /**
          * Helper function to compute {@code x^z} avoiding overflow of intermediates.
+         * Uses {@link DDMath#pow(DD, int, long[])}.
          *
          * @param x the x
          * @param y the y
          * @return the result
          */
-        static DD pow(DD x, int y) {
+        static DD extPow(DD x, int y) {
+            final long[] exp = {0};
+            final DD r = DDMath.pow(x, y, exp);
+            return r.scalb((int) exp[0]);
+        }
+
+        /**
+         * Helper function to compute {@code x^z} avoiding overflow of intermediates.
+         * Uses {@link DD#pow(int, long[])}.
+         *
+         * @param x the x
+         * @param y the y
+         * @return the result
+         */
+        static DD stdPow(DD x, int y) {
             final long[] exp = {0};
             final DD r = x.pow(y, exp);
             return r.scalb((int) exp[0]);
@@ -1326,8 +1324,6 @@ class HurwitzZetaTest {
      * @return zeta(s, a)
      */
     static double zeta(double s, double a, double a0, Context c) {
-        final int n = c.getN();
-
         // First term may be provided
         final double t0 = Double.isNaN(a0) ? Math.pow(a, -s) : a0;
 
@@ -1336,51 +1332,123 @@ class HurwitzZetaTest {
         // When a is large the series cannot use a+k.
         // This reduces to N=0, the I term and the first term of T.
         if (a > 1e15) {
+            // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
+            // sub-normal as a is large.
             return Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5;
         }
 
         // Can overflow if 0 < a < 1.
-        if (!Double.isFinite(t0)) {
+        if (t0 > 0x1p106) {
+            // Nothing can be added in double-double precision
             return t0;
         }
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow.
 
-        // TODO - test this
-        // Add Context::stdPow and Context::extPow
-        // Same for DD. Then pick them based on the pow option.
-        // Same in DD method.
-        // Add option to sum forward and use the epsilon to stop
+        // ----------
+        // Note on sub-normals
+        //
+        // If (a+n)^-s is sub-normal the terms are imprecise.
+        // If a is very large then the asymptote is used.
+        // If a < 1 then the overflow on t0 is used since sub-normal (a+n)^-s indicates large s.
+        // Only matters if a > 1.
+        // The critical point is: (a+n)^-s = 2^-1022
+        // s = 1022 / log2(a+n)
+        // a+n     s
+        // 10      307.6526555685887
+        // 11      295.42425249688137
+        // 13      276.1833938247208
+        // 17      250.03285404482696
+        // 25      220.07572117550387
+        // 41      190.75876428620012
+        // 73      165.1096877267423
+        // 137     143.98357010155027
+        // 265     126.95891031015186
+        // 521     113.23924610224901
+        // 1033    102.07113989274231
+        // 2057    92.85568978317679
+        // 4105    85.1441991938127
+        // 8201    78.60580606204464
+        // 16393   72.99586906747066
+        // 32777   68.13153378139438
+        // 65545   63.874209115886465
+        // 131081  60.117296756728535
+        // 262153  56.77762154420588
+        // 524297  53.78940357315088
+        //
+        // Could possibly be saved by scaling all power terms: (a+n)^-s = (2^-b*(a+n))^-s * (2^b)^-s
+        // (2^-b*(a+n))^-s >= 2^-1022
+        // -b <= 1022/s - log2(a+n) : b >= log2(a+n) + 1022/s
+        // Scale all terms by 2^-b; rescale final result by 2^-sb
+        // When 2^-sb is very small (-sb < -2046) then any finite computed result will be zero.
+        // But there is no way to determine if rescaling at the end will create a finite result
+        // and computation may be wasted to generate a zero.
+        // E.g.
+        // zeta(80, 8000) = 5.6e-311
+        // zeta(86, 8000) = 2.04e-334
+        // zeta(100, 8000) = 3.99e-389
+        // zeta(499, 8000) = 3.78e-1947
+        // b = 1022.0/-80  + log2(8000) = 0.19 : Math.pow(2, -80) = 8.27e-25    *** possible ***
+        //   = 1022.0/-86  + log2(8000) = 1.08 : Math.pow(2, -86*2) = 1.67e-52  *** unknown ***
+        //   = 1022.0/-100 + log2(8000) = 2.75 : Math.pow(2, -100*3) = 4.9e-91  *** unknown ***
+        //   = 1022.0/-499 + log2(8000) = 10.91 : Math.pow(2, -499*11) = 0      *** n/a ***
+        // 8000 * 2^-1  = 4000
+        //      * 2^-2  = 2000
+        //      * 2^-3  = 1000
+        //      * 2^-11 = 3.91
+        // Possibly the result is only recoverable if scaling b is small, e.g. b*s in [0, 106]
+        // so it will not downscale more than 106-bits.
+        // ----------
 
-        DoubleTernaryOperator pow = c.getPowNp();
-        // Power function for the series.
-        // Allow switching to the faster DD pow. The configured pow is used for the most important terms.
-        DoubleTernaryOperator powS = (c.getPowOption() & 2) == 2 ? 
-            (x, y, z) -> Math.pow(x + y, z) :
-            pow;
+        // TODO - test this
+
+        DoubleTernaryOperator pow = (c.getPowOption() & 1) == 1 ? Context::extPow : Context::stdPow;
+        // Power function for the series (allows switching to a faster pow)
+        DoubleTernaryOperator powS = (c.getPowOption() & 2) == 2 ? Context::extPow : Context::stdPow;
 
         // Check the extra precision power will make a difference.
         // If a < 1 then the term a^-s dominates the result and 1 extra digit
         // of precision from the power function on remaining terms is lost.
-        if (!(a > 1 && Math.abs(s * DD.ofSum(a, n).lo()) >= 0x1p-53)) {
-            powS = (x, y, z) -> Math.pow(x + y, z);
+        if (!(a > 1 && Math.abs(s * DD.ofSum(a, c.getN()).lo()) >= 0x1p-53)) {
+            pow = powS = Context::stdPow;
         }
-
-        double p = pow.applyAsDouble(a, n, -s);
 
         // We always use a DD sum. If not using extended precision
         // we add in double precision and create a new DD.
         BiFunction<DD, Double, DD> add = c.getUseExtendedPrecisionSum() ?
             DD::add :
             (x, y) -> DD.of(x.hi() + y);
-
-        // Initialise sum with the first tail term
-        DD sum = DD.of(0.5 * p);
-        // S : k in [0, n-1]
-        for (int k = n; --k > 0;) {
-            // Descending k sums in order of magnitude for increased precision.
-            // Prevents early exit for large s when the term (a+k)^-s is below
-            // machine epsilon of the ascending series sum.
-            sum = add.apply(sum, pow.applyAsDouble(a, k, -s));
+        DD sum;
+        double eps = c.getSumEps();
+        int n;
+        if (eps == 0) {
+            // Fixed number of terms summed in ascending order of magnitude.
+            n = c.getN();
+            // Initialise sum with the first tail term.
+            sum = DD.of(0.5 * pow.applyAsDouble(a, n, -s));
+            // S : k in [1, n-1]
+            for (int k = n; --k > 0;) {
+                // Descending k sums in order of magnitude for increased precision.
+                // Prevents early exit for large s when the term (a+k)^-s is below
+                // machine epsilon of the ascending series sum.
+                sum = add.apply(sum, powS.applyAsDouble(a, k, -s));
+            }
+        } else {
+            // Maximum number of terms with early convergence.
+            // Sums in descending order of magnitude and dynamically chooses n.
+            n = 0;
+            sum = DD.ZERO;
+            // S : k in [1, n]
+            double p = 0;
+            for (; n <= c.getN();) {
+                n++;
+                p = powS.applyAsDouble(a, n, -s);
+                sum = add.apply(sum, p);
+                if (p <= eps * sum.hi()) {
+                    break;
+                }
+            }
+            // first tail term is 0.5 * (a+n)^-s so we must subtract half the last term
+            sum = sum.add(-0.5 * p);
         }
 
         // I : (a+p)^(1-s) / (s-1)
@@ -1404,9 +1472,15 @@ class HurwitzZetaTest {
         // This factor can be computed using alternative implementations.
 
         // Rising factorial term : (s)_{2k-1}
+        // Note: When s is large the loop exits before the rising factorial overflows.
+        // (a+n) >= 9 : 9^-340 = 3.6e-325 : max (2k-1+s) = 339
+        // (339)_{2k-1}; k=53 = Pochammer(339, 105) = 1.1e272
+        // The rising factorial will not overflow for k <= 50 before (a+n)^-(2k-1+s) is
+        // zero. This is within the length of table F.
         double f = s;
         // 2k - 1
         double k2 = 1;
+
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         // Note: if the factor is too small (e.g. 0x1p-63) then the series continues
@@ -1414,7 +1488,6 @@ class HurwitzZetaTest {
 
         // tsum can use extended precision.
         DD tsum = DD.ZERO;
-        final double stop = sum.hi() * c.getTailEps();
         int i;
         add = (c.getTailOption() & 4) != 0 ?
             DD::add :
@@ -1424,12 +1497,15 @@ class HurwitzZetaTest {
         // Set using the first two bits of the tail option.
         double apn = 0;
         final int powerTermOption = c.getTailOption() & 0x3;
+        double p;
         if (powerTermOption == 2) {
             // Compute using the power function
             p = pow.applyAsDouble(a, n, -(k2 + s));
         } else if (powerTermOption == 1) {
             // Initialise (a+n)^-(2k-1+s) to (a+n)^-s
-            // Divide by (a+n) twice inside the loop
+            // Divide by (a+n) twice inside the loop.
+            // An optimised implementation would recycle p from the end of the series sum.
+            p = pow.applyAsDouble(a, n, -s);
             apn = a + n;
         } else {
             // powerTermOption == 0 or 3
@@ -1439,14 +1515,36 @@ class HurwitzZetaTest {
             apn = pow.applyAsDouble(a, n, -2);
         }
 
+        // If a or s are large then (a+n)^-(2k-1+s) will underflow.
+        // We can downscale the rising factorial (always above 1)
+        // and upscale p (always below 1) by the same amount.
+        // The loop will still exit immediately if p = 0
+        // (zeta evaluation is limited by Math.pow).
+        f *= 0x1p-1022;
+        p *= 0x1p1022;
+
+        double stop = sum.hi() * c.getTailEps();
+        int rescale = 0;
+        if (stop < Double.MIN_NORMAL) {
+            // Compute a scaled tail sum so convergence is on a normal number
+            // The sum < 2^106 due to a check on t0.
+            // Scaling cannot overflow the stop criteria.
+            stop = sum.hi() * 0x1p53;
+            // Either scale p down or scale f up.
+            // The result is sub-normal so it is likely p was sub-normal or zero
+            // before upscaling.
+            f *= 0x1p106;
+            rescale = -106;
+        }
+
         for (i = 0; i < c.getM(); i++) {
             // p = (a+n)^-(2k-1+s)
             if (powerTermOption == 1) {
                 p /= apn;
             }
             // Note that this uses divide by F rather than multiply by FM.
-            // Testing shows negligible difference. The first 6/7 terms of
-            // M are exact so divide is used.
+            // Testing shows negligible difference. The first 6 of 7 terms of
+            // F are exact so divide is used.
             final double t = f * p / F[i];
             tsum = add.apply(tsum, t);
             if (Math.abs(t) <= stop) {
@@ -1459,7 +1557,8 @@ class HurwitzZetaTest {
             k2 += 1.0;
             // Update (a+n)^-(2k-1+s)
             if (powerTermOption == 2) {
-                p = pow.applyAsDouble(a, n, -(k2 + s));
+                // Note updating p with the power function must use the scale.
+                p = 0x1p1022 * pow.applyAsDouble(a, n, -(k2 + s));
             } else if (powerTermOption == 1) {
                 p /= apn;
             } else {
@@ -1468,7 +1567,7 @@ class HurwitzZetaTest {
         }
         // Used to histogram convergence when testing
         M[i]++;
-        return sum.add(tsum).hi();
+        return sum.add(tsum.scalb(rescale)).hi();
     }
 
     /**
@@ -1612,7 +1711,7 @@ class HurwitzZetaTest {
     private static BigDecimal zeta(int s, BigDecimal a, BigDecimal a0, Context c) {
         final int n = c.getN();
         final MathContext mc = c.getMathContext();
-        final BigDecimal apn = a.add(BigDecimal.valueOf(n));
+        BigDecimal apn = a.add(BigDecimal.valueOf(n));
         BigDecimal p = apn.pow(-s, mc);
 
         // Initialise sum with the first tail term
@@ -1627,8 +1726,9 @@ class HurwitzZetaTest {
 
         // I : (a+p)^(1-s) / (s-1)
         final BigDecimal ti = apn.pow(1 - s, mc).divide(BigDecimal.valueOf(s - 1), mc);
-        System.out.println(sum.add(t0).doubleValue());
-        System.out.println(ti.doubleValue());
+
+        double S = sum.add(t0).doubleValue();
+        double I = ti.doubleValue();
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (t0.compareTo(ti) > 0) {
@@ -1645,12 +1745,22 @@ class HurwitzZetaTest {
 
         // Rising factorial term : (s)_{2k-1}
         BigDecimal f = BigDecimal.valueOf(s);
-        p = p.divide(apn, mc);
+
+        // Alternative implementations for (a+n)^-(2k-1+s).
+        // Set using the first two bits of the tail option.
+
+        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+        p = apn.pow(-(1 + s), mc);
+        // Compute using the power function
+        boolean usePow = (c.getTailOption() & 2) != 0;
+        if (!usePow) {
+            // Divide by (a+n)^2 using multiplication
+            apn = apn.pow(-2, mc);
+        }
+
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         BigDecimal tsum = BigDecimal.ZERO;
-        // Used to divide by (a+n)^2
-        final BigDecimal apn2 = apn.pow(-2, mc);
         final int stop = sum.scale() + mc.getPrecision();
         int i;
         for (i = 0; i < c.getM(); i++) {
@@ -1660,14 +1770,17 @@ class HurwitzZetaTest {
                 break;
             }
             // p = (a+n)^-(2k-1+s)
-            p = p.multiply(apn2, mc);
+            if (usePow) {
+                p = apn.pow(-(2 * i + 3 + s), mc);
+            } else {
+                p = p.multiply(apn, mc);
+            }
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             // compute the multiplicand as a long as it cannot overflow when M is small
             f = f.multiply(BigDecimal.valueOf((s + (2L * i) + 1) * (s + (2L * i) + 2)), mc);
         }
-        System.out.println(tsum.doubleValue());
-        System.out.println(i);
-        System.out.println(sum.add(tsum, mc).doubleValue());
+        double T = tsum.doubleValue();
+//        System.out.printf("%s %s %s %d : %s%n", S, I, T, i + 1, sum.add(tsum, mc).doubleValue());
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum, mc);
@@ -1760,6 +1873,7 @@ class HurwitzZetaTest {
         if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result
             return zeta(s, DD.ONE.subtract(a), null, Context.DD_DOUBLE).doubleValue();
+//            return zeta(s, 1 - a, Double.NaN, Context.DOUBLE);
         }
 
         // Handle cancellation as x -> 0.5
@@ -1858,7 +1972,8 @@ class HurwitzZetaTest {
             // Using a double to track the iterations is fine as (a+n) is exact until > x.
             za = pn;
             zb = DD.ZERO;
-            final BiFunction<DD, Integer, DD> pow = c.getDDPow();
+            // Power function for the series (allows switching to a faster pow)
+            final BiFunction<DD, Integer, DD> pow = (c.getPowOption() & 2) == 2 ? Context::extPow : Context::stdPow;
             for (double aa = a; aa < x; aa += 1.0) {
                 zb = zb.add(pow.apply(DD.of(aa), -s));
             }
@@ -1902,10 +2017,9 @@ class HurwitzZetaTest {
         // DD pow function has enough accuracy to not accumulate error to the zeta result.
         // When a >> 1 then the terms are all similar magnitude and we may benefit from DDmath.
 
-        final BiFunction<DD, Integer, DD> pow = c.getDDPow();
-        // Power function for the series.
-        // Allow switching to the faster DD pow. The configured pow is used for the most important terms.
-        final BiFunction<DD, Integer, DD> powS = (c.getPowOption() & 2) == 2 ? Context::pow : pow;
+        final BiFunction<DD, Integer, DD> pow = (c.getPowOption() & 1) == 1 ? Context::extPow : Context::stdPow;
+        // Power function for the series (allows switching to a faster pow)
+        final BiFunction<DD, Integer, DD> powS = (c.getPowOption() & 2) == 2 ? Context::extPow : Context::stdPow;
 
         // First term may be provided
         final DD t0 = a0 == null ? pow.apply(a, -s) : a0;
@@ -1916,7 +2030,7 @@ class HurwitzZetaTest {
         }
 
         final int n = c.getN();
-        final DD apn = a.add(n);
+        DD apn = a.add(n);
         DD p = powS.apply(apn, -s);
 
         // Initialise sum with the first tail term: 0.5 * (a+n)^-s
@@ -1929,6 +2043,9 @@ class HurwitzZetaTest {
 
         // I : (a+p)^(1-s) / (s-1)
         final DD ti = pow.apply(apn, 1 - s).divide(s - 1);
+
+        double S = sum.add(t0).hi();
+        double I = ti.hi();
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (t0.hi() > ti.hi()) {
@@ -1948,15 +2065,24 @@ class HurwitzZetaTest {
 
         // Rising factorial term : (s)_{2k-1}
         DD f = DD.of(s);
-        // Do not recycle: p / apn
-        // Allows testing the different power implementations
-        //p = p.divide(apn);
+
+        // Alternative implementations for (a+n)^-(2k-1+s).
+        // Set using the first two bits of the tail option.
+
+        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
         p = pow.apply(apn, -1 - s);
+        // Compute using the power function
+        boolean usePow = (c.getTailOption() & 2) != 0;
+        if (!usePow) {
+            // Divide by (a+n)^2 using multiplication
+            apn = pow.apply(apn, -2);
+        }
+
+        // Set the scale for the tail series
+
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         DD tsum = DD.ZERO;
-        // Used to divide by (a+n)^2
-        final DD apn2 = pow.apply(apn, -2);
         final double stop = sum.hi() * c.getTailEps();
         int i;
         for (i = 0; i < c.getM(); i++) {
@@ -1966,11 +2092,17 @@ class HurwitzZetaTest {
                 break;
             }
             // p = (a+n)^-(2k-1+s)
-            p = p.multiply(apn2);
+            if (usePow) {
+                p = pow.apply(apn, -(2 * i + 3 + s));
+            } else {
+                p = p.multiply(apn);
+            }
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             // compute the multiplicand as a long as it cannot overflow when M is small
             f = f.multiply((s + (2L * i) + 1) * (s + (2L * i) + 2));
         }
+        double T = tsum.hi();
+//        System.out.printf("%s %s %s %d : %s%n", S, I, T, i + 1, sum.add(tsum).hi());
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum);
@@ -2004,7 +2136,7 @@ class HurwitzZetaTest {
 
         // Evaluate context for zeta
         final Context c = Context.DOUBLE;
-        final DoubleTernaryOperator pow = c.getPowNp();
+        final DoubleTernaryOperator pow = Context::extPow;
 
         final double x = a - ca;
         // Intentional float comparison
@@ -2278,6 +2410,9 @@ class HurwitzZetaTest {
         // - RMS drops with increasing N then plateaus. The plateau is at larger N when
         //   using the higher precision power **and** sum, e.g. N=8 vs N=10. Using one or
         //   the other N=8 is OK.
+
+        // TODO - reoptimise with option for dynamic N
+        // TODO - print N M using mean/max of N & M 
 
         // Extended precision power function (difference)
         "6, 15, -53, 0, 0, false",
@@ -2596,21 +2731,55 @@ class HurwitzZetaTest {
      * this implementation for the total cancellation case.
      */
     // TODO - remove this
-    //@Test
-    void testZetaNegativeExtremeCases() {
-        DD sum = DD.ZERO;
-        int s = 130;
-        double a = 124.5;
-        double t0 = 0;
-        for (int k = 0; k < 50; k++) {
-            double t = Math.pow(a+k, -s);
-            double ti = Math.pow(a+k+1, 1-s) / (s - 1);
-            sum = sum.add(t);
-            System.out.printf("%s (%s) + %s : %d  %d%n", sum.hi(), t, ti,
-                Math.getExponent(sum.hi()) - Math.getExponent(t),
-                Math.getExponent(t0) - Math.getExponent(t0 - t));
-            t0 = t;
+    @Test
+    void testCases() {
+//        DD sum = DD.ZERO;
+//        int s = 3;
+//        double a = 124.5;
+//        double t0 = 0;
+//        for (int k = 0; k < 50; k++) {
+//            double t = Math.pow(a+k, -s);
+//            double ti = Math.pow(a+k+1, 1-s) / (s - 1);
+//            double ti2 = t * (a+k) / (s-1);
+//            sum = sum.add(t);
+//            System.out.printf("%s (%s) + %s (%s) : %d  %d%n", sum.hi(), t, ti, ti2,
+//                Math.getExponent(sum.hi()) - Math.getExponent(t),
+//                Math.getExponent(t0) - Math.getExponent(t0 - t));
+//            t0 = t;
+//        }
+
+        // TODO - get this to work with double precision implementation
+        // Check first term. If very small then we can scale the sum terms
+        // and rescale at the end.
+        // If small then a > 1 and s is large.
+        // Check the pochammer overflow condition if (a+n)^-(1+s) is scaled up,
+        // then the pochammer may go further before it is stopped.
+
+        double a = 1 - -123.5;
+//        int s = 143;
+//        BigDecimal z = new BigDecimal("3.615905943623999550732130915723115628045590e-300");
+//        int s = 147;
+//        BigDecimal z = new BigDecimal("1.48298686245279271827660650487e-308");
+        int s = 152;
+        BigDecimal z = new BigDecimal("4.87185978234820120308892496184e-319");
+        for (int n = 9; n <= 30; n++) {
+            Context context = Context.of(n, FBD.length)
+                .withMathContext(new MathContext(38))
+                .withPowOption(0)
+                .withTailEpsilon(0x1p-106);
+            BigDecimal za;
+
+            // OK
+//            za = HurwitzZetaTest.zeta(s, new BigDecimal(a), null, context);
+
+            za = HurwitzZetaTest.zeta(s, DD.of(a), null, context).bigDecimalValue();
+
+//            za = new BigDecimal(HurwitzZetaTest.zeta(s, a, Double.NaN, context));
+
+            TestUtils.assertEquals(z, za, -1, 0, null, null);
         }
+//        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeBD((int) x, y),
+//            143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0);
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -2796,10 +2965,20 @@ class HurwitzZetaTest {
             Arguments.of(1098, -1.75, inf, 0), // 1.15e+661
             Arguments.of(1067, -0.49999999999999994, -inf, 0), // -3.75e+308
             Arguments.of(1068, -0.49999999999999994, inf, 0), // 6.33e+321
-            // very large s: will be odd if cast to a long which triggers the cancellation path with s half-integer
+            // very large s: will be odd if cast to a long which will incorrectly trigger the
+            // cancellation path with s half-integer; s should be detected as even.
             Arguments.of(1e+19, -1.25, inf, 0), // 1.88e+6020599913279623904
             Arguments.of(1e+19, -1.5, inf, 0), // 2.74e+3010299956639811952
             Arguments.of(1e+19, -1.75, inf, 0), // 1.88e+6020599913279623904
+
+            // Large a and/or s have (a+n)^-s as sub-normal
+            Arguments.of(143, 124.5, 3.61590594362399955089661789179e-300, 0),
+
+            // Large a and/or s have a^-s as sub-normal
+            Arguments.of(147, 124.5, 1.48298686245279271827660650487e-308, 1),
+            Arguments.of(148, 124.5, 1.18689831491506998542539609447e-310, 3),
+            Arguments.of(149, 124.5, 9.499650589522059112318304392e-313, 0),
+            Arguments.of(152, 124.5, 4.87185978234820120308892496184e-319, 1),
 
             // Note: large negative a can be evaluated as complex using mpmath.
             // To obtain a real result requires the digits of precision (dps)
@@ -2847,8 +3026,9 @@ class HurwitzZetaTest {
             // Computed using https://www.wolframalpha.com/input?i=HurwitzZeta
             Arguments.of(33, -123.5, 3.192378253351764442262703039055841594302566e-69, 0),
             // Note: WolframAlpha is the same using HurwitzZeta(143, 124.5)
-            // TODO: this is fixed using a higher N in the Context
-            Arguments.of(143, -123.5, 3.615905943623999550732130915723115628045590e-300, 1712), // 11-bits
+            // TODO: this is fixed using a higher N in the Context.
+            // It is caused by (a+n)^-(1+s) being sub-normal
+            Arguments.of(143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0), // 11-bits
 
             // -------
 

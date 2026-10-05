@@ -84,6 +84,8 @@ public final class HurwitzZeta {
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. */
     private static final double EPS = 0x1.0p-53;
+    /** Mutiplicative inversion of the convergence epsilon. */
+    private static final double INV_EPS = 0x1.0p53;
     /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate. */
     private static final double LARGE_A = (1L << 53) - N;
     /** Threshold used when {@code a < 1} where {@code a^-s} == zeta(s, a) with the smallest supported
@@ -107,6 +109,10 @@ public final class HurwitzZeta {
     private static final double HALF = 0.5;
     /** Maximum difference in exponents to support double-double addition. */
     private static final int MAX_EXP_DELTA = 106;
+    /** Downscale to use on the initial rising factorial tail term (always above 1). */
+    private static final double DOWNSCALE = 0x1.0p-1022;
+    /** Upscale to use on the initial probability tail term (always below 1). */
+    private static final double UPSCALE = 0x1.0p1022;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}
@@ -496,27 +502,55 @@ public final class HurwitzZeta {
         }
 
         // T
-        // The following recycles the power term p: (a+n)^-(2k-1+s).
-        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
-        // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        p = pow.apply(N, a, -s - 1);
-        // Use to divide by (a+n)^2
-        final double apn = pow.apply(N, a, -2);
-
         // Rising factorial term : (s)_{2k-1}
         // Note: When s is large the loop exits before the rising factorial overflows.
         // (a+n) >= 9 : 9^-340 = 0 : max (2k-1+s) = 339
         // (339)_{2k-1}; k=50 = Pochammer(339, 99) = 1.5e256
         // The rising factorial will not overflow for k <= 50 before (a+n)^-(2k-1+s) is
         // zero. This is within the length of table F.
-        double f = s;
+        //
+        // The following recycles the power term p: (a+n)^-(2k-1+s).
+        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
+        // The first power is (a+n)^-(1+s) not (a+n)^-1.
+        //
+        // If a or s are large then (a+n)^-(2k-1+s) will underflow.
+        // We can downscale the rising factorial (always above 1)
+        // and upscale p (always below 1) by the same amount.
+        // The loop will still exit immediately if p = 0
+        // (zeta evaluation is limited by Math.pow).
+        // Scaling could dynamically use the exponent of f and p. Here we use
+        // fixed scaling which can be pre-applied to a possible sub-normal
+        // power term before division by (a+n).
+        double f = s * DOWNSCALE;
         // 2k - 1
         double k2 = 1;
+
+        // Use to divide by (a+n)^2
+        final double apn = pow.apply(N, a, -2);
+
+        // Sub-normal p reduces accuracy:
+        // Test if (a+n)^-(1+s) >= 2^-1022
+        if (-(1 + s) * Math.getExponent(a + N) >= Double.MIN_EXPONENT) {
+            p = UPSCALE * pow.apply(N, a, -s - 1);
+        } else {
+            // If (a+n)^-s is non-zero this allows division using normal numbers
+            p = UPSCALE * pow.apply(N, a, -s) / (a + N);
+        }
+
+        double stop = sum.hi() * EPS;
+        double rescale = 1;
+        if (stop < Double.MIN_NORMAL) {
+            // Compute a scaled tail sum so convergence is on a normal number
+            stop = sum.hi() * INV_EPS;
+            // Either scale p down or scale f up
+            f *= INV_EPS * INV_EPS;
+            rescale = EPS * EPS;
+        }
+
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         // Note: an extended precision sum here has no effect on the final result.
         double tsum = 0;
-        final double stop = sum.hi() * EPS;
         int i;
         for (i = 0; i < F.length; i++) {
             final double t = f * p * F[i];
@@ -532,7 +566,7 @@ public final class HurwitzZeta {
             f *= s + k2;
             k2 += 1.0;
         }
-        return sum.add(tsum).hi();
+        return sum.add(tsum * rescale).hi();
     }
 
     /**
