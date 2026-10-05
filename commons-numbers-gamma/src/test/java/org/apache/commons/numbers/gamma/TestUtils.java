@@ -524,10 +524,13 @@ final class TestUtils {
             equal = true;
             delta = 0;
         } else {
-            // Two finite numbers. Express relative error using a scaled double ulp.
-            final double ulp = Math.scalb(Math.ulp(e), b);
+            // Two finite numbers
             delta = actual.subtract(expected)
-                        .divide(new BigDecimal(ulp), MathContext.DECIMAL64).doubleValue();
+                        .divide(new BigDecimal(Math.ulp(e)), MathContext.DECIMAL64).doubleValue();
+            // Express relative error using a scaled double ulp.
+            // Do not scale the ulp by b; scale the delta by -b.
+            // Avoids ulp being set to zero if expected is sub-normal.
+            delta = Math.scalb(delta, -b);
             // Allow input of a negative maximum ULPs
             equal = Math.abs(delta) <= Math.abs(maxUlps);
         }
