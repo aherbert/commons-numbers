@@ -77,8 +77,8 @@ class HurwitzZetaTest {
     };
     /** Filenames of resources used for the extended precision zeta function using integer s. */
     private static final String[] INT_TEST_RESOURCES = {
-        "hzeta_ia2_11_a1_1.csv",
-        "hzeta_ia2_11_a40_41.csv",
+        "hzeta_is2_11_a1_1.csv",
+        "hzeta_is2_11_a40_41.csv",
     };
     /** Filenames of resources used for the roots of the zeta function using integer s. */
     private static final String[] ROOT_TEST_RESOURCES = {
@@ -804,7 +804,7 @@ class HurwitzZetaTest {
         /** Context for double-double precision using the DD zeta implementation.
          * Uses DDMath only for the most important terms. */
         public static final Context DD_DOUBLE_DOUBLE = Context.of(15, 30)
-            .withTailEpsilon(0x1p-106).withPowOption(3);
+            .withTailEpsilon(0x1p-106).withPowOption(1);
 
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with a 1 digit more than the expected 17 per double.
@@ -814,14 +814,14 @@ class HurwitzZetaTest {
         /** Context for double-double precision using the BigDecimal zeta implementation. */
         public static final Context BD_DOUBLE_DOUBLE = Context.of(17, 30).withMathContext(new MathContext(36));
         /** Context for quad-double precision using the BigDecimal zeta implementation. */
-        public static final Context BD_QUAD_DOUBLE = Context.of(34, 50).withMathContext(new MathContext(70));
+        public static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70));
 
         /** Default epsilon. */
         private static final double EPS = 0x1p-53;
         /** Default math context. */
         private static final MathContext MC = MathContext.DECIMAL128;
-        /** Default option for pow function. */
-        private static final int POW_OPTION = 1;
+        /** Default option for pow function (use extended precision everywhere). */
+        private static final int POW_OPTION = 3;
         /** Default option for tail series. */
         private static final int TAIL_OPTION = 0;
         /** Default option for extended precision sum. */
@@ -1399,8 +1399,6 @@ class HurwitzZetaTest {
         // so it will not downscale more than 106-bits.
         // ----------
 
-        // TODO - test this
-
         DoubleTernaryOperator pow = (c.getPowOption() & 1) == 1 ? Context::extPow : Context::stdPow;
         // Power function for the series (allows switching to a faster pow)
         DoubleTernaryOperator powS = (c.getPowOption() & 2) == 2 ? Context::extPow : Context::stdPow;
@@ -1439,7 +1437,7 @@ class HurwitzZetaTest {
             sum = DD.ZERO;
             // S : k in [1, n]
             double p = 0;
-            for (; n <= c.getN();) {
+            for (; n < c.getN();) {
                 n++;
                 p = powS.applyAsDouble(a, n, -s);
                 sum = add.apply(sum, p);
@@ -1450,6 +1448,7 @@ class HurwitzZetaTest {
             // first tail term is 0.5 * (a+n)^-s so we must subtract half the last term
             sum = sum.add(-0.5 * p);
         }
+        N[n - 1]++;
 
         // I : (a+p)^(1-s) / (s-1)
         // Use of (a+n)^(1-s) = (a+n)^-1 * apn to recycle the power lowers precision.
@@ -2411,50 +2410,58 @@ class HurwitzZetaTest {
         //   using the higher precision power **and** sum, e.g. N=8 vs N=10. Using one or
         //   the other N=8 is OK.
 
-        // TODO - reoptimise with option for dynamic N
-        // TODO - print N M using mean/max of N & M 
-
-        // Extended precision power function (difference)
-        "6, 15, -53, 0, 0, false",
-        "6, 15, -53, 1, 0, false",
+        // Extended precision power function (difference but required for all terms)
+        "6, 15, 0, -53, 0, 0, false",
+        "6, 15, 0, -53, 3, 0, false",
+        "6, 15, 0, -53, 1, 0, false",
         // Extended precision sum (small difference with/without the power function)
         // RMS drops as N increases. Max error is variable.
-        "6, 15, -53, 0, 0, true",
-        "6, 15, -53, 1, 0, true", // <== Optimum
+        "6, 15, 0, -53, 0, 0, true",
+        "6, 15, 0, -53, 3, 0, true", // <== Optimum
+        "6, 15, 0, -53, 1, 0, true",
 //        // Using divide in the tail series (no difference)
-//        "6, 12, -53, 0, 1, false",
-//        "6, 12, -53, 1, 1, false",
+//        "6, 12, 0, -53, 0, 1, true",
+//        "6, 12, 0, -53, 3, 1, true",
 //        // Use power in the tail series (no difference)
-//        "6, 12, -53, 0, 2, true",
-//        "6, 12, -53, 1, 2, true",
+//        "6, 12, 0, -53, 0, 2, true",
+//        "6, 12, 0, -53, 3, 2, true",
 //        // Use extended precision sum in the tail series (no difference)
-//        "6, 12, -53, 0, 4, true",
-//        "6, 12, -53, 1, 4, true",
-//        "6, 12, -53, 0, 6, true",
-//        "6, 12, -53, 1, 6, true",
-//        // Convergence (negligible error change unless too high, does increase required M)
-//        "8, 10, -49, 1, 0, true",
-//        "8, 10, -50, 1, 0, true",
-//        "8, 10, -51, 1, 0, true",
-//        "8, 10, -52, 1, 0, true",
-//        "8, 10, -53, 1, 0, true",
-//        "8, 10, -54, 1, 0, true",
+//        "6, 12, 0, -53, 0, 4, true",
+//        "6, 12, 0, -53, 3, 4, true",
+//        "6, 12, 0, -53, 0, 6, true",
+//        "6, 12, 0, -53, 3, 6, true",
+//        // M convergence (negligible error change unless too high > -50, does increase required M)
+//        "8, 10, 0, -49, 3, 0, true",
+//        "8, 10, 0, -50, 3, 0, true",
+//        "8, 10, 0, -51, 3, 0, true",
+//        "8, 10, 0, -52, 3, 0, true",
+//        "8, 10, 0, -53, 3, 0, true",
+//        "8, 10, 0, -54, 3, 0, true",
+//        "8, 10, 0, -55, 3, 0, true",
+//        "8, 10, 0, -56, 3, 0, true",
+//        // N convergence (negligible error change unless too high where the test fails)
+//        // Mean N is close to max N. This does not allow the method to dynamically chose
+//        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
+//         "8, 50, -35, -53, 3, 0, true",
     })
     @Disabled("Used to parameterize the zeta function")
-    void testPrecisionDouble(int ln, int un, int b,
+    void testPrecisionDouble(int ln, int un, int bs, int bt,
         int pow, int tail, boolean epSum)
         throws IOException {
-        final double eps = Math.scalb(1.0, b);
+        // Default to not use variable convergence on series sum S
+        final double epsS = bs == 0 ?  0 : Math.scalb(1.0, bs);
+        final double epsT = Math.scalb(1.0, bt);
         for (int n = ln; n <= un; n++) {
-            // Reset M
+            // Reset
+            Arrays.fill(N, 0);
             Arrays.fill(M, 0);
 
             final Context c = Context.of(n, F.length)
-                .withTailEpsilon(eps)
+                .withSumEpsilon(epsS)
+                .withTailEpsilon(epsT)
                 .withPowOption(pow)
                 .withTailOption(tail)
                 .withExtendedPrecisionSum(epSum);
-            final int nn = n;
             final DoublePrecisionTestCase test = new DoublePrecisionTestCase() {
                 @Override
                 public double getTolerance() {
@@ -2483,15 +2490,8 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    // Get the largest m
-                    int max = 0;
-                    for (int i = 0; i < M.length; i++) {
-                        if (M[i] != 0) {
-                            max = i + 1;
-                        }
-                    }
-                    return String.format("ZETA %2d %2d 2^%d %6s %6s %6s",
-                        nn, max, b,
+                    return String.format("ZETA %s  2^%d %6s %6s %6s",
+                        zetaName(0), bt,
                         pow,
                         tail,
                         epSum ? "EP sum" : "");
@@ -2499,6 +2499,51 @@ class HurwitzZetaTest {
             };
             assertFunction(test);
         }
+    }
+
+    /**
+     * Create a formated name for the test zeta method using the N and M used during evaluation.
+     *
+     * @param fixedN Fixed N.
+     * @return the name
+     */
+    private static String zetaName(int fixedN) {
+        // Get mean/max
+        int maxN = 0;
+        double meanN = 0;
+        int n = 0;
+        int maxM = 0;
+        double meanM = 0;
+        int m = 0;
+        if (fixedN == 0) {
+            for (int i = 0; i < N.length; i++) {
+                if (N[i] != 0) {
+                    n += N[i];
+                    maxN = i;
+                    meanN = i * N[i];
+                }
+            }
+            if (n != 0) {
+                maxN++;
+                meanN = 1 + meanN / n;
+            }
+        }
+        for (int i = 0; i < M.length; i++) {
+            if (M[i] != 0) {
+                m += M[i];
+                maxM = i;
+                meanM = i * M[i];
+            }
+        }
+        // Summarize. Note the values are indices from 0 so add 1.
+        if (m != 0) {
+            maxM++;
+            meanM = 1 + meanM / m;
+        }
+        if (fixedN != 0) {
+            return String.format("%2d %2d [%5.2f]", fixedN, maxM, meanM);
+        }
+        return String.format("%2d %2d [%5.2f %5.2f]", maxN, maxM, meanN, meanM);
     }
 
     /**
@@ -2525,7 +2570,9 @@ class HurwitzZetaTest {
         // Not enough
         "6, 15, 16, 0",
         // Quad double precision. Requires test resources to have more than 68 digits of precision
-        "20, 40, 70, -106",
+        "30, 50, 70, -159",
+        // Not enough
+        "35, 40, 65, -159",
     })
     @Disabled("Used to parameterize the zeta function")
     void testPrecisionBigDecimal(int ln, int un, int digits, int scale)
@@ -2563,20 +2610,13 @@ class HurwitzZetaTest {
 
                 @Override
                 public String[] getFilenames() {
-                    // TODO: These need to be improved to push zeta(s, a) to the limit:
+                    // TODO: These need to be improved to push zeta(s, a) to the limit
                     return INT_TEST_RESOURCES;
                 }
 
                 @Override
                 public String toString() {
-                    // Get the largest m
-                    int max = 0;
-                    for (int i = 0; i < M.length; i++) {
-                        if (M[i] != 0) {
-                            max = i + 1;
-                        }
-                    }
-                    return String.format("ZETA %2d %2d dps=%d", nn, max, digits);
+                    return String.format("ZETA %s  dps=%d", zetaName(nn), digits);
                 }
             };
             assertFunction(test);
@@ -2593,19 +2633,20 @@ class HurwitzZetaTest {
         // DD.pow and DDMath pow are the similar accuracy when s = 2 and a < 1.
         // When s is larger and a > 1 the DDMath pow gains a few bits in the result
         // but the max is ~105 bits
-        "12, 30, -106, 1, -53",
+        "12, 30, -106, 3, -53",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
         // be selectively used for the *same* precision. However zeta evaluations
-        // with a above 1 are only used as a term added to a much larger
-        // zeta evaluation and precision does not require all the bits.
-        "12, 30, -106, 3, -53",
-//        // No difference - DD precision cannot be improved
-//        // "12, 30, -108, true, -53",
-//        // Full double precision (~17 digits)
-//        "6, 15, -53, 0, 0",
-//        // Not enough
-//        "6, 15, -48, 0, 0",
+        // with a above 1 are only used: (1) as a term added to a much larger
+        // zeta evaluation and precision does not require all the bits; (2)
+        // in the total cancellation path which requires double precision.
+        "12, 30, -106, 1, -53",
+        // No difference - DD precision cannot be improved
+         "12, 30, -108, 3, -53",
+        // Full double precision (~17 digits)
+        "6, 15, -53, 0, 0",
+        // Not enough
+        "6, 15, -48, 0, 0",
     })
     @Disabled("Used to parameterize the zeta function")
     void testPrecisonDD(int ln, int un, int b, int pow, int scale)
@@ -2650,16 +2691,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    // Get the largest m
-                    int max = 0;
-                    for (int i = 0; i < M.length; i++) {
-                        if (M[i] != 0) {
-                            max = i + 1;
-                        }
-                    }
-                    return String.format("ZETA %2d %2d 2^%-4d %6s",
-                        nn, max, b,
-                        pow);
+                    return String.format("ZETA %s  2^%-4d %6s", zetaName(nn), b, pow);
                 }
             };
             assertFunction(test);
@@ -3026,7 +3058,7 @@ class HurwitzZetaTest {
             // Computed using https://www.wolframalpha.com/input?i=HurwitzZeta
             Arguments.of(33, -123.5, 3.192378253351764442262703039055841594302566e-69, 0),
             // Note: WolframAlpha is the same using HurwitzZeta(143, 124.5)
-            // TODO: this is fixed using a higher N in the Context.
+            // TODO: this is fixed using scaled power in the tail (whole summation).
             // It is caused by (a+n)^-(1+s) being sub-normal
             Arguments.of(143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0), // 11-bits
 
@@ -3600,7 +3632,7 @@ class HurwitzZetaTest {
         // Occurs when a > 2N with N the number of power terms in a zeta evaluation.
         "2, 11, 40, 41, true",
     })
-    @Disabled("Used to generate test data")
+//    @Disabled("Used to generate test data")
     void testDataSampleIntegerS(int ls, int us,
                                 double la, double ua, boolean uniforma) throws IOException {
         final SplittableRandom rng = new SplittableRandom(SEED);
