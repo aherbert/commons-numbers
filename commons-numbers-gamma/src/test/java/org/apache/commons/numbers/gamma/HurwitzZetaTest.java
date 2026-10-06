@@ -1023,17 +1023,77 @@ class HurwitzZetaTest {
          */
         static double extPow(double x, double y, double z) {
             // (s+ss)^z = s^z * (1+ss/s)^z
+            //          = s^z * s^z * [ (1+ss/s)^z - 1 ]
             //          = s^z * exp(z*log1p(ss/s))
-            // ss/s < machine epsilon : log1p(ss/s) ~ ss/s
-            // exp(x) = 1 when x < machine epsilon
+            //          = s^z + s^z * expm1(z*log1p(ss/s))
+            //
+            // ss/s < 2 * machine epsilon : log1p(ss/s) ~ ss/s
+            //
+            // Taylor series: (1 + x)^n = 1 + nx + n(n-1)x/2! + n(n-1)(n-2)x/3! + ...
+            // for |x| < 1 and real n
+
             final DD s = DD.ofSum(x, y);
-            double r = Math.pow(s.hi(), z);
-            // This does not check all pow edge cases and assumes the round-off is finite
-            final double t = z * s.lo();
-            if (Math.abs(t) > 0x1p-53 * s.hi()) {
-                r *= Math.exp(t / s.hi());
+
+            // Note that Math.pow has an error of 1 ULP.
+            // Remove the lowest set bit from x if present.
+            // This removes some error from pow and allows rounding to be performed
+            // by this method with the round-off from (x+y)
+            double hx = highPart(s.hi());
+            double lx = s.hi() - hx;
+
+            double t = (lx + s.lo()) / hx;
+            // TODO: Test this limit.
+            // Limit of Taylor series where it does not equal expm1(z * t)
+            // is at approximately 1e-8.
+            // z * t < 1e-8 : t < 2^-52 => z < 1e-8 / 2^-52
+            if (z > 4.503599627370496E7) {
+                // z is expected to be a small integer and this path is unlikely
+                t = Math.expm1(z * t);
+            } else {
+                t = z * t * (1 + (z - 1) * t * 0.5);
             }
-            return r;
+            double r = Math.pow(hx, z);
+            // TODO: This could return a DD for extended summation.
+            return r + r * t;
+
+//            double r = Math.pow(s.hi(), z);
+//            // This does not check all pow edge cases and assumes the round-off is finite
+//            final double t = z * s.lo();
+//            if (Math.abs(t) > 0x1p-53 * s.hi()) {
+//                r *= Math.exp(t / s.hi());
+//            }
+//            return r;
+        }
+
+        /**
+         * Implement Dekker's method to split a value into two parts. Multiplying by (2^s + 1) creates
+         * a big value from which to derive the two split parts.
+         * <pre>
+         * c = (2^s + 1) * a
+         * a_big = c - a
+         * a_hi = c - a_big
+         * a_lo = a - a_hi
+         * a = a_hi + a_lo
+         * </pre>
+         *
+         * <p>The multiplicand allows a p-bit value to be split into
+         * (p-s)-bit value {@code a_hi} and a non-overlapping (s-1)-bit value {@code a_lo}.
+         * Combined they have (p-1) bits of significand but the sign bit of {@code a_lo}
+         * contains a bit of information. This uses s = 1 to create a 52-bit value and
+         * the least significant bit.
+         *
+         * <p>This conversion does not use scaling and the result of overflow is NaN. Overflow
+         * may occur when the exponent of the input value is above 996.
+         *
+         * <p>Splitting a NaN or infinite value will return NaN.
+         *
+         * @param value Value.
+         * @return the high part of the value.
+         * @see Math#getExponent(double)
+         */
+        static double highPart(double value) {
+            final double c = 3 * value;
+            return c - (c - value);
         }
 
         /**
@@ -2561,7 +2621,7 @@ class HurwitzZetaTest {
 //        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
 //         "8, 50, -35, -53, 7",
     })
-    @Disabled("Used to parameterize the zeta function")
+//    @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options)
         throws IOException {
         // Default to not use variable convergence on series sum S
