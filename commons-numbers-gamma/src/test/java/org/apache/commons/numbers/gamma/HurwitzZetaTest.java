@@ -2008,10 +2008,24 @@ class HurwitzZetaTest {
         // First term may be provided
         final DD t0 = a0 == null ? pow.apply(a, -s) : a0;
 
-        // This can overflow when the function is called from the complete cancellation case
-        if (!t0.isFinite()) {
+        // Asymptotic Behavior as a -> inf
+        // https://dlmf.nist.gov/25.11#E43
+        // When a is large the series cannot use a+k.
+        // This reduces to N=0, the I term and the first term of T.
+        if (a.hi() > 0x1p105) {
+            // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
+            // sub-normal as a is large.
+            return pow.apply(a, 1 - s).divide(s - 1).add(t0.scalb(-1));
+        }
+
+        // Can overflow if 0 < a < 1.
+        if (t0.hi() > 0x1p106) {
+            // Nothing can be added in double-double precision
             return t0;
         }
+        // Now any (a+n)^-s cannot overflow and the sum cannot overflow.
+        // However the terms may be sub-normal and we can add them using a fractional
+        // representation with a separate base 2 exponent.
 
         final int n = c.getN();
         DD apn = a.add(n);
