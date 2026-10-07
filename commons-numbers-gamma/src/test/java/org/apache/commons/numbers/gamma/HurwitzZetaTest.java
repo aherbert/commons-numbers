@@ -26,13 +26,11 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.SplittableRandom;
 import java.util.function.BiFunction;
 import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
-import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
@@ -84,10 +82,10 @@ class HurwitzZetaTest {
     };
     /** Filenames of resources used for the roots of the zeta function using integer s. */
     private static final String[] ROOT_TEST_RESOURCES = {
-        "hzeta_root_s3_21_na0_100.csv",
-        "hzeta_root_s23_1067_na0_50.csv",
-        "hzeta_root_s3_21_na101_300.csv",
-        "hzeta_root_s3_5_na301_1000.csv",
+        "hzeta_root_s3_21_na2b0_2b6.csv",
+        "hzeta_root_s23_1067_na2b0_2b6.csv",
+        "hzeta_root_s3_25_na2b7_2b11.csv",
+        "hzeta_root_s3_21_na2b12_2b14",
         "hzeta_root_s3_3_na1001_16384.csv",
     };
     /** Flag set when reporting to the console. Used for testing.
@@ -1224,9 +1222,9 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 6.5, 1.7),
         ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 180, 5.2),
         // Broken
-        ZETA_ROOT_S3_21_N_A0_100(HurwitzZeta::value, "hzeta_root_s3_21_na0_100.csv", 3e14, 1e13),
-        ZETA_ROOT_S23_1067_N_A0_50(HurwitzZeta::value, "hzeta_root_s23_1067_na0_50.csv", 2e10, 3e9),
-        ZETA_ROOT_S3_21_N_A101_300(HurwitzZeta::value, "hzeta_root_s3_21_na101_300.csv", 1e10, 1e9);
+        ZETA_ROOT_S3_21_N_B0_B6(HurwitzZeta::value, "hzeta_root_s3_21_na2b0_2b6.csv", 3e14, 1e13),
+        ZETA_ROOT_S23_1067_N_B0_B6(HurwitzZeta::value, "hzeta_root_s23_1067_nab0_2b6.csv", 2e10, 3e9),
+        ZETA_ROOT_S3_25_N_B7_B11(HurwitzZeta::value, "hzeta_root_s3_25_na2b7_2b11.csv", 1e10, 1e9);
 
 //        JDK Oracle Corporation 25.503-b01
 //        DOUBLE_ZETA_IS                        max        1.09783   RMS       0.262393   mean      0.0465531  n 6000  (92.2ms)
@@ -3672,14 +3670,16 @@ class HurwitzZetaTest {
     /**
      * Create test data by finding roots of the the zeta function.
      *
-     * <p>The approximate cancellation of the positive and negative terms is computed
-     * in bits. This does not exceed 55 bits. This sets the limit on double-double
-     * computation as 2 ulp in the double result. This would require exact 106-bit
-     * double-double arguments, which is not possible. The DD zeta function can be
-     * optimised to ~105 bits of precision.
+     * <p>The approximate cancellation of the positive and negative terms is computed in
+     * bits. This does not exceed 55 bits, and trends down as s and |a| increase due to
+     * the increasing magnitude of ulp(a) affecting the largest terms.
      *
-     * <p>This uses positive a parameters for convenience. Cases with cancellation
-     * below a threshold are ignored.
+     * <p>This sets the limit on double-double computation as 2 ulp in the double result.
+     * This would require exact 106-bit double-double arguments, which is not possible.
+     * The DD zeta function can be optimised to ~105 bits of precision.
+     *
+     * <p>This uses positive a parameters for convenience. Cases with cancellation below a
+     * threshold are ignored.
      */
     @ParameterizedTest
     @CsvSource({
@@ -3710,56 +3710,48 @@ class HurwitzZetaTest {
         // of |a| pushes the dominant terms ~0.5^-s away from each other. However the
         // sides have more terms and cancellation can still be large.
         //
+        // When a single negative term (-0.5+ulp(a))^-s is larger than the entire positive
+        // side (zeta(s, 0.5+ulp(a)) then the roots must be half-integer.
+        // Detection of half-integer roots:
+        // s  2^b
+        // 31 0
+        // 29 1
+        // 27 4
+        // 25 7
+        // 23 11
+        // 21 14   <-- Impractical to search after this point
+        // 19 17
+        // 17 20
+        // 15 24
+        // 13 27
+        // 11 31
+        // 9 34
+        // 7 38
+        // 5 41
+        // 3 46
+        //
         // The following cases should find roots where cancellation is high and record
         // them to be verified using e.g. mpmath or MATLAB zeta functions.
         // Note: Inspection of the output from an independent zeta evaluation should
         // see a sign change for each case as they are roots in double precision.
+        // The zeta values computed by this implementation are recorded in the output
+        // so visual verification is possible.
         //
         // When s is large, search small |a|.
         // When s is small, search larger |a|.
         // When |a| is very large, all roots are at half-integer
 
-        // Max cancellation XXX 55-bits
-//        "3, 21, 0, 6",
-        // Max cancellation XXX 53-bits (slow)
+        // Max cancellation 55-bits (~1.9s)
+        "3, 21, 0, 6",
+        // Max cancellation 52-bits (~0.5s)
         "23, 1067, 0, 6",
-//        // Max cancellation XXX 51-bits
-//        "3, 21, 7, 8",
-//        // Max cancellation XXX 52-bits; no cases with s=5
-//        "3, 5, 9, 10",
-//        // Max Cancellation XXX 51-bits
-//        "3, 3, 11, 15",
+        // Max cancellation 52-bits (~36s)
+        "3, 25, 7, 11",
+        // Max cancellation 51-bits (~250s)
+        "3, 21, 12, 14",
+        // Higher b is impractical to search
     })
-//    @Disabled("Used to generate test data")
-    // TODO: Improve this.
-    // The critcal value in the search for roots for a is 0.5+/-ulp(a):
-    // s is odd
-    // x = a - ceil(a) : x in -(1, 0)
-    // zeta(s, x + 1) - [ zeta(s, -x) - zeta(s, 1 - a) ]
-    // When x=-0.5 the total cancellation evaluates as zeta(s, 1 - a).
-    // This sets the upper bound on the root value in the bracket for a.
-    // Since the negative terms are a truncation of zeta(s, -x) it can never be larger
-    // than zeta(s, x + 1) unless x > -0.5. The root is always x >= -0.5.
-    // As a gets closer to 0 the number of terms is less and the magnitude reduces.
-    // If the root is at half-integer for a == x == -0.5 then the negative side is
-    // always larger than the positive side when a is not half-integer and the
-    // root is half-integer for all a with the same ulp or larger.
-    // This occurs when the 0.5 terms on either side dominate the zeta result either
-    // because s is extremely large and other terms do not matter, or a is so large the
-    // ulp prevents the 0.5 terms balancing each other.
-    // Detecting a root at a == -0.5 can eliminate searching for larger a at the same or
-    // larger s. Eventually all s are eliminated.
-    // Find this point.
-    //
-    // Change this so it uses lb to ub where b is a = -(2^b).
-    // For each b find the roots in [ -(2^b), -(2^(b-1)) ) (all have the same ulp).
-    // Start the search for the root using low at x=0.5 and mid at the next possible x using the ulp.
-    // If the sign changes at this point then the root is found immediately
-    // and no other roots are possible for this ulp because for a closer to zero
-    // the negative terms will be smaller in magnitude (less terms) 
-    // and the positive terms are the same (sum to infinity), and the upper bound on
-    // the root at half-integer a will reduce (zeta(1-a) reduces).
-    // This logic should allow short circuit of the search for a bracket based on ulp(a).
+    @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, int minb, int maxb) throws IOException {
         // Validate arguments
         Assertions.assertTrue(ls > 2, "s must be >= 3");
@@ -3778,11 +3770,13 @@ class HurwitzZetaTest {
         final double threshold = 45;
         // Used to store information about the maximum a for all s
         final double[] roots = new double[us + 2];
+        final double[] cancellation = new double[us + 2];
         // Lowest tolerance allowed
         final BrentSolver solver = new BrentSolver(0, 0, 0);
         // Search for roots in (2^-b, 0) for all b.
         // Each increment in b increases the ulp which eventually forces all roots to be half-integer.
         int upperS = us;
+        long time = System.nanoTime();
         for (int b = minb; b <= maxb; b++) {
             if (upperS < ls) {
                 // Done
@@ -3850,7 +3844,7 @@ class HurwitzZetaTest {
                     // Record the root (if not half-integer) and both sides.
                     // Only do this when cancellation of is above the threshold for 1 of the results.
                     final ArrayList<String> record = new ArrayList<String>();
-                    boolean save = false;
+                    double casec = 0;
                     for (int i = 0; i < 3; i++) {
                         final double a = args[i];
                         final double x = a - Math.ceil(a);
@@ -3887,28 +3881,37 @@ class HurwitzZetaTest {
                         // computed as the number of binary digits in z with trailing zeros.
                         final double lr = Math.getExponent(results[i]);
                         final double cx = lz - lr;
+                        casec = Math.max(casec, cx);
                         maxc = Math.max(maxc, cx);
                         // Record the case
-                        record.add(String.format("# %s : %s%n%s, %s%n",
+                        record.add(String.format("# %s : %s  %s%n%s, %s%n",
                             zz.round(new MathContext(4)).toEngineeringString(), shortFormat(cx),
-                            s, a));
-                        // Only include if at least one is above threshold
-                        save |= cx >= threshold;
+                            results[i], s, a));
                     }
-                    if (save) {
+                    // Only include if at least one is above threshold
+                    if (casec >= threshold) {
                         cases.addAll(record);
-                        // store largest a for this s
+                        // Store largest a for this s
                         roots[s + 1] = xx;
+                        // Record max cancellation for s
+                        if (casec >= cancellation[s]) {
+                            cancellation[s] = casec;
+                            cancellation[s + 1] = xx;
+                        }
                     }
                 }
-                if (casesCount == 0 && halfIntegerRoots) {
+                if (casesCount == cases.size() && halfIntegerRoots) {
                     // No cases recorded for this s.
                     // If half-integer roots have been detected, no larger a
-                    // will have non-half-integer roots.
-                    upperS -= 2;
+                    // will have non-half-integer roots since cancellation of the 0.5+/-ulp
+                    // sides will reduce at higher ulp.
+                    upperS = s - 2;
+                    // For this ulp no higher s will have more cancellation
+                    break;
                 }
             }
         }
+        time = System.nanoTime() - time;
         final String msg = String.format("max cancellation %s; non-half-integer root=%s", shortFormat(maxc), nonHalfIntegerRoot);
         Assertions.assertFalse(cases.isEmpty(), () -> "No test cases recorded: " + msg);
         Assertions.assertTrue(nonHalfIntegerRoot);
@@ -3918,9 +3921,9 @@ class HurwitzZetaTest {
             String.format("hzeta_root_s%d_%d_na2b%d_2b%d.txt", ls, us, minb, maxb))) {
             final String la = minb > 0 ? "2^" + (minb - 1) : "0";
             out.printf("# s in [%d, %d] : a in [%s, 2^%d]%n", ls, us, la, maxb);
+            out.printf("# Runtime: %.3fs%n", time * 1e-9);
             out.printf("# Cancellation of terms (x - y) computed using:%n");
             out.printf("# max(exponent(x), exponent(y)) - exponent(x - y)%n");
-            out.printf("# Comment shows max(|x|, |y|) and number of bits%n");
             out.printf("# Cancellation threshold = %s%n", shortFormat(threshold));
             out.printf("# Maximum cancellation (a - ceil(a) != -0.5) = %s%n", shortFormat(maxc));
             out.printf("# N = %d%n", cases.size());
@@ -3930,23 +3933,26 @@ class HurwitzZetaTest {
                 if (roots[s] > 0) {
                     if (!header) {
                         header = true;
-                        out.printf("# Half-integer roots%n");
+                        out.printf("# Half-integer roots:%n");
                         out.printf("# s max(|a|)%n");
                     }
                     out.printf("# %d 2^%d%n", s, (int) roots[s] - 1);
                     if (roots[s] == 1) {
-                        out.printf("# [%d, %d] 2^0%n", s + 1, us);
+                        out.printf("# [%d, %d] 2^0%n", s + 2, us);
                         break;
                     }
                 }
             }
             // Summarise cases min a for all s
-            out.printf("# s min(a)%n");
+            out.printf("# Cases above threshold:%n");
+            out.printf("# s min(a) : max_cancellation a%n");
             for (int s = 3; s < roots.length; s+= 2) {
                 if (roots[s + 1] < 0) {
-                    out.printf("# %d %s%n", s, roots[s + 1]);
+                    out.printf("# %d %s : %s %s%n", s, roots[s + 1],
+                        shortFormat(cancellation[s]), cancellation[s + 1]);
                 }
             }
+            out.printf("# Comment shows max(|x|, |y|), cancellation bits and computed value of zeta%n");
             cases.forEach(out::print);
         }
     }
