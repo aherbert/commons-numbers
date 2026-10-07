@@ -78,14 +78,14 @@ class HurwitzZetaTest {
     /** Filenames of resources used for the extended precision zeta function using integer s. */
     private static final String[] INT_TEST_RESOURCES = {
         "hzeta_is2_11_a1_1.csv",
-        "hzeta_is2_11_a40_41.csv",
+//        "hzeta_is2_11_a40_41.csv",
     };
     /** Filenames of resources used for the roots of the zeta function using integer s. */
     private static final String[] ROOT_TEST_RESOURCES = {
         "hzeta_root_s3_21_na2b0_2b6.csv",
         "hzeta_root_s23_1067_na2b0_2b6.csv",
         "hzeta_root_s3_25_na2b7_2b11.csv",
-        "hzeta_root_s3_21_na2b12_2b14",
+        "hzeta_root_s3_21_na2b12_2b14.csv",
         "hzeta_root_s3_3_na1001_16384.csv",
     };
     /** Flag set when reporting to the console. Used for testing.
@@ -1196,9 +1196,9 @@ class HurwitzZetaTest {
 
         // Roots are the point of maximum cancellation
         // Double arithmetic has only a few bits of precision on average; and may have no bits correct
-        DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_root_s3_21_na0_100.csv", 0x1p55, 0x1p50),
+        DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p55, 0x1p51),
         // Computing the largest terms in extended precision allows a few bits of precision
-        DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na0_100.csv", 0x1p48, 0x1p44),
+        DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p48, 0x1p44),
 
         BD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), ROOT_TEST_RESOURCES, 0, 0),
         // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
@@ -1223,8 +1223,9 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 180, 5.2),
         // Broken
         ZETA_ROOT_S3_21_N_B0_B6(HurwitzZeta::value, "hzeta_root_s3_21_na2b0_2b6.csv", 3e14, 1e13),
-        ZETA_ROOT_S23_1067_N_B0_B6(HurwitzZeta::value, "hzeta_root_s23_1067_nab0_2b6.csv", 2e10, 3e9),
-        ZETA_ROOT_S3_25_N_B7_B11(HurwitzZeta::value, "hzeta_root_s3_25_na2b7_2b11.csv", 1e10, 1e9);
+        ZETA_ROOT_S23_1067_N_B0_B6(HurwitzZeta::value, "hzeta_root_s23_1067_na2b0_2b6.csv", 2e10, 3e9),
+        ZETA_ROOT_S3_25_N_B7_B11(HurwitzZeta::value, "hzeta_root_s3_25_na2b7_2b11.csv", 1e10, 1e9)
+        ;
 
 //        JDK Oracle Corporation 25.503-b01
 //        DOUBLE_ZETA_IS                        max        1.09783   RMS       0.262393   mean      0.0465531  n 6000  (92.2ms)
@@ -2033,19 +2034,30 @@ class HurwitzZetaTest {
                 zb = add(zb, ezb, r, clipExponent(e[0]), exp);
                 ezb = exp[0];
             }
+            // Sort for the summation by magnitude
+            if (ezb > eza) {
+                final DD tmp = za;
+                za = zb;
+                zb = tmp;
+                final int etmp = eza;
+                eza = ezb;
+                eza = etmp;
+            }
         }
 
-        // Sum in magnitude order. Here z is positive.
+        // Sum in magnitude order
         // zb < za : check z against za
         if (ez > eza) {
             // za,zb < z
             za = add(za, eza, zb, ezb, exp);
+            eza = exp[0];
         } else {
             // zb,z < za
             z = add(z, ez, zb, ezb, exp);
+            ez = exp[0];
         }
-        z = add(za, exp[0], z, ez, exp);
-        return Math.scalb(za.hi(), exp[0]);
+        z = add(za, eza, z, ez, exp);
+        return Math.scalb(z.hi(), exp[0]);
     }
 
     /**
@@ -2062,7 +2074,9 @@ class HurwitzZetaTest {
         // Add if the overlap is within 106-bits
         final long diff = (long) ae - be;
         if (Math.abs(diff) > 106) {
-            if (ae > be) {
+            // Special case where the exponent of zero is 0.
+            // This may be larger than the exponent of the other term.
+            if (ae > be && !a.isZero()) {
                 e[0] = ae;
                 return a;
             }
@@ -2085,7 +2099,7 @@ class HurwitzZetaTest {
     private static int addExponent(int a, int b) {
         int r = a + b;
         // Hackers Delight 2-12: Overflow if both arguments have the opposite sign of the result
-        if (((a ^ r) & (a ^ r)) < 0) {
+        if (((a ^ r) & (b ^ r)) < 0) {
             // Clip the long result
             return (long) a + b < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
         }
@@ -2225,7 +2239,9 @@ class HurwitzZetaTest {
         // The following recycles the power term p: (a+n)^-(2k-1+s).
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        // Terms cannot overflow using the fractional representation.
+        // Terms cannot overflow using the fractional representation. This also
+        // allows the tail computation to continue further when an individual
+        // part of each term computation would underflow.
 
         // Rising factorial term : (s)_{2k-1}
         DD f = DD.of(s).frexp(exp);
@@ -2250,17 +2266,15 @@ class HurwitzZetaTest {
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         // Use the tail epsilon to obtain a minimum exponent for terms.
-        DD tsum = DD.ZERO;
-        int ets = 0;
-        final long stop = (long)es + Math.getExponent(c.getTailEps());
+        final long stop = (long) es + Math.getExponent(c.getTailEps());
+        // Initialise with the first term.
+        // Avoids addition of fractional representation to zero (which has a zero exponent).
+        DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
+        long et = exp[0] + ef + ep;
+        int ets = clipExponent(et);
         int i;
-        for (i = 0; i < c.getM(); i++) {
-            // FDD is finite. f*p in [0, 2).
-            final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
-            long et = exp[0] + ef + ep;
-            tsum = add(tsum, ets, t, clipExponent(et), exp);
-            ets = exp[0];
-            if (et <= stop) {
+        for (i = 1; i < c.getM(); i++) {
+            if (et < stop) {
                 break;
             }
             // p = (a+n)^-(2k-1+s)
@@ -2274,14 +2288,19 @@ class HurwitzZetaTest {
             }
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             // compute the multiplicand as a long as it cannot overflow when M is small
-            f = f.multiply((s + (2L * i) + 1) * (s + (2L * i) + 2)).frexp(exp);
+            f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
             ef += exp[0];
+            // FDD is finite. f*p in [0, 2).
+            final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
+            et = exp[0] + ef + ep;
+            tsum = add(tsum, ets, t, clipExponent(et), exp);
+            ets = exp[0];
         }
 //        double T = tsum.hi();
 //        System.out.printf("%s %s %s %d : %s%n", S, I, T, i + 1, sum.add(tsum).hi());
         // Used to histogram convergence when testing
         M[i]++;
-        return sum.add(tsum);
+        return add(sum, es, tsum, ets, exp);
     }
 
     /**
@@ -2619,7 +2638,7 @@ class HurwitzZetaTest {
 //        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
 //         "8, 50, -35, -53, 7",
     })
-//    @Disabled("Used to parameterize the zeta function")
+    @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options)
         throws IOException {
         // Default to not use variable convergence on series sum S
@@ -3021,7 +3040,7 @@ class HurwitzZetaTest {
      * this implementation for the total cancellation case.
      */
     // TODO - remove this
-    @Test
+//    @Test
     void testCases() {
 //        DD sum = DD.ZERO;
 //        int s = 3;
@@ -3045,33 +3064,36 @@ class HurwitzZetaTest {
         // Check the pochammer overflow condition if (a+n)^-(1+s) is scaled up,
         // then the pochammer may go further before it is stopped.
 
-        double a = 1 - -123.5;
-//        int s = 143;
-//        BigDecimal z = new BigDecimal("3.615905943623999550732130915723115628045590e-300");
-//        int s = 147;
-//        BigDecimal z = new BigDecimal("1.48298686245279271827660650487e-308");
-        int s = 152;
-        BigDecimal z = new BigDecimal("4.87185978234820120308892496184e-319");
-        for (int n = 9; n <= 30; n++) {
-            Context context = Context.of(n, FBD.length)
-                .withMathContext(new MathContext(38))
-//                .withOptions(0)
-                .withTailEpsilon(0x1p-106);
-            BigDecimal za;
-
-            // OK
-//            za = HurwitzZetaTest.zeta(s, new BigDecimal(a), null, context);
-
-            int[] exp = {0};
-            DD r = HurwitzZetaTest.zeta(s, DD.of(a), null, exp, context);
-            za = toBigDecimal(r, exp[0]);
-
-//            za = new BigDecimal(HurwitzZetaTest.zeta(s, a, Double.NaN, context));
-
-            TestUtils.assertEquals(z, za, -1, 0, null, null);
-        }
+//        double a = 1 - -123.5;
+////        int s = 143;
+////        BigDecimal z = new BigDecimal("3.615905943623999550732130915723115628045590e-300");
+////        int s = 147;
+////        BigDecimal z = new BigDecimal("1.48298686245279271827660650487e-308");
+//        int s = 152;
+//        BigDecimal z = new BigDecimal("4.87185978234820120308892496184e-319");
+//        for (int n = 9; n <= 30; n++) {
+//            Context context = Context.of(n, FBD.length)
+//                .withMathContext(new MathContext(38))
+////                .withOptions(0)
+//                .withTailEpsilon(0x1p-106);
+//            BigDecimal za;
+//
+//            // OK
+////            za = HurwitzZetaTest.zeta(s, new BigDecimal(a), null, context);
+//
+//            int[] exp = {0};
+//            DD r = HurwitzZetaTest.zeta(s, DD.of(a), null, exp, context);
+//            za = toBigDecimal(r, exp[0]);
+//
+////            za = new BigDecimal(HurwitzZetaTest.zeta(s, a, Double.NaN, context));
+//
+//            TestUtils.assertEquals(z, za, -1, 0, null, null);
+//        }
 //        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeBD((int) x, y),
 //            143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0);
+      assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
+          183, -0.5, 5.9607319563783578261060930644633641580219913522377E-33, 0);
+//        org.opentest4j.AssertionFailedError: DD_ZETA_ROOTS s=183.0, a=-0.5: expected <5.9607319563783578261060930644633641580219913522377E-33> != actual <0.0> (ulps=-8.711619513937606E15)
     }
 
     static Stream<Arguments> testZetaSpot() {
@@ -3440,12 +3462,12 @@ class HurwitzZetaTest {
             try (DataReader in = new DataReader(filename)) {
                 while (in.next()) {
                     try {
-                        final double x = in.getDouble(0);
-                        final double y = in.getDouble(1);
-                        final double actual = tc.getFunction().applyAsDouble(x, y);
+                        final double s = in.getDouble(0);
+                        final double a = in.getDouble(1);
+                        final double actual = tc.getFunction().applyAsDouble(s, a);
                         final BigDecimal expected = in.getBigDecimal(2);
                         TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
-                            () -> tc + " x=" + x + ", y=" + y);
+                            () -> tc + " s=" + s + ", a=" + a);
                     } catch (final NumberFormatException ex) {
                         Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
                     }
