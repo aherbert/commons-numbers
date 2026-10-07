@@ -78,7 +78,7 @@ class HurwitzZetaTest {
     /** Filenames of resources used for the extended precision zeta function using integer s. */
     private static final String[] INT_TEST_RESOURCES = {
         "hzeta_is2_11_a1_1.csv",
-//        "hzeta_is2_11_a40_41.csv",
+        "hzeta_is2_11_a40_41.csv",
     };
     /** Filenames of resources used for the roots of the zeta function using integer s. */
     private static final String[] ROOT_TEST_RESOURCES = {
@@ -833,6 +833,9 @@ class HurwitzZetaTest {
         /** Use extended precision summation in the tail series. */
         static final int TAIL_EXT_SUM = 32;
 
+        // TODO - Option to balance f*p in the tail series to prevent p underflow
+        // TODO - Option for accurateAdd in the DD implementation
+
         // Default contexts optimised using the precision tests
 
         /** Context for double precision zeta implementation.
@@ -844,9 +847,10 @@ class HurwitzZetaTest {
         static final Context DD_DOUBLE = Context.of(9, 15)
             .withTailEpsilon(0x1p-53).withOptions(0);
         /** Context for double-double precision using the DD zeta implementation.
-         * Uses DDMath only for the most important terms. */
+         * Uses DDMath only for the most important terms. Compute tail terms
+         * a few bits past the 106-bits of the current sum. */
         static final Context DD_DOUBLE_DOUBLE = Context.of(15, 30)
-            .withTailEpsilon(0x1p-106).withOptions(EXT_POW_TERMS);
+            .withTailEpsilon(0x1p-108).withOptions(EXT_POW_TERMS);
 
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with precision +1 digit than the expected 17 per double.
@@ -2242,6 +2246,85 @@ class HurwitzZetaTest {
         // Terms cannot overflow using the fractional representation. This also
         // allows the tail computation to continue further when an individual
         // part of each term computation would underflow.
+        // TODO:
+        // This has a drawback when s > (a+n) and the pochammer function (s)_2k grows
+        // faster than the term (a+n)^-(2k-1-s) reduces:
+        // pochammer increases at least s^2 per iteration.
+        // power term reduces (a+n)^2 per iteration. Starts at (a+n)^-(s+1).
+        // High s the series is strongly convergent.
+        // Largest s when a+n underflows:
+        // (a+n)^-s = 2^-1075 : s = 1075 / log2(a+n)
+        //2^1 1075.0
+        //2^2 537.50
+        //2^3 358.33
+        //2^4 268.75
+        //2^5 215.00
+        //2^6 179.17
+        //2^7 153.57
+        //2^8 134.38
+        //2^9 119.44
+        //2^10 107.50
+        //2^11 97.727
+        //2^12 89.583
+        //2^13 82.692
+        //2^14 76.786
+        //2^15 71.667
+        //2^16 67.188
+        //2^17 63.235
+        //2^18 59.722
+        //2^19 56.579
+        //2^20 53.750
+        //2^21 51.190
+        //2^22 48.864
+        //2^23 46.739
+        //2^24 44.792
+        //2^25 43.000
+        //2^26 41.346
+        //2^27 39.815
+        //2^28 38.393
+        //2^29 37.069
+        //2^30 35.833
+        //2^31 34.677
+        //2^32 33.594
+        //2^33 32.576
+        //2^34 31.618
+        //2^35 30.714
+        //2^36 29.861
+        //2^37 29.054
+        //2^38 28.289
+        //2^39 27.564
+        //2^40 26.875
+        //2^41 26.220
+        //2^42 25.595
+        //2^43 25.000
+        //2^44 24.432
+        //2^45 23.889
+        //2^46 23.370
+        //2^47 22.872
+        //2^48 22.396
+        //2^49 21.939
+        //2^50 21.500
+        //2^51 21.078
+        //2^52 20.673
+        //2^53 20.283
+        //
+        // At the min(a+n) we can set a threshold to quit evaluation after the series sum.
+        // E.g. N=9 : max s = 1075/log2(N) = 339.12
+        // In DD precision 1128/log2(N) = 355.84
+        //
+        // TODO: Do this for a test data sample
+        // Compute terms at the extremes of the parameter space:
+        // s = 1+2^-52
+        // a = 1+2^-52
+        // a = 2^106
+        // largest s when 2^-s underflows: 2^-1075
+        // Have to support s up to 1075 when a is just above 1.
+        // get (s, a) where a^-s is sub-normal
+        // get (s, a) where the result is sub-normal
+        // get (s, a) where the result is below 2^-1075.
+        // Check the DD method can compute this as a BigDecimal.
+
+        // *** We have to make this work for all s where (a+n)^-s is not an underflow ***
 
         // Rising factorial term : (s)_{2k-1}
         DD f = DD.of(s).frexp(exp);
@@ -2280,7 +2363,7 @@ class HurwitzZetaTest {
             // p = (a+n)^-(2k-1+s)
             if (usePow) {
                 // Note: Very large s will overflow this power term
-                p = pow.apply(apn, -(2 * i + 3 + s), e);
+                p = pow.apply(apn, -(2 * i + 1 + s), e);
                 ep = e[0];
             } else {
                 p = p.multiply(apn).frexp(exp);
@@ -2775,29 +2858,39 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @CsvSource({
         // Extended precision
-        "12, 30, -106, 0, -53",
+//        "12, 30, -106, 0, -53",
         // DD.pow and DDMath pow are the similar accuracy when s = 2 and a < 1.
         // When s is larger and a > 1 the DDMath pow gains a few bits in the result
         // but the max is ~105 bits
-        "12, 30, -106, 3, -53",
+//        "12, 30, -106, 3, -53",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
         // be selectively used for the *same* precision. However zeta evaluations
         // with a above 1 are only used: (1) as a term added to a much larger
         // zeta evaluation and precision does not require all the bits; (2)
         // in the total cancellation path which requires double precision.
-        "12, 30, -106, 1, -53",
+//        "12, 30, -106, 1, -53",
 //        // Use pow in the tail series (no difference)
 //        "12, 30, -106, 19, -53", // 3 vs 3 + 16
 
-        // No difference - DD precision cannot be improved
-         "12, 30, -108, 3, -53",
-        // Full double precision (~17 digits)
-        "6, 15, -53, 0, 0",
+        // Higher tail convergence.
+        // No difference to max error. RMS is lower. Higher M.
+//         "12, 20, -108, 3, -53",
+//         "12, 20, -110, 3, -53",
+        // Full double precision (~17 digits).
+//        "6, 15, -53, 0, 0",
+
+        // TODO - Fix this
+        // Extra tail terms lower error but require higher N otherwise when a is small
+        // and s > n the pochammer function (s)_2k grows faster than the term (a+n)^-(2k-1-s):
+        // pochammer increases at least s^2 per iteration.
+        // power term reduces (a+n)^2 per iteration. Starts at (a+n)^-(s+1)
+        // 
+        "7, 15, -58, 0, 0",
         // Not enough
-        "6, 15, -48, 0, 0",
+//        "6, 15, -48, 0, 0",
     })
-    @Disabled("Used to parameterize the zeta function")
+//    @Disabled("Used to parameterize the zeta function")
     // TODO: Check if scaled pow is better or the same 
 //    JDK Temurin 25.492-b09
 //    ZETA 12 27 [ 2.29]  2^-106      0     max        3.07011   RMS       0.412309   mean      0.0875241  n 6000  (536ms)
@@ -2890,6 +2983,9 @@ class HurwitzZetaTest {
                 @Override
                 public BiFunction<Integer, Double, BigDecimal> getFunction() {
                     return (s, a) -> {
+                        if (s == 6 && a== 0.9999999999991911) {
+                            System.out.println("???");
+                        }
                         final int[] exp = {0};
                         final DD r = HurwitzZetaTest.zeta(s, DD.of(a), null, exp, c);
                         return toBigDecimal(r, exp[0]);
@@ -2967,12 +3063,11 @@ class HurwitzZetaTest {
         // r in [0.5, 1.0). This must must be 107 bits above min normal double
         // so scaling is into normal numbers.
         if (exp > Double.MIN_EXPONENT + 107) {
-            f.scalb(exp).bigDecimalValue();
+            return f.scalb(exp).bigDecimalValue();
         }
         // scale by 2^-exp = 1 << -exp
         final BigDecimal v = f.bigDecimalValue();
         return v.divide(new BigDecimal(BigInteger.ONE.shiftLeft(-exp)), MathContext.DECIMAL128);
-
     }
 
     @ParameterizedTest
@@ -3040,7 +3135,7 @@ class HurwitzZetaTest {
      * this implementation for the total cancellation case.
      */
     // TODO - remove this
-//    @Test
+    @Test
     void testCases() {
 //        DD sum = DD.ZERO;
 //        int s = 3;
@@ -3091,9 +3186,14 @@ class HurwitzZetaTest {
 //        }
 //        assertClose((x, y) -> HurwitzZetaTest.zetaNegativeBD((int) x, y),
 //            143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0);
-      assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
-          183, -0.5, 5.9607319563783578261060930644633641580219913522377E-33, 0);
-//        org.opentest4j.AssertionFailedError: DD_ZETA_ROOTS s=183.0, a=-0.5: expected <5.9607319563783578261060930644633641580219913522377E-33> != actual <0.0> (ulps=-8.711619513937606E15)
+//      assertClose((x, y) -> HurwitzZetaTest.zetaNegativeDD((int) x, y),
+//          183, -0.5, 5.9607319563783578261060930644633641580219913522377E-33, 0);
+        assertClose((x, y) -> {
+            int[] exp = {0};
+            DD r = HurwitzZetaTest.zeta((int) x, DD.of(y), null, exp,
+                Context.of(6, 15).withTailEpsilon(0x1p-58).withOptions(0));
+            return Math.scalb(r.hi(), exp[0]);
+        }, 6, 0.9999999999991911, 1.01734306198934311349742831897144900413969862277466330, 0);
     }
 
     static Stream<Arguments> testZetaSpot() {
