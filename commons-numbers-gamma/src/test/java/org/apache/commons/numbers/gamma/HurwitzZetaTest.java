@@ -3719,33 +3719,52 @@ class HurwitzZetaTest {
         // When s is small, search larger |a|.
         // When |a| is very large, all roots are at half-integer
 
-        // Max cancellation 55-bits
-        "3, 21, 0, 100",
-        // Max cancellation 53-bits (this is slow)
-        "23, 1067, 0, 50",
-        // Max cancellation 51-bits
-        "3, 21, 101, 300",
-        // Max cancellation 52-bits; no cases with s=5
-        "3, 5, 301, 1000",
-        // Max Cancellation 51-bits
-        "3, 3, 1001, 16384",
-//        // Max Cancellation 51-bits
-//        "3, 3, 1001, 2048",
-//        // Max Cancellation 51-bits
-//        "3, 3, 2049, 4096",
-//        // Max Cancellation 50-bits
-//        "3, 3, 4097, 8192",
-//        // Max Cancellation 49-bits
-//        "3, 3, 8193, 16384",
+        // Max cancellation XXX 55-bits
+//        "3, 21, 0, 6",
+        // Max cancellation XXX 53-bits (slow)
+        "23, 1067, 0, 6",
+//        // Max cancellation XXX 51-bits
+//        "3, 21, 7, 8",
+//        // Max cancellation XXX 52-bits; no cases with s=5
+//        "3, 5, 9, 10",
+//        // Max Cancellation XXX 51-bits
+//        "3, 3, 11, 15",
     })
-    @Disabled("Used to generate test data")
-    void testDataZetaRoots(int ls, int us, double la, double ua) throws IOException {
+//    @Disabled("Used to generate test data")
+    // TODO: Improve this.
+    // The critcal value in the search for roots for a is 0.5+/-ulp(a):
+    // s is odd
+    // x = a - ceil(a) : x in -(1, 0)
+    // zeta(s, x + 1) - [ zeta(s, -x) - zeta(s, 1 - a) ]
+    // When x=-0.5 the total cancellation evaluates as zeta(s, 1 - a).
+    // This sets the upper bound on the root value in the bracket for a.
+    // Since the negative terms are a truncation of zeta(s, -x) it can never be larger
+    // than zeta(s, x + 1) unless x > -0.5. The root is always x >= -0.5.
+    // As a gets closer to 0 the number of terms is less and the magnitude reduces.
+    // If the root is at half-integer for a == x == -0.5 then the negative side is
+    // always larger than the positive side when a is not half-integer and the
+    // root is half-integer for all a with the same ulp or larger.
+    // This occurs when the 0.5 terms on either side dominate the zeta result either
+    // because s is extremely large and other terms do not matter, or a is so large the
+    // ulp prevents the 0.5 terms balancing each other.
+    // Detecting a root at a == -0.5 can eliminate searching for larger a at the same or
+    // larger s. Eventually all s are eliminated.
+    // Find this point.
+    //
+    // Change this so it uses lb to ub where b is a = -(2^b).
+    // For each b find the roots in [ -(2^b), -(2^(b-1)) ) (all have the same ulp).
+    // Start the search for the root using low at x=0.5 and mid at the next possible x using the ulp.
+    // If the sign changes at this point then the root is found immediately
+    // and no other roots are possible for this ulp because for a closer to zero
+    // the negative terms will be smaller in magnitude (less terms) 
+    // and the positive terms are the same (sum to infinity), and the upper bound on
+    // the root at half-integer a will reduce (zeta(1-a) reduces).
+    // This logic should allow short circuit of the search for a bracket based on ulp(a).
+    void testDataZetaRoots(int ls, int us, int minb, int maxb) throws IOException {
         // Validate arguments
-        Assertions.assertTrue(ls > 2);
-        Assertions.assertTrue(la >= 0);
-        Assertions.assertNotEquals(la, la + 1, "a must be iterable with +1");
-        Assertions.assertEquals(la, Math.floor(la), "lower a must be an integer");
-        Assertions.assertEquals(ua, Math.floor(ua), "upper a must be an integer");
+        Assertions.assertTrue(ls > 2, "s must be >= 3");
+        Assertions.assertTrue(minb >= 0, "2^b must be >= 1");
+        Assertions.assertTrue(maxb <= 51, "max a is too large as ulp(2^b - 0.5) >= 0.5");
         Assertions.assertEquals(1, ls & 1, "s must be odd");
         // Context for final evaluation around the root
         // quad-double precision should be able to evaluate to a double-double result
@@ -3755,109 +3774,139 @@ class HurwitzZetaTest {
         boolean nonHalfIntegerRoot = false;
         // Cases to record
         final ArrayList<String> cases = new ArrayList<String>();
-        final ArrayList<String> maxRecorded = new ArrayList<String>();
         // Threshold to include the case in the results
         final double threshold = 45;
+        // Used to store information about the maximum a for all s
+        final double[] roots = new double[us + 2];
         // Lowest tolerance allowed
         final BrentSolver solver = new BrentSolver(0, 0, 0);
-        for (int s = ls; s <= us; s += 2) {
-            double maxA = 0;
-            final int ss = s;
-            // Assume the function is optimised for accuracy
-            final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
-            for (double ta = la; ta <= ua; ta += 1) {
-                // Test root finding is possible (requires a finite double result):
-                // [nextDown(0.5)^-s - nextUp(0.5)^-s]
-                final double ulp = Math.ulp(ta + 0.5);
-                final BigDecimal t1 = new BigDecimal(0.5 + ulp);
-                final BigDecimal t2 = new BigDecimal(0.5 - ulp);
-                if (!Double.isFinite(
-                    t1.pow(-s, MathContext.DECIMAL64).subtract(
-                    t2.pow(-s, MathContext.DECIMAL64)
-                ).doubleValue())) {
-                    // As |a| increases the ulp will increase and the difference between
-                    // the terms t1 and t2 will increase so we can stop
-                    break;
-                }
-                // test a is integer: bracket -(a, a+1)
-                // The half-integer point is a good first approximation
-                final double min = Math.nextUp(-ta - 1);
-                final double mid = -ta - 0.5;
-                final double max = Math.nextDown(-ta);
-                final double xx = solver.findRoot(f, min, mid, max);
-                Assertions.assertTrue(xx - Math.ceil(xx) >= -0.5,
-                    () -> "Root should be at x >= half-integer: " + xx);
-                // Check the solver found a bracket
-                final double x0 = Math.nextDown(xx);
-                final double x1 = Math.nextUp(xx);
-                final double f0 = f.applyAsDouble(x0);
-                final double fx = f.applyAsDouble(xx);
-                final double f1 = f.applyAsDouble(x1);
-                // Root should be bracketed by a sign change
-                Assertions.assertTrue(f0 > 0 && f1 < 0,
-                    () -> String.format("%d %s %s %s %s%n", ss, xx, f0, fx, f1));
-                nonHalfIntegerRoot |= xx - Math.ceil(xx) != -0.5;
-                // Compute the cancellation using sides of the computation:
-                // x = a - ceil(a) : x in -(1, 0)
-                // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
-                // Cancellation is the power of 2 magnitude difference.
-                final double[] args = {x0, xx, x1};
-                final double[] results = {f0, fx, f1};
-                // Record the root (if not half-integer) and both sides.
-                // Only do this when cancellation of is above the threshold for 1 of the results.
-                final ArrayList<String> record = new ArrayList<String>();
-                boolean save = false;
-                for (int i = 0; i < 3; i++) {
-                    final double a = args[i];
-                    final double x = a - Math.ceil(a);
-                    if (x == -0.5 || !Double.isFinite(results[i])) {
-                        // Skip computing cancellation.
-                        // Include the case so it can be evaluated for test resource data.
-                        record.add(String.format("%s, %s%n", s, a));
-                        continue;
-                    }
-                    // Get the terms that cancel
-                    final BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
-                    final BigDecimal z2 = negativeSeriesSum(a, x, s,
-                        new BigDecimal(x).pow(-s, context.getMathContext()), context);
-                    // Verify the terms are correct
-                    TestUtils.assertEquals(results[i],
-                        z1.add(z2, context.getMathContext()).doubleValue(), 0, null,
-                        () -> String.format("%d %s %s", ss, a, z1.doubleValue()));
-                    // Cancellation is the number of matching leading bits:
-                    // r = x - y
-                    // max(exponent(x), exponent(y)) - exponent(r)
-                    final BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
-                    final double z = zz.doubleValue();
-                    double lz;
-                    if (Double.isFinite(z)) {
-                        lz = Math.getExponent(z);
-                    } else {
-                        // floor(log2(max(|x|, |y|))) - floor(log2(r)) ~ log2(max(|x|, |y|) / r)
-                        // log2(z) == log10(z) / log10(2)
-                        // precision - scale = floor(log10(z))
-                        // The floor operation is before conversion to base 2 so is approximate
-                        lz = (zz.precision() - zz.scale()) / Math.log10(2);
-                    }
-                    // If result is 0 the exponent is -1023. The cancellation is total and
-                    // computed as the number of binary digits in z with trailing zeros.
-                    final double lr = Math.getExponent(results[i]);
-                    final double cx = lz - lr;
-                    maxc = Math.max(maxc, cx);
-                    // Record the case
-                    record.add(String.format("# %s : %s%n%s, %s%n",
-                        zz.round(new MathContext(4)).toEngineeringString(), shortFormat(cx),
-                        s, a));
-                    // Only include if at least one is above threshold
-                    save |= cx >= threshold;
-                }
-                if (save) {
-                    cases.addAll(record);
-                    maxA = xx;
-                }
+        // Search for roots in (2^-b, 0) for all b.
+        // Each increment in b increases the ulp which eventually forces all roots to be half-integer.
+        int upperS = us;
+        for (int b = minb; b <= maxb; b++) {
+            if (upperS < ls) {
+                // Done
+                break;
             }
-            if (maxA < 0) {
-                maxRecorded.add(String.format("# %d %s%n", s, maxA));
+            double ua = Math.scalb(1.0, b);
+            double la = ua > 1 ? ua * 0.5 : 0;
+            double ulp = Math.ulp(ua - 0.5);
+            // Iterate s
+            for (int s = ls; s <= upperS; s += 2) {
+                boolean halfIntegerRoots = roots[s] > 0;
+                if (!halfIntegerRoots) {
+                    // If -0.5+ulp is so small that s creates a term larger than the entire 
+                    // positive side (zeta(s, 0.5+ulp)) then eliminate larger s and a.
+                    final BigDecimal t1 = zeta(s, new BigDecimal(0.5 + ulp), null, context);
+                    final BigDecimal t2 = new BigDecimal(0.5 - ulp).pow(-s, context.getMathContext());
+                    if (t2.compareTo(t1) >= 0) {
+                        // Any a at this ulp or larger is eliminated for this s.
+                        // Set a flag for half integer roots to skip the root finder.
+                        // The root will still be tested using the cancellation and included
+                        // if above threshold.
+                        roots[s] = b + 1;
+                        halfIntegerRoots = true;
+                    }
+                }
+                final int ss = s;
+                // Assume the function is optimised for accuracy
+                final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
+                // Check if any cases were recorded
+                final int casesCount = cases.size();
+                for (double ta = la; ta < ua; ta += 1) {
+                    // test a is integer: bracket -(a, a+1)
+                    // The root should always have a - Math.ceil(a) >= -0.5.
+                    // The half-integer point is a good first approximation.
+                    // Setting mid as the next value will short circuit the root finding
+                    // when a is large and the root is at half-integer.
+                    double xx;
+                    final double min = -ta - 0.5;
+                    if (halfIntegerRoots) {
+                        // The assertion below will verify this is the root
+                        xx = min;
+                    } else {
+                        final double mid = Math.nextUp(min);
+                        final double max = Math.nextDown(-ta);
+                        xx = solver.findRoot(f, min, mid, max);
+                    }
+                    // Check the solver found a bracket
+                    final double x0 = Math.nextDown(xx);
+                    final double x1 = Math.nextUp(xx);
+                    final double f0 = f.applyAsDouble(x0);
+                    final double fx = f.applyAsDouble(xx);
+                    final double f1 = f.applyAsDouble(x1);
+                    // Root should be bracketed by a sign change, and be the minimum
+                    Assertions.assertTrue(f0 > 0 && f1 < 0,
+                        () -> String.format("No sign change: %d %s %s %s %s%n", ss, xx, f0, fx, f1));
+                    Assertions.assertTrue(Math.abs(fx) < Math.min(f0, -f1),
+                        () -> String.format("Not the minimum: %d %s %s %s %s%n", ss, xx, f0, fx, f1));
+                    nonHalfIntegerRoot |= xx - Math.ceil(xx) != -0.5;
+                    // Compute the cancellation using sides of the computation:
+                    // x = a - ceil(a) : x in -(1, 0)
+                    // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
+                    // Cancellation is the power of 2 magnitude difference.
+                    final double[] args = {x0, xx, x1};
+                    final double[] results = {f0, fx, f1};
+                    // Record the root (if not half-integer) and both sides.
+                    // Only do this when cancellation of is above the threshold for 1 of the results.
+                    final ArrayList<String> record = new ArrayList<String>();
+                    boolean save = false;
+                    for (int i = 0; i < 3; i++) {
+                        final double a = args[i];
+                        final double x = a - Math.ceil(a);
+                        if (x == -0.5 || !Double.isFinite(results[i])) {
+                            // Skip computing cancellation.
+                            // Include the case so it can be evaluated for test resource data.
+                            record.add(String.format("%s, %s%n", s, a));
+                            continue;
+                        }
+                        // Get the terms that cancel
+                        final BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
+                        final BigDecimal z2 = negativeSeriesSum(a, x, s,
+                            new BigDecimal(x).pow(-s, context.getMathContext()), context);
+                        // Verify the terms are correct
+                        TestUtils.assertEquals(results[i],
+                            z1.add(z2, context.getMathContext()).doubleValue(), 0, null,
+                            () -> String.format("%d %s %s", ss, a, z1.doubleValue()));
+                        // Cancellation is the number of matching leading bits:
+                        // r = x - y
+                        // max(exponent(x), exponent(y)) - exponent(r)
+                        final BigDecimal zz = z1.compareTo(z2.abs()) > 0 ? z1 : z2.abs();
+                        final double z = zz.doubleValue();
+                        double lz;
+                        if (Double.isFinite(z)) {
+                            lz = Math.getExponent(z);
+                        } else {
+                            // floor(log2(max(|x|, |y|))) - floor(log2(r)) ~ log2(max(|x|, |y|) / r)
+                            // log2(z) == log10(z) / log10(2)
+                            // precision - scale = floor(log10(z))
+                            // The floor operation is before conversion to base 2 so is approximate
+                            lz = (zz.precision() - zz.scale()) / Math.log10(2);
+                        }
+                        // If result is 0 the exponent is -1023. The cancellation is total and
+                        // computed as the number of binary digits in z with trailing zeros.
+                        final double lr = Math.getExponent(results[i]);
+                        final double cx = lz - lr;
+                        maxc = Math.max(maxc, cx);
+                        // Record the case
+                        record.add(String.format("# %s : %s%n%s, %s%n",
+                            zz.round(new MathContext(4)).toEngineeringString(), shortFormat(cx),
+                            s, a));
+                        // Only include if at least one is above threshold
+                        save |= cx >= threshold;
+                    }
+                    if (save) {
+                        cases.addAll(record);
+                        // store largest a for this s
+                        roots[s + 1] = xx;
+                    }
+                }
+                if (casesCount == 0 && halfIntegerRoots) {
+                    // No cases recorded for this s.
+                    // If half-integer roots have been detected, no larger a
+                    // will have non-half-integer roots.
+                    upperS -= 2;
+                }
             }
         }
         final String msg = String.format("max cancellation %s; non-half-integer root=%s", shortFormat(maxc), nonHalfIntegerRoot);
@@ -3866,15 +3915,38 @@ class HurwitzZetaTest {
         Assertions.assertTrue(maxc <= 55, "Exceeded 55 bits: " + msg);
 
         try (PrintStream out = getPrintStream(
-            String.format("hzeta_root_s%d_%d_na%s_%s.txt", ls, us, shortFormat(la), shortFormat(ua)))) {
+            String.format("hzeta_root_s%d_%d_na2b%d_2b%d.txt", ls, us, minb, maxb))) {
+            final String la = minb > 0 ? "2^" + (minb - 1) : "0";
+            out.printf("# s in [%d, %d] : a in [%s, 2^%d]%n", ls, us, la, maxb);
             out.printf("# Cancellation of terms (x - y) computed using:%n");
             out.printf("# max(exponent(x), exponent(y)) - exponent(x - y)%n");
             out.printf("# Comment shows max(|x|, |y|) and number of bits%n");
             out.printf("# Cancellation threshold = %s%n", shortFormat(threshold));
             out.printf("# Maximum cancellation (a - ceil(a) != -0.5) = %s%n", shortFormat(maxc));
             out.printf("# N = %d%n", cases.size());
+            // Record detection of half-integer-roots
+            boolean header = false;
+            for (int s = 3; s < roots.length; s+= 2) {
+                if (roots[s] > 0) {
+                    if (!header) {
+                        header = true;
+                        out.printf("# Half-integer roots%n");
+                        out.printf("# s max(|a|)%n");
+                    }
+                    out.printf("# %d 2^%d%n", s, (int) roots[s] - 1);
+                    if (roots[s] == 1) {
+                        out.printf("# [%d, %d] 2^0%n", s + 1, us);
+                        break;
+                    }
+                }
+            }
+            // Summarise cases min a for all s
             out.printf("# s min(a)%n");
-            maxRecorded.forEach(out::print);
+            for (int s = 3; s < roots.length; s+= 2) {
+                if (roots[s + 1] < 0) {
+                    out.printf("# %d %s%n", s, roots[s + 1]);
+                }
+            }
             cases.forEach(out::print);
         }
     }
