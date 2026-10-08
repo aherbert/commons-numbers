@@ -3683,6 +3683,84 @@ class HurwitzZetaTest {
         return true;
     }
 
+    // TODO
+    // Add a test to explore the size of the terms: S, I, T with different (s, a) and N
+    // Find N where the tail converges for all possible (s, a), 
+    // or S+I is 0.0 in the desired precision: 2^-1075 or 2^-1128.
+
+    /**
+     * For a given (s, a), where {@code a < s}, find N to put the next term in the direct
+     * summation below the provided epsilon of the sum.
+     *
+     * <p>This should use any real {@code s > 1.0}. However only {@code s > a + N} causes an issue
+     * in the convergence of the tail series so realistically we can use integer s and
+     * sum in fractional representation to examine convergence on sub-normal power terms.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "6, 1, 53",
+        "7, 1, 53",
+        "8, 1, 53",
+        "9, 1, 53",
+        "10, 1, 53",
+        "11, 1, 53",
+        "6, 1, 106",
+        "7, 1, 106",
+        "8, 1, 106",
+        "9, 1, 106",
+        "10, 1, 106",
+        "11, 1, 106",
+//        "9, 2, 53",
+//        "9, 3, 53",
+//        "31, 30, 53",
+//        "51, 50, 53",
+//        "71, 70, 53",
+//        "101, 100, 53",
+//        "201, 200, 53",
+//        "1001, 1000, 53",
+//        "301, 300, 53",
+//        "301, 30, 53",
+//        "301, 3, 53",
+//        "9, 1, 106",
+    })
+    // TODO: Update this to compute S, I and then check if the tail converges or has terms
+    // so small (due to the Bernoulli numbers) that the tail is ignored.
+
+//    @Disabled("Used to test convergence of the series S when the power term s > a")
+    void testTailConvergence(int s, double a, int eb) {
+        Assertions.assertTrue(s > 1);
+        Assertions.assertTrue(s > a);
+        Assertions.assertTrue(0 < eb && eb <= 106);
+        // Sum terms in fractional representation
+        int k = 0;
+        long[] e = {0};
+        int[] exp = {0};
+        // Initialise with first term
+        DD sum = DD.of(a).pow(-s, e);
+        int es = intExponent(e[0]);
+        DD r = null;
+        for (; ++k <= 10000;) {
+            r = DD.ofSum(a, k).pow(-s, e);
+            if (es - eb > e[0]) {
+                // Series has converged
+                System.out.print("converged: ");
+                break;
+            }
+            // Tail convergence is an issue when s >= a+n
+            // Stop when a+n > 2s. Ideally we should check the first
+            // terms of the tail series compared to the sum(S + I)
+            // exactly how the method implements the sum(S + I + T).
+//            if (a + k >= 10 * s) {
+//                System.out.print("large n: ");
+//                break;
+//            }
+            sum = add(sum, es, r, intExponent(e[0]), exp);
+            es = exp[0];
+        }
+        System.out.printf("%s %s %d %d : %s * 2^%d + %s * 2^%d%n",
+            s, a, eb, k, sum.hi(), es, r.hi(), e[0]);
+    }
+
     /**
      * Test the cancellation for negative half-integer a using {@code a = 0.5 - 2^b}.
      */
