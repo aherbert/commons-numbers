@@ -1950,15 +1950,9 @@ class HurwitzZetaTest {
             // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
             // All other individual terms are smaller so further DD computation is not possible.
             return diff > 0 ?
-                pp.scalb((int) expp[0]).hi() :
-                pn.scalb((int) expn[0]).hi();
+                pp.scalb(intExponent(expp[0])).hi() :
+                pn.scalb(intExponent(expn[0])).hi();
         }
-        // Add the smallest to the largest avoiding overflow by re-scaling after the sum
-        final DD sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
-
-        // Rescale terms
-        pp = pp.scalb((int) expp[0]);
-        pn = pn.scalb((int) expn[0]);
 
         // Here the remaining series above and below zero are effectively both zeta
         // evaluations with zeta(s >= 2, a > 1). This is always < 2; any individual term x^-s < 1.
@@ -1966,10 +1960,13 @@ class HurwitzZetaTest {
         // The result can be finite even if the terms are infinite. However
         // we do not support further computation from infinite terms so check
         // if anything can be added to these terms.
-        final double d = sum.hi();
-        if (Math.max(Math.abs(pn.hi()), pp.hi()) > 0x1p106) {
+        if (Math.max(expn[0], expp[0]) > 106) {
             // Limit of double-double arithmetic
-            return d;
+            // Add the smallest to the largest avoiding overflow by re-scaling after the sum
+            return Math.scalb(
+                pn.add(pp.scalb((int) diff)).hi(),
+                intExponent(expn[0])
+            );
         }
 
         // x = a - ceil(a) : x in -(1, 0)
@@ -1991,19 +1988,23 @@ class HurwitzZetaTest {
 
         // TODO
         // Used scaled terms in the DD implementation.
-        // This allows correct convergence of the tail when sub-normal
+        // This allows correct convergence of the tail when sub-normal.
         // See if this increases accuracy.
         // Add some test data at the critical point where the result terms are
         // close to or sub-normal.
 
+        exp[0] = intExponent(expp[0]);
         DD z = zeta(s, xp, pp, exp, c);
         int ez = exp[0];
+
         DD za;
         DD zb;
         int eza;
         int ezb;
         // A single call to zeta uses many pow operations;
         // use a direct sum when zeta will use more.
+        // Prepare the exponent for the term we have.
+        exp[0] = intExponent(expn[0]);
         if (x - a > 2 * (c.getN() + 2)) {
             // Note: The difference (za - zb) incurs cancellation.
             // This should not be an issue as x in -(1, 0)
@@ -2026,7 +2027,7 @@ class HurwitzZetaTest {
         } else {
             // Sum terms in ascending order of magnitude
             // Using a double to track the iterations is fine as (a+n) is exact until > x.
-            za = pn.frexp(exp);
+            za = pn;
             eza = exp[0];
             zb = DD.ZERO;
             ezb = 0;
@@ -2035,7 +2036,7 @@ class HurwitzZetaTest {
             final long[] e = {0};
             for (double aa = a; aa < x; aa += 1.0) {
                 DD r = powS.apply(DD.of(aa), -s, e);
-                zb = add(zb, ezb, r, clipExponent(e[0]), exp);
+                zb = add(zb, ezb, r, intExponent(e[0]), exp);
                 ezb = exp[0];
             }
             // Sort for the summation by magnitude
@@ -2096,16 +2097,19 @@ class HurwitzZetaTest {
      * Helper function to add the two exponents and maintain the [min, max]
      * range of an integer.
      *
-     * @param a exponent a
-     * @param b exponent b
-     * @return (a+b) within the range of an integer
+     * @param a Exponent.
+     * @param b Exponent.
+     * @return (a + b) within the range of an integer
+     * @see Integer#MIN_VALUE
+     * @see Integer#MAX_VALUE
      */
     private static int addExponent(int a, int b) {
-        int r = a + b;
-        // Hackers Delight 2-12: Overflow if both arguments have the opposite sign of the result
+        final int r = a + b;
+        // Hackers Delight 2-12:
+        // Overflow if both arguments have the opposite sign of the result
         if (((a ^ r) & (b ^ r)) < 0) {
-            // Clip the long result
-            return (long) a + b < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
+            // Use the sign of the overflow to choose the result
+            return r < 0 ? Integer.MAX_VALUE : Integer.MIN_VALUE;
         }
         return r;
     }
@@ -2113,16 +2117,23 @@ class HurwitzZetaTest {
     /**
      * Clip the long exponent to an integer range.
      *
-     * @param e the exponent
+     * <p>Note that use of a direct cast to {@code int} is a 32-bit truncation. If all
+     * lower bits are zero but the high 32-bits contain non-zero bits then a cast is
+     * incorrect. This method ensures {@code long} exponents generated from large
+     * power computations are clipped to the range {@code [-(2^31), 2^31)}. This is
+     * sufficient to detect infinite or zero values, and correctly scale results
+     * using {@link Math#scalb(double, int)} or {@link DD#scalb(int)}.
+     *
+     * @param e Exponent.
      * @return the exponent as the closest integer
      */
-    private static int clipExponent(long e) {
-        // 32-bit truncation
+    private static int intExponent(long e) {
+        // Test if 32-bit truncation is the same number
         final int r = (int) e;
         if (r != e) {
             return e < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
         }
-        return r;
+        return (int) e;
     }
 
     /**
@@ -2135,7 +2146,8 @@ class HurwitzZetaTest {
      * result using a fractional representation in {@code [0.5, 1)} with
      * a base-2 exponent.
      * 
-     * <p>The first term can be provided.
+     * <p>The first term can be provided. This must be the fractional representation
+     * with the exponent in |{@code exp}.
      *
      * @param s Argument {@code s > 1}, expected {@code s < 1024}
      * @param a Argument {@code a > 0}
@@ -2165,10 +2177,9 @@ class HurwitzZetaTest {
         final int et0;
         if (a0 == null) {
             t0 = pow.apply(a, -s, e);
-            et0 = clipExponent(e[0]);
+            et0 = intExponent(e[0]);
         } else {
-            // TODO: This can be optimised to provide the fractional representation
-            t0 = a0.frexp(exp);
+            t0 = a0;
             et0 = exp[0];
         }
 
@@ -2185,7 +2196,7 @@ class HurwitzZetaTest {
             r = r.divide(s - 1).frexp(exp);
             er += exp[0];
             // Add 0.5 * t0 so adjust the exponent
-            return add(r, clipExponent(er), t0, addExponent(et0, -1), exp);
+            return add(r, intExponent(er), t0, addExponent(et0, -1), exp);
         }
 
         // Can overflow if 0 < a < 1.
@@ -2203,12 +2214,13 @@ class HurwitzZetaTest {
 
         // Initialise sum with the first tail term: 0.5 * (a+n)^-s
         DD sum = powS.apply(apn, -s, e);
+        // Here the exponent will be integer: 2^106 + N
         int es = (int) (e[0] - 1);
         // S : k in [0, n-1]
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
             DD r = powS.apply(a.add(k), -s, e);
-            sum = add(sum, es, r, clipExponent(e[0]), exp);
+            sum = add(sum, es, r, intExponent(e[0]), exp);
             es = exp[0];
         }
 
@@ -2223,11 +2235,11 @@ class HurwitzZetaTest {
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (et0 > eti) {
-            sum = add(sum, es, ti, clipExponent(eti), exp);
+            sum = add(sum, es, ti, intExponent(eti), exp);
             sum = add(sum, exp[0], t0, et0, exp);
         } else {
             sum = add(sum, es, t0, et0, exp);
-            sum = add(sum, exp[0], ti, clipExponent(eti), exp);
+            sum = add(sum, exp[0], ti, intExponent(eti), exp);
         }
         es = exp[0];
 
@@ -2354,7 +2366,7 @@ class HurwitzZetaTest {
         // Avoids addition of fractional representation to zero (which has a zero exponent).
         DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
         long et = exp[0] + ef + ep;
-        int ets = clipExponent(et);
+        int ets = intExponent(et);
         int i;
         for (i = 1; i < c.getM(); i++) {
             if (et < stop) {
@@ -2376,7 +2388,7 @@ class HurwitzZetaTest {
             // FDD is finite. f*p in [0, 2).
             final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
             et = exp[0] + ef + ep;
-            tsum = add(tsum, ets, t, clipExponent(et), exp);
+            tsum = add(tsum, ets, t, intExponent(et), exp);
             ets = exp[0];
         }
 //        double T = tsum.hi();
@@ -2443,15 +2455,15 @@ class HurwitzZetaTest {
                 // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
                 // All other individual terms are smaller so further DD computation is not possible.
                 return diff > 0 ?
-                    pp.scalb((int) expp[0]).hi() :
-                    pn.scalb((int) expn[0]).hi();
+                    pp.scalb(intExponent(expp[0])).hi() :
+                    pn.scalb(intExponent(expn[0])).hi();
             }
             // Add the smallest to the largest avoiding overflow by re-scaling after the sum
-            final DD sum = pn.add(pp.scalb((int) diff)).scalb((int) expn[0]);
+            final DD sum = pn.add(pp.scalb((int) diff)).scalb(intExponent(expn[0]));
 
             // Rescale terms
-            pp = pp.scalb((int) expp[0]);
-            pn = pn.scalb((int) expn[0]);
+            pp = pp.scalb(intExponent(expp[0]));
+            pn = pn.scalb(intExponent(expn[0]));
 
             // Here the remaining series above and below zero are effectively both zeta
             // evaluations with zeta(s >= 2, a > 1). This is always < 2; any individual term x^-s < 1.
