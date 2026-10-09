@@ -3693,15 +3693,16 @@ class HurwitzZetaTest {
         // the min double value.
         // double 1075
         // double-double 1075+53 = 1128
-        "20, 5, 53, 53", // Fails to converge even on small s
-        "1075, 6, 53, 16",
-        "1075, 7, 53, 12",
-        "1075, 8, 53, 11",
+        //"20, 5, 53, 53", // Fails to converge even on small s
+        //"1075, 6, 53, 16",
+        //"1075, 7, 53, 12",
+        //"1075, 8, 53, 11",
         "1075, 9, 53, 10",
-        "20, 11, 106, 106", // Fails to converge even on small s
-        "1128, 12, 106, 32",
+        //"20, 11, 106, 106", // Fails to converge even on small s
+        //"1128, 12, 106, 32",
         "1128, 15, 106, 22",
     })
+    // This could be enabled. Each case takes approximately 10-15s.
     @Disabled("Used to test convergence of the series S when the power term s > a")
     void testTailConvergence(int maxS, int n, int eb, int expectedMaxM) {
         Assertions.assertTrue(maxS > 1);
@@ -3712,13 +3713,16 @@ class HurwitzZetaTest {
         final int[] exp = {0};
         // Limit iterations to a realistic table size
         final int maxM = Math.min(eb, FDD.length);
-        int obsM = 0;
+        int observedMaxM = 0;
         // List of cases with the max M
         final ArrayList<double[]> cases = new ArrayList<>();
         // Iterate s up to the configured max
         for (int s = 2; s <= maxS; s++) {
-            // Iterate over a ~ s
-            for (double a = 1; a <= 2 * s; a += 1.0) {
+            // Iterate over a ~ s.
+            // Fail if the highest recorded convergence is at the upper limit.
+            final double upperA = Math.max(20, 2 * s);
+            int obsM = 0;
+            for (double a = 1; a <= upperA; a += 1.0) {
                 // Compute the terms of the zeta function: S + I + T.
                 // Determine if the tail converges to the specified precision.
                 // When s > a+n the pochammer term (s)_2k-1 grows faster than the
@@ -3797,21 +3801,29 @@ class HurwitzZetaTest {
                     tsum = add(tsum, ets, t, intExponent(et), exp, DD::add);
                     ets = exp[0];
                 }
-
+                // Check if this should have converged
                 if (i >= expectedMaxM) {
                     if (expectedMaxM < maxM) {
                         Assertions.fail(String.format("z(%d, %s) n=%d p=%d : %s * 2^%d + %s * 2^%d : %d%n",
                             s, a, n, eb, sum.hi(), es, tsum.hi(), ets, i));
                     }
-                    // This was expected so stop
+                    // This was expected so stop the test
                     return;
                 }
+                // Record the maximum M for this s
                 if (i >= obsM) {
-                    if (i > obsM) {
+                    final int m = i;
+                    Assertions.assertNotEquals(upperA, a,
+                        () -> "Invalid test range: Upper limit of a for max M=" + m);
+                    obsM = i;
+                }
+                // Record the maximum M
+                if (i >= observedMaxM) {
+                    if (i > observedMaxM) {
                         cases.clear();
                     }
                     cases.add(new double[] {s, a});
-                    obsM = i;
+                    observedMaxM = i;
                 }
                 // Sanity check the zeta result is correct
                 sum = add(sum, es, tsum, ets, exp, DD::add);
@@ -3819,6 +3831,10 @@ class HurwitzZetaTest {
                 final double expected = HurwitzZeta.value(s, a);
                 TestUtils.assertEquals(expected, actual, 10);
             }
+        }
+        // Check the maximum M was not at the limit
+        if (expectedMaxM == maxM) {
+            Assertions.fail("Converged earlier than expected for all cases. Max M=" + observedMaxM);
         }
         // XXX: Debugging
         //cases.stream().limit(100).map(Arrays::toString).forEach(System.out::println);
