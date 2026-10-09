@@ -3095,6 +3095,12 @@ class HurwitzZetaTest {
         "0.23, 1.0, NaN",
         "-1.23, 1.0, NaN",
         "-Infinity, 1.0, NaN",
+        // s = infinity; a < 1 : infinity
+        "Infinity, 0.5, Infinity",
+        // s = infinity; a = 1 : 1 (matches Riemann zeta)
+        "Infinity, 1.0, 1.0",
+        // s = infinity; a > 1 : 0
+        "Infinity, 1.5, 0.0",
         // a = negative integer or 0 : infinity
         "1.23, 0.0, Infinity",
         "1.23, -1.0, Infinity",
