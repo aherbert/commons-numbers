@@ -77,6 +77,7 @@ class HurwitzZetaTest {
     };
     /** Filenames of resources used for the extended precision zeta function using integer s. */
     private static final String[] INT_TEST_RESOURCES = {
+        // TODO: create some data with s ~ a up to s = 1075
         "hzeta_is2_11_a1_1.csv",
         "hzeta_is2_11_a40_41.csv",
     };
@@ -833,8 +834,12 @@ class HurwitzZetaTest {
         /** Use extended precision summation in the tail series. */
         static final int TAIL_EXT_SUM = 32;
 
+        /** Use accurate add for the main terms in the DD implementation. */
+        static final int AA_TERMS = 64;
+        /** Use accurate add for the series summation in the DD implementation. */
+        static final int AA_SERIES = 128;
+
         // TODO - Option to balance f*p in the tail series to prevent p underflow
-        // TODO - Option for accurateAdd in the DD implementation
 
         // Default contexts optimised using the precision tests
 
@@ -843,14 +848,15 @@ class HurwitzZetaTest {
         static final Context DOUBLE = Context.of(9, 15);
 
         /** Context for double precision using the DD zeta implementation.
-         * Uses standard DD pow for all terms. */
+         * Uses standard DD pow for all terms. Converge the tail beyond 53-bits. */
         static final Context DD_DOUBLE = Context.of(9, 15)
-            .withTailEpsilon(0x1p-53).withOptions(0);
+            .withTailEpsilon(0x1p-55).withOptions(1);
         /** Context for double-double precision using the DD zeta implementation.
-         * Uses DDMath only for the most important terms. Compute tail terms
-         * a few bits past the 106-bits of the current sum. */
+         * Uses DDMath only for the most important terms. Note that using
+         * DDMath for the series, or using accurate add do not improve the error
+         * around the roots, or on the negative a test data. */
         static final Context DD_DOUBLE_DOUBLE = Context.of(15, 30)
-            .withTailEpsilon(0x1p-108).withOptions(EXT_POW_TERMS);
+            .withTailEpsilon(0x1p-106).withOptions(EXT_POW_TERMS);
 
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with precision +1 digit than the expected 17 per double.
@@ -1055,16 +1061,8 @@ class HurwitzZetaTest {
                 t = z * t * (1 + (z - 1) * t * 0.5);
             }
             double r = Math.pow(hx, z);
-            // TODO: This could return a DD for extended summation.
+            // Note: This could return a DD for extended summation.
             return r + r * t;
-
-//            double r = Math.pow(s.hi(), z);
-//            // This does not check all pow edge cases and assumes the round-off is finite
-//            final double t = z * s.lo();
-//            if (Math.abs(t) > 0x1p-53 * s.hi()) {
-//                r *= Math.exp(t / s.hi());
-//            }
-//            return r;
         }
 
         /**
@@ -1111,6 +1109,62 @@ class HurwitzZetaTest {
         }
     }
 
+    /**
+     * Compute the sum of {@code (x, xx)} and {@code (y, yy)}.
+     * 
+     * <p><strong>*** This code has been extracted from the DD class for testing***</strong>.
+     *
+     * <p>It is not part of the public API. The method has been adapted to use
+     * DD arguments and DD.ofSum for all twoSum and fastTwoSum operations. This makes it
+     * slower than an optimal implementation that has access to the private DD constructor
+     * (and fastTwoSum to compute the round-off).
+     *
+     * <p>The high-part of the result is within 1 ulp of the true sum {@code e}. The
+     * low-part of the result is within 1 ulp of the result of the high-part subtracted
+     * from the true sum {@code e - hi}.
+     *
+     * <p>Note: This is an internal helper method used when accuracy is required. The
+     * computed result is within 1 eps of the exact result where eps is 2<sup>-106</sup>.
+     * The performance is approximately 2-fold slower than {@link DD#add(DD)} (perhaps
+     * more given the lack of fastTwoSum).
+     * 
+     * @param x (x, xx).
+     * @param y (y, yy).
+     * @return the sum
+     */
+    static DD accurateAdd(DD x, DD y) {
+        // Expansion sum (Schewchuk Fig 7): (x, xx) + (x, yy) -> (s0, s1, s2, s3)
+        DD s = DD.ofSum(x.lo(), y.lo());
+        double s3 = s.lo();
+        s = DD.ofSum(x.hi(), s.hi());
+        // (s0, s1, s2) == (s.hi(), s.lo(), s3)
+        double s0 = s.hi();
+        s = DD.ofSum(s.lo(), y.hi());
+        double s2 = s.lo();
+        s = DD.ofSum(s0, s.hi());
+        // s1 = s.lo()
+        s0 = s.hi();
+        // Compress (Schewchuk Fig. 15) (s0, s1, s2, s3) -> (s0, s1)
+        // fastTwoSum
+        s = DD.ofSum(s.lo(), s2);
+        final double s1 = s.hi();
+        // fastTwoSum
+        s = DD.ofSum(s.lo(), s3);
+        // s2 = s.hi()
+        s3 = s.lo();
+        // fastTwoSum
+        s = DD.ofSum(s1, s.hi());
+        s2 = s.lo();
+        // fastTwoSum
+        s = DD.ofSum(s0, s.hi());
+        // Here (s0, s1) = s
+        // e = exact 212-bit result
+        // |e - s0| <= ulp(s0)
+        // |s1 + s2 + s3| <= ulp(e - s0)   (Sum magnitudes small to high)
+        // fastTwoSum
+        return DD.ofSum(s.hi(), s3 + s2 + s.lo());
+    }
+
     /** Define the expected error for a test. */
     private interface TestError {
         /**
@@ -1123,7 +1177,6 @@ class HurwitzZetaTest {
          */
         double getRmsTolerance();
     }
-
 
     /** Define a test for an extended precision zeta function. */
     private interface ExtendedPrecisionTestCase extends TestError {
@@ -1209,26 +1262,23 @@ class HurwitzZetaTest {
         DD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), ROOT_TEST_RESOURCES, 0.7, 0.05),
 
         // Final implementation
-        ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 2.9, 0.65),
-        ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 3.6, 0.69),
+        ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 1.5, 0.3),
+        ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 2, 0.49),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
-        ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.9, 0.57),
+        ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.2, 0.35),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
-        ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 3.22, 0.62),
+        ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.1, 0.35),
         // Negative a
-        ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.7, 0.1),
-        ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.75, 0.1),
+        ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
+        ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A1_15_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0x1p-30.csv", 0, 0),
-        ZETA_S2_4_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-30.csv", 0.63, 0.1),
-        ZETA_S3_5_N_A1_15(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-1.csv", 3, 0.1),
+        ZETA_S2_4_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-30.csv", 0.53, 0.07),
+        ZETA_S3_5_N_A1_15(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-1.csv", 0, 0),
         ZETA_S3_5_N_A40_99(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-1.csv", 0, 0),
         ZETA_S3_5_N_A1_15_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0x1p-30.csv", 0, 0),
-        ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 6.5, 1.7),
-        ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 180, 5.2),
-        // Broken
-        ZETA_ROOT_S3_21_N_B0_B6(HurwitzZeta::value, "hzeta_root_s3_21_na2b0_2b6.csv", 3e14, 1e13),
-        ZETA_ROOT_S23_1067_N_B0_B6(HurwitzZeta::value, "hzeta_root_s23_1067_na2b0_2b6.csv", 2e10, 3e9),
-        ZETA_ROOT_S3_25_N_B7_B11(HurwitzZeta::value, "hzeta_root_s3_25_na2b7_2b11.csv", 1e10, 1e9)
+        ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0, 0),
+        ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+        ZETA_ROOTS(HurwitzZeta::value, ROOT_TEST_RESOURCES, 0.7, 0.05),
         ;
 
 //        JDK Oracle Corporation 25.503-b01
@@ -1767,9 +1817,6 @@ class HurwitzZetaTest {
         // I : (a+p)^(1-s) / (s-1)
         final BigDecimal ti = apn.pow(1 - s, mc).divide(BigDecimal.valueOf(s - 1), mc);
 
-        double S = sum.add(t0).doubleValue();
-        double I = ti.doubleValue();
-
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (t0.compareTo(ti) > 0) {
             sum = sum.add(ti, mc).add(t0, mc);
@@ -1781,7 +1828,10 @@ class HurwitzZetaTest {
         // The following recycles the power term p: (a+n)^-(2k-1+s).
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        // When s is large the loop exits before the rising factorial overflows.
+
+        // *** This must work for all s where (a+n)^-s is not an underflow ***
+        // The function testTailConvergence examines the parameter space in DD arithmetic
+        // and verifies convergence is possible for the provided n.
 
         // Rising factorial term : (s)_{2k-1}
         BigDecimal f = BigDecimal.valueOf(s);
@@ -1818,8 +1868,6 @@ class HurwitzZetaTest {
             // compute the multiplicand as a long as it cannot overflow when M is small
             f = f.multiply(BigDecimal.valueOf((s + (2L * i) + 1) * (s + (2L * i) + 2)), mc);
         }
-        double T = tsum.doubleValue();
-//        System.out.printf("%s %s %s %d : %s%n", S, I, T, i + 1, sum.add(tsum, mc).doubleValue());
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum, mc);
@@ -1915,9 +1963,8 @@ class HurwitzZetaTest {
         // Intentional float comparison
         if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result.
-            DD r = zeta(s, DD.ONE.subtract(a), null, exp, Context.DD_DOUBLE);
+            final DD r = zeta(s, DD.ONE.subtract(a), null, exp, Context.DD_DOUBLE);
             return Math.scalb(r.hi(), exp[0]);
-//            return zeta(s, 1 - a, Double.NaN, Context.DOUBLE);
         }
 
         // Handle cancellation as x -> 0.5
@@ -1964,7 +2011,7 @@ class HurwitzZetaTest {
             // Limit of double-double arithmetic
             // Add the smallest to the largest avoiding overflow by re-scaling after the sum
             return Math.scalb(
-                pn.add(pp.scalb((int) diff)).hi(),
+                HurwitzZetaTest.accurateAdd(pn, pp.scalb((int) diff)).hi(),
                 intExponent(expn[0])
             );
         }
@@ -1986,11 +2033,9 @@ class HurwitzZetaTest {
         // Evaluate zeta with extra precision
         final Context c = odd ? Context.DD_DOUBLE_DOUBLE : Context.DD_DOUBLE;
 
-        // TODO
         // Used scaled terms in the DD implementation.
         // This allows correct convergence of the tail when sub-normal.
-        // See if this increases accuracy.
-        // Add some test data at the critical point where the result terms are
+        // TODO: Add some test data at the critical point where the result terms are
         // close to or sub-normal.
 
         exp[0] = intExponent(expp[0]);
@@ -2033,10 +2078,11 @@ class HurwitzZetaTest {
             ezb = 0;
             // Power function for the series (allows switching to a faster pow)
             final ScaledPowOperator powS = c.isSet(Context.EXT_POW_SERIES) ? DDMath::pow : DD::pow;
+            final BiFunction<DD, DD, DD> addS = c.isSet(Context.AA_SERIES) ? HurwitzZetaTest::accurateAdd : DD::add;
             final long[] e = {0};
             for (double aa = a; aa < x; aa += 1.0) {
                 DD r = powS.apply(DD.of(aa), -s, e);
-                zb = add(zb, ezb, r, intExponent(e[0]), exp);
+                zb = add(zb, ezb, r, intExponent(e[0]), exp, addS);
                 ezb = exp[0];
             }
             // Sort for the summation by magnitude
@@ -2051,17 +2097,18 @@ class HurwitzZetaTest {
         }
 
         // Sum in magnitude order
+        final BiFunction<DD, DD, DD> add = c.isSet(Context.AA_TERMS) ? HurwitzZetaTest::accurateAdd : DD::add;
         // zb < za : check z against za
         if (ez > eza) {
             // za,zb < z
-            za = add(za, eza, zb, ezb, exp);
+            za = add(za, eza, zb, ezb, exp, add);
             eza = exp[0];
         } else {
             // zb,z < za
-            z = add(z, ez, zb, ezb, exp);
+            z = add(z, ez, zb, ezb, exp, add);
             ez = exp[0];
         }
-        z = add(za, eza, z, ez, exp);
+        z = add(za, eza, z, ez, exp, add);
         return Math.scalb(z.hi(), exp[0]);
     }
 
@@ -2073,9 +2120,10 @@ class HurwitzZetaTest {
      * @param b addend b.
      * @param be exponent of b.
      * @param e the exponent of the result.
+     * @param add Addition operator.
      * @return the fraction part of the result
      */
-    private static DD add(DD a, int ae, DD b, int be, int[] e) {
+    private static DD add(DD a, int ae, DD b, int be, int[] e, BiFunction<DD, DD, DD> add) {
         // Add if the overlap is within 106-bits
         final long diff = (long) ae - be;
         if (Math.abs(diff) > 106) {
@@ -2088,7 +2136,7 @@ class HurwitzZetaTest {
             e[0] = be;
             return b;
         }
-        final DD r = b.add(a.scalb((int) diff)).frexp(e);
+        final DD r = add.apply(b, a.scalb((int) diff)).frexp(e);
         e[0] = addExponent(e[0], be);
         return r;
     }
@@ -2168,9 +2216,11 @@ class HurwitzZetaTest {
         // so adding many full size integers will not overflow.
         final long[] e = {0};
 
+        // Power function and add function (allows switching to a faster method for the series)
         final ScaledPowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? DDMath::pow : DD::pow;
-        // Power function for the series (allows switching to a faster pow)
         final ScaledPowOperator powS = c.isSet(Context.EXT_POW_SERIES) ? DDMath::pow : DD::pow;
+        final BiFunction<DD, DD, DD> add = c.isSet(Context.AA_TERMS) ? HurwitzZetaTest::accurateAdd : DD::add;
+        final BiFunction<DD, DD, DD> addS = c.isSet(Context.AA_SERIES) ? HurwitzZetaTest::accurateAdd : DD::add;
 
         // First term may be provided
         final DD t0;
@@ -2196,7 +2246,7 @@ class HurwitzZetaTest {
             r = r.divide(s - 1).frexp(exp);
             er += exp[0];
             // Add 0.5 * t0 so adjust the exponent
-            return add(r, intExponent(er), t0, addExponent(et0, -1), exp);
+            return add(r, intExponent(er), t0, addExponent(et0, -1), exp, add);
         }
 
         // Can overflow if 0 < a < 1.
@@ -2220,7 +2270,7 @@ class HurwitzZetaTest {
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
             DD r = powS.apply(a.add(k), -s, e);
-            sum = add(sum, es, r, intExponent(e[0]), exp);
+            sum = add(sum, es, r, intExponent(e[0]), exp, addS);
             es = exp[0];
         }
 
@@ -2230,16 +2280,13 @@ class HurwitzZetaTest {
         ti = ti.divide(s - 1).frexp(exp);
         eti += exp[0];
 
-//        double S = sum.add(t0).hi();
-//        double I = ti.hi();
-
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (et0 > eti) {
-            sum = add(sum, es, ti, intExponent(eti), exp);
-            sum = add(sum, exp[0], t0, et0, exp);
+            sum = add(sum, es, ti, intExponent(eti), exp, add);
+            sum = add(sum, exp[0], t0, et0, exp, add);
         } else {
-            sum = add(sum, es, t0, et0, exp);
-            sum = add(sum, exp[0], ti, intExponent(eti), exp);
+            sum = add(sum, es, t0, et0, exp, add);
+            sum = add(sum, exp[0], ti, intExponent(eti), exp, add);
         }
         es = exp[0];
 
@@ -2258,85 +2305,15 @@ class HurwitzZetaTest {
         // Terms cannot overflow using the fractional representation. This also
         // allows the tail computation to continue further when an individual
         // part of each term computation would underflow.
-        // TODO:
+        // Note:
         // This has a drawback when s > (a+n) and the pochammer function (s)_2k grows
-        // faster than the term (a+n)^-(2k-1-s) reduces:
-        // pochammer increases at least s^2 per iteration.
-        // power term reduces (a+n)^2 per iteration. Starts at (a+n)^-(s+1).
-        // High s the series is strongly convergent.
-        // Largest s when a+n underflows:
-        // (a+n)^-s = 2^-1075 : s = 1075 / log2(a+n)
-        //2^1 1075.0
-        //2^2 537.50
-        //2^3 358.33
-        //2^4 268.75
-        //2^5 215.00
-        //2^6 179.17
-        //2^7 153.57
-        //2^8 134.38
-        //2^9 119.44
-        //2^10 107.50
-        //2^11 97.727
-        //2^12 89.583
-        //2^13 82.692
-        //2^14 76.786
-        //2^15 71.667
-        //2^16 67.188
-        //2^17 63.235
-        //2^18 59.722
-        //2^19 56.579
-        //2^20 53.750
-        //2^21 51.190
-        //2^22 48.864
-        //2^23 46.739
-        //2^24 44.792
-        //2^25 43.000
-        //2^26 41.346
-        //2^27 39.815
-        //2^28 38.393
-        //2^29 37.069
-        //2^30 35.833
-        //2^31 34.677
-        //2^32 33.594
-        //2^33 32.576
-        //2^34 31.618
-        //2^35 30.714
-        //2^36 29.861
-        //2^37 29.054
-        //2^38 28.289
-        //2^39 27.564
-        //2^40 26.875
-        //2^41 26.220
-        //2^42 25.595
-        //2^43 25.000
-        //2^44 24.432
-        //2^45 23.889
-        //2^46 23.370
-        //2^47 22.872
-        //2^48 22.396
-        //2^49 21.939
-        //2^50 21.500
-        //2^51 21.078
-        //2^52 20.673
-        //2^53 20.283
-        //
-        // At the min(a+n) we can set a threshold to quit evaluation after the series sum.
-        // E.g. N=9 : max s = 1075/log2(N) = 339.12
-        // In DD precision 1128/log2(N) = 355.84
-        //
-        // TODO: Do this for a test data sample
-        // Compute terms at the extremes of the parameter space:
-        // s = 1+2^-52
-        // a = 1+2^-52
-        // a = 2^106
-        // largest s when 2^-s underflows: 2^-1075
-        // Have to support s up to 1075 when a is just above 1.
-        // get (s, a) where a^-s is sub-normal
-        // get (s, a) where the result is sub-normal
-        // get (s, a) where the result is below 2^-1075.
-        // Check the DD method can compute this as a BigDecimal.
+        // faster than the term (a+n)^-(2k-1-s) reduces. For large s and/or a the
+        // power term would normally underflow and the tail is ignored. Here the
+        // convergence must be possible for all expected values of s and a.
 
-        // *** We have to make this work for all s where (a+n)^-s is not an underflow ***
+        // *** This must work for all s where (a+n)^-s is not an underflow ***
+        // The function testTailConvergence examines the parameter space and verifies
+        // convergence is possible for the provided n.
 
         // Rising factorial term : (s)_{2k-1}
         DD f = DD.of(s).frexp(exp);
@@ -2375,7 +2352,7 @@ class HurwitzZetaTest {
             // p = (a+n)^-(2k-1+s)
             if (usePow) {
                 // Note: Very large s will overflow this power term
-                p = pow.apply(apn, -(2 * i + 1 + s), e);
+                p = powS.apply(apn, -(2 * i + 1 + s), e);
                 ep = e[0];
             } else {
                 p = p.multiply(apn).frexp(exp);
@@ -2388,14 +2365,12 @@ class HurwitzZetaTest {
             // FDD is finite. f*p in [0, 2).
             final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
             et = exp[0] + ef + ep;
-            tsum = add(tsum, ets, t, intExponent(et), exp);
+            tsum = add(tsum, ets, t, intExponent(et), exp, addS);
             ets = exp[0];
         }
-//        double T = tsum.hi();
-//        System.out.printf("%s %s %s %d : %s%n", S, I, T, i + 1, sum.add(tsum).hi());
         // Used to histogram convergence when testing
         M[i]++;
-        return add(sum, es, tsum, ets, exp);
+        return add(sum, es, tsum, ets, exp, add);
     }
 
     /**
@@ -2889,8 +2864,16 @@ class HurwitzZetaTest {
         // be selectively used for the *same* precision. However zeta evaluations
         // with a above 1 are only used: (1) as a term added to a much larger
         // zeta evaluation and precision does not require all the bits; (2)
-        // in the total cancellation path which requires double precision.
-//        "13, 30, -106, 1, -53",
+        // in the total cancellation path which requires double precision
+        "13, 30, -106, 1, -53",
+
+//        // Use accurate add for all addition. Lowers max error to below 2 ulp.
+//        "13, 30, -106, 193, -53", // 1 vs 1 + 64 + 128
+//        // Use accurate add only for main addition.
+//        // Lowers RMS error almost as much as always using accurate add.
+//        // Lowers max error less. It is around 2 ulp.
+//        "13, 30, -106, 65, -53", // 1 vs 1 + 64
+
 //        // Use pow in the tail series (no difference)
 //        "13, 30, -106, 19, -53", // 3 vs 3 + 16
 
@@ -2898,15 +2881,20 @@ class HurwitzZetaTest {
         // No difference to max error. RMS is lower. Higher M.
 //         "13, 20, -108, 3, -53",
 //         "13, 20, -110, 3, -53",
-        // Full double precision (~17 digits).
-        "7, 15, -53, 0, 0",
-        // Extra tail terms lower error in double precision
-        "7, 15, -58, 0, 0",
-        // Not enough
-        "7, 15, -48, 0, 0",
+
+        // Maximum precision. Max ulp is ~1.
+        // Note: Cancellation in the negative zeta implementation has not been observed
+        // above 55-bits. This level of precision may only gain ~ 1 ulp around the roots.
+        "15, 20, -106, 195, -53", // 1 vs 3 + 64 + 128
+
+//        // Full double precision (~17 digits).
+//        "7, 15, -53, 0, 0",
+//        // Extra tail terms lower error in double precision
+//        "7, 15, -58, 0, 0",
+//        // Not enough
+//        "7, 15, -48, 0, 0",
     })
     @Disabled("Used to parameterize the zeta function")
-    // TODO: Check if scaled pow is better or the same 
 //    JDK Temurin 25.492-b09
 //    ZETA 12 27 [ 2.29]  2^-106      0     max        3.07011   RMS       0.412309   mean      0.0875241  n 6000  (536ms)
 //    ZETA 13 23 [ 4.26]  2^-106      0     max        2.59016   RMS       0.410850   mean      0.0971494  n 6000  (126ms)
@@ -3011,7 +2999,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return String.format("ZETA %s  2^%-4d   %2d", zetaName(nn), b, options);
+                    return String.format("ZETA %s  2^%-4d   %3d", zetaName(nn), b, options);
                 }
             };
             assertFunction(test);
@@ -3750,7 +3738,7 @@ class HurwitzZetaTest {
                 for (int k = n - 1; k >= 0; k--) {
                     // Descending k sums in order of magnitude for increased precision
                     DD r = DD.ofSum(a, k).pow(-s, e);
-                    sum = add(sum, es, r, intExponent(e[0]), exp);
+                    sum = add(sum, es, r, intExponent(e[0]), exp, DD::add);
                     es = exp[0];
                 }
 
@@ -3760,7 +3748,7 @@ class HurwitzZetaTest {
                 ti = ti.divide(s - 1).frexp(exp);
                 eti += exp[0];
 
-                sum = add(sum, es, ti, intExponent(eti), exp);
+                sum = add(sum, es, ti, intExponent(eti), exp, DD::add);
                 es = exp[0];
 
                 // We could stop here if es < -1075 - b. The result is below the desired
@@ -3806,7 +3794,7 @@ class HurwitzZetaTest {
                     // FDD is finite. f*p in [0, 2).
                     final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
                     et = exp[0] + ef + ep;
-                    tsum = add(tsum, ets, t, intExponent(et), exp);
+                    tsum = add(tsum, ets, t, intExponent(et), exp, DD::add);
                     ets = exp[0];
                 }
 
@@ -3826,7 +3814,7 @@ class HurwitzZetaTest {
                     obsM = i;
                 }
                 // Sanity check the zeta result is correct
-                sum = add(sum, es, tsum, ets, exp);
+                sum = add(sum, es, tsum, ets, exp, DD::add);
                 final double actual = Math.scalb(sum.hi(), exp[0]);
                 final double expected = HurwitzZeta.value(s, a);
                 TestUtils.assertEquals(expected, actual, 10);
