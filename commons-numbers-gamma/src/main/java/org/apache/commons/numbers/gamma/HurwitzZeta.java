@@ -382,6 +382,9 @@ public final class HurwitzZeta {
      * <ul>
      * <li>If the argument \( s \) is 1, then the result is positive infinity.</li>
      * <li>If the argument \( s \lt 1 \), then the result is nan.</li>
+     * <li>If the argument \( s \) is positive infinity and \( a \lt 1 \) then the result is positive infinity.</li>
+     * <li>If the argument \( s \) is positive infinity and \( a = 1 \) then the result is 1.</li>
+     * <li>If the argument \( s \) is positive infinity and \( a \gt 1 \) then the result is 0.</li>
      * <li>If the argument \( a \le 0 \) and is an integer, then the result is positive infinity.</li>
      * <li>If the argument \( a \lt 0 \) and \( s \) is not an integer, then the result is nan.</li>
      * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
@@ -400,6 +403,13 @@ public final class HurwitzZeta {
         // s > 1
         // a > -infinity
         // Check special cases
+        if (s == Double.POSITIVE_INFINITY) {
+            if (a == 1) {
+                // Riemman zeta
+                return 1;
+            }
+            return a < 1 ? Double.POSITIVE_INFINITY : 0;
+        }
         if (s == 1) {
             return Double.POSITIVE_INFINITY;
         }
