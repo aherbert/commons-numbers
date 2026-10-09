@@ -207,16 +207,6 @@ public final class HurwitzZeta {
          * <p>Note that accuracy is limited to approximately 105-bits.
          */
         static final Context DOUBLE_DOUBLE = new Context(15, 0x1p-106, 1);
-        /**
-         * Context for double-double precision when {@code a > 1}.
-         * <ul>
-         * <li>106-bits to stop the tail series
-         * <li>Accurate {@link DDMath} power function for all power terms
-         * </ul>
-         * <p>Note that accuracy is limited to approximately 105-bits.
-         */
-        // TODO - can this ever be used to increase accuracy?
-        static final Context DOUBLE_DOUBLE_A = new Context(15, 0x1p-106, 3);
 
         /** N. */
         private final int n;
