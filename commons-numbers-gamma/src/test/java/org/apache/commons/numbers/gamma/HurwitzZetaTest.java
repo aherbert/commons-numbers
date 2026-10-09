@@ -839,7 +839,8 @@ class HurwitzZetaTest {
         /** Use accurate add for the series summation in the DD implementation. */
         static final int AA_SERIES = 128;
 
-        // TODO - Option to balance f*p in the tail series to prevent p underflow
+        /** Option to use scaling in the tail series to prevent underflow. */
+        static final int TAIL_SCALING = 256;
 
         // Default contexts optimised using the precision tests
 
@@ -876,8 +877,9 @@ class HurwitzZetaTest {
         /** Default math context for extended precision BigDecimal impementation. */
         private static final MathContext MC = MathContext.DECIMAL128;
         /** Default options. Configured for the double implementation:
-         * use extended precision pow everywhere; and extended precision sum. */
-        private static final int DEFAULT_OPTIONS = EXT_POW_TERMS | EXT_POW_SERIES | EXT_SUM;
+         * use extended precision pow everywhere; extended precision sum; and
+         * tail scaling to reduce underflow. */
+        private static final int DEFAULT_OPTIONS = EXT_POW_TERMS | EXT_POW_SERIES | EXT_SUM | TAIL_SCALING;
 
         /** N. */
         private final int n;
@@ -1605,26 +1607,29 @@ class HurwitzZetaTest {
             apn = pow.applyAsDouble(a, n, -2);
         }
 
-        // If a or s are large then (a+n)^-(2k-1+s) will underflow.
-        // We can downscale the rising factorial (always above 1)
-        // and upscale p (always below 1) by the same amount.
-        // The loop will still exit immediately if p = 0
-        // (zeta evaluation is limited by Math.pow).
-        f *= 0x1p-1022;
-        p *= 0x1p1022;
-
         double stop = sum.hi() * c.getTailEps();
         int rescale = 0;
-        if (stop < Double.MIN_NORMAL) {
-            // Compute a scaled tail sum so convergence is on a normal number
-            // The sum < 2^106 due to a check on t0.
-            // Scaling cannot overflow the stop criteria.
-            stop = sum.hi() * 0x1p53;
-            // Either scale p down or scale f up.
-            // The result is sub-normal so it is likely p was sub-normal or zero
-            // before upscaling.
-            f *= 0x1p106;
-            rescale = -106;
+
+        if (c.isSet(Context.TAIL_SCALING)) {
+            // If a or s are large then (a+n)^-(2k-1+s) will underflow.
+            // We can downscale the rising factorial (always above 1)
+            // and upscale p (always below 1) by the same amount.
+            // The loop will still exit immediately if p = 0
+            // (zeta evaluation is limited by Math.pow).
+            f *= 0x1p-1022;
+            p *= 0x1p1022;
+
+            if (stop < Double.MIN_NORMAL) {
+                // Compute a scaled tail sum so convergence is on a normal number
+                // The sum < 2^106 due to a check on t0.
+                // Scaling cannot overflow the stop criteria.
+                stop = sum.hi() * 0x1p106 * c.getTailEps();
+                // Either scale p down or scale f up.
+                // The result is sub-normal so it is likely p was sub-normal or zero
+                // before upscaling.
+                f *= 0x1p106;
+                rescale = -106;
+            }
         }
 
         for (i = 0; i < c.getM(); i++) {
@@ -2688,7 +2693,10 @@ class HurwitzZetaTest {
         // RMS drops as N increases. Max error is variable.
         "7, 15, 0, -53, 4", // 0 vs 0 + 4
         "7, 15, 0, -53, 5", // 1 vs 1 + 4
-        "7, 15, 0, -53, 7", // 3 vs 3 + 4 <== Optimum
+        "7, 15, 0, -53, 7", // 3 vs 3 + 4  <== Optimum
+        // Using tail series scaling to prevent underflow
+        // (exactly the same - test data has no sub-normal results; scaling is exact)
+        "7, 12, 0, -53, 263", // 7 vs 7 + 256  <== Optimum
 //        // Using divide in the tail series (negligible RMS difference)
 //        "7, 12, 0, -53, 12", // 4 vs 4 + 8
 //        "7, 12, 0, -53, 15", // 7 vs 7 + 8
@@ -2755,7 +2763,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return String.format("ZETA %s  2^%d %2d",
+                    return String.format("ZETA %s  2^%d  %3d",
                         zetaName(0), bt, options);
                 }
             };
@@ -2999,7 +3007,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return String.format("ZETA %s  2^%-4d   %3d", zetaName(nn), b, options);
+                    return String.format("ZETA %s  2^%-4d  %3d", zetaName(nn), b, options);
                 }
             };
             assertFunction(test);
