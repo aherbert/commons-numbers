@@ -2674,6 +2674,10 @@ class HurwitzZetaTest {
 
     /**
      * Test the precision of the double implementation of the zeta function.
+     *
+     * <p>Note that when {@code a >= 1} the function requires {@code n >= 6} to converge
+     * the tail series (see {@link #testTailConvergence(int, int, int, int)}. For all
+     * possible {@code a > 0} this requires {@code n >= 7}.
      */
     @ParameterizedTest
     @CsvSource({
@@ -2702,23 +2706,23 @@ class HurwitzZetaTest {
         //   the other N=8 is OK.
 
         // Extended precision power function (difference but required for all terms)
-        "6, 15, 0, -53, 0",
-        "6, 15, 0, -53, 1",
-        "6, 15, 0, -53, 3",
+        "7, 15, 0, -53, 0",
+        "7, 15, 0, -53, 1",
+        "7, 15, 0, -53, 3",
         // Extended precision sum (small difference with/without the power function)
         // RMS drops as N increases. Max error is variable.
-        "6, 15, 0, -53, 4", // 0 vs 0 + 4
-        "6, 15, 0, -53, 5", // 1 vs 1 + 4
-        "6, 15, 0, -53, 7", // 3 vs 3 + 4 <== Optimum
+        "7, 15, 0, -53, 4", // 0 vs 0 + 4
+        "7, 15, 0, -53, 5", // 1 vs 1 + 4
+        "7, 15, 0, -53, 7", // 3 vs 3 + 4 <== Optimum
 //        // Using divide in the tail series (negligible RMS difference)
-//        "6, 12, 0, -53, 12", // 4 vs 4 + 8
-//        "6, 12, 0, -53, 15", // 7 vs 7 + 8
+//        "7, 12, 0, -53, 12", // 4 vs 4 + 8
+//        "7, 12, 0, -53, 15", // 7 vs 7 + 8
 //        // Use power in the tail series (no difference)
-//        "6, 12, 0, -53, 20", // 4 vs 4 + 16
-//        "6, 12, 0, -53, 23", // 7 vs 7 + 16
+//        "7, 12, 0, -53, 20", // 4 vs 4 + 16
+//        "7, 12, 0, -53, 23", // 7 vs 7 + 16
 //        // Use extended precision sum in the tail series (no difference)
-//        "6, 12, 0, -53, 36", // 4 vs 4 + 32
-//        "6, 12, 0, -53, 39", // 7 vs 7 + 32
+//        "7, 12, 0, -53, 36", // 4 vs 4 + 32
+//        "7, 12, 0, -53, 39", // 7 vs 7 + 32
 //        // M convergence (negligible error change unless too high > -50, does increase required M)
 //        "8, 10, 0, -49, 7",
 //        "8, 10, 0, -50, 7",
@@ -2865,44 +2869,43 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Test the precision of the BigDecimal implementation of the zeta function.
+     * Test the precision of the DD implementation of the zeta function.
+     *
+     * <p>Note that when {@code a >= 1} the function requires {@code n >= 6} to converge
+     * the tail series in double precision, and {@code n >= 12} in double-double precision.
+     * (see {@link #testTailConvergence(int, int, int, int)}. For all
+     * possible {@code a > 0} this requires {@code n + 1} on those limits.
      */
     @ParameterizedTest
     @CsvSource({
         // Extended precision
-//        "12, 30, -106, 0, -53",
+//        "13, 30, -106, 0, -53",
         // DD.pow and DDMath pow are the similar accuracy when s = 2 and a < 1.
         // When s is larger and a > 1 the DDMath pow gains a few bits in the result
         // but the max is ~105 bits
-//        "12, 30, -106, 3, -53",
+//        "13, 30, -106, 3, -53",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
         // be selectively used for the *same* precision. However zeta evaluations
         // with a above 1 are only used: (1) as a term added to a much larger
         // zeta evaluation and precision does not require all the bits; (2)
         // in the total cancellation path which requires double precision.
-//        "12, 30, -106, 1, -53",
+//        "13, 30, -106, 1, -53",
 //        // Use pow in the tail series (no difference)
-//        "12, 30, -106, 19, -53", // 3 vs 3 + 16
+//        "13, 30, -106, 19, -53", // 3 vs 3 + 16
 
         // Higher tail convergence.
         // No difference to max error. RMS is lower. Higher M.
-//         "12, 20, -108, 3, -53",
-//         "12, 20, -110, 3, -53",
+//         "13, 20, -108, 3, -53",
+//         "13, 20, -110, 3, -53",
         // Full double precision (~17 digits).
-//        "6, 15, -53, 0, 0",
-
-        // TODO - Fix this
-        // Extra tail terms lower error but require higher N otherwise when a is small
-        // and s > n the pochammer function (s)_2k grows faster than the term (a+n)^-(2k-1-s):
-        // pochammer increases at least s^2 per iteration.
-        // power term reduces (a+n)^2 per iteration. Starts at (a+n)^-(s+1)
-        // 
+        "7, 15, -53, 0, 0",
+        // Extra tail terms lower error in double precision
         "7, 15, -58, 0, 0",
         // Not enough
-//        "6, 15, -48, 0, 0",
+        "7, 15, -48, 0, 0",
     })
-//    @Disabled("Used to parameterize the zeta function")
+    @Disabled("Used to parameterize the zeta function")
     // TODO: Check if scaled pow is better or the same 
 //    JDK Temurin 25.492-b09
 //    ZETA 12 27 [ 2.29]  2^-106      0     max        3.07011   RMS       0.412309   mean      0.0875241  n 6000  (536ms)
@@ -2995,9 +2998,6 @@ class HurwitzZetaTest {
                 @Override
                 public BiFunction<Integer, Double, BigDecimal> getFunction() {
                     return (s, a) -> {
-                        if (s == 6 && a== 0.9999999999991911) {
-                            System.out.println("???");
-                        }
                         final int[] exp = {0};
                         final DD r = HurwitzZetaTest.zeta(s, DD.of(a), null, exp, c);
                         return toBigDecimal(r, exp[0]);
@@ -3683,82 +3683,157 @@ class HurwitzZetaTest {
         return true;
     }
 
-    // TODO
-    // Add a test to explore the size of the terms: S, I, T with different (s, a) and N
-    // Find N where the tail converges for all possible (s, a), 
-    // or S+I is 0.0 in the desired precision: 2^-1075 or 2^-1128.
-
     /**
-     * For a given (s, a), where {@code a < s}, find N to put the next term in the direct
-     * summation below the provided epsilon of the sum.
+     * Test to explore the size of the terms: S, I, T with different (s, a) and N.
+     * For a given (s, a), test if convergence is possible in the tail
+     * series T to the specified precision using the configured {@code N}.
      *
      * <p>This should use any real {@code s > 1.0}. However only {@code s > a + N} causes an issue
      * in the convergence of the tail series so realistically we can use integer s and
      * sum in fractional representation to examine convergence on sub-normal power terms.
+     *
+     * <p>The issue is caused at {@code s > (a+n)} as the Pochammer term (s)_2k-1 (eventually) grows
+     * faster than the power term reduces. If many terms are required the Pochammer term
+     * causes the terms of T to eventually diverge. This is prevented by increasing the size
+     * of {@code a+n} which reduces the divergence rate, and also increases the size of the sum S
+     * and term I thus the tail convergence threshold is higher and less terms are computed.
      */
     @ParameterizedTest
     @CsvSource({
-        "6, 1, 53",
-        "7, 1, 53",
-        "8, 1, 53",
-        "9, 1, 53",
-        "10, 1, 53",
-        "11, 1, 53",
-        "6, 1, 106",
-        "7, 1, 106",
-        "8, 1, 106",
-        "9, 1, 106",
-        "10, 1, 106",
-        "11, 1, 106",
-//        "9, 2, 53",
-//        "9, 3, 53",
-//        "31, 30, 53",
-//        "51, 50, 53",
-//        "71, 70, 53",
-//        "101, 100, 53",
-//        "201, 200, 53",
-//        "1001, 1000, 53",
-//        "301, 300, 53",
-//        "301, 30, 53",
-//        "301, 3, 53",
-//        "9, 1, 106",
+        // Limit of s.
+        // Set using 2^-s where the full precision of the result of any term (a+k)^-s is below
+        // the min double value.
+        // double 1075
+        // double-double 1075+53 = 1128
+        "20, 5, 53, 53", // Fails to converge even on small s
+        "1075, 6, 53, 16",
+        "1075, 7, 53, 12",
+        "1075, 8, 53, 11",
+        "1075, 9, 53, 10",
+        "20, 11, 106, 106", // Fails to converge even on small s
+        "1128, 12, 106, 32",
+        "1128, 15, 106, 22",
     })
-    // TODO: Update this to compute S, I and then check if the tail converges or has terms
-    // so small (due to the Bernoulli numbers) that the tail is ignored.
-
-//    @Disabled("Used to test convergence of the series S when the power term s > a")
-    void testTailConvergence(int s, double a, int eb) {
-        Assertions.assertTrue(s > 1);
-        Assertions.assertTrue(s > a);
+    @Disabled("Used to test convergence of the series S when the power term s > a")
+    void testTailConvergence(int maxS, int n, int eb, int expectedMaxM) {
+        Assertions.assertTrue(maxS > 1);
+        Assertions.assertTrue(n > 1);
         Assertions.assertTrue(0 < eb && eb <= 106);
         // Sum terms in fractional representation
-        int k = 0;
-        long[] e = {0};
-        int[] exp = {0};
-        // Initialise with first term
-        DD sum = DD.of(a).pow(-s, e);
-        int es = intExponent(e[0]);
-        DD r = null;
-        for (; ++k <= 10000;) {
-            r = DD.ofSum(a, k).pow(-s, e);
-            if (es - eb > e[0]) {
-                // Series has converged
-                System.out.print("converged: ");
-                break;
+        final long[] e = {0};
+        final int[] exp = {0};
+        // Limit iterations to a realistic table size
+        final int maxM = Math.min(eb, FDD.length);
+        int obsM = 0;
+        // List of cases with the max M
+        final ArrayList<double[]> cases = new ArrayList<>();
+        // Iterate s up to the configured max
+        for (int s = 2; s <= maxS; s++) {
+            // Iterate over a ~ s
+            for (double a = 1; a <= 2 * s; a += 1.0) {
+                // Compute the terms of the zeta function: S + I + T.
+                // Determine if the tail converges to the specified precision.
+                // When s > a+n the pochammer term (s)_2k-1 grows faster than the
+                // power term (a+n)^-(2k-1-s) reduces and the tail series can fail to converge.
+                // The following is a simplification of the DD zeta implementation
+                // without separating the initial term a^-s. Here a >= 1 and the initial
+                // term is not a significant magnitude to add separately.
+
+                DD apn = DD.ofSum(a, n);
+
+                // S : sum (a+k)^-s for k in [0, n - 1]
+
+                // Initialise with first tail term: 0.5 * (a+n)^-s
+                DD sum = apn.pow(-s, e);
+                int es = intExponent(e[0] - 1);
+                // S : k in [0, n-1]
+                for (int k = n - 1; k >= 0; k--) {
+                    // Descending k sums in order of magnitude for increased precision
+                    DD r = DD.ofSum(a, k).pow(-s, e);
+                    sum = add(sum, es, r, intExponent(e[0]), exp);
+                    es = exp[0];
+                }
+
+                // I : (a+p)^(1-s) / (s-1)
+                DD ti = apn.pow(1 - s, e);
+                long eti = e[0];
+                ti = ti.divide(s - 1).frexp(exp);
+                eti += exp[0];
+
+                sum = add(sum, es, ti, intExponent(eti), exp);
+                es = exp[0];
+
+                // We could stop here if es < -1075 - b. The result is below the desired
+                // output precision of a double. Continue to allow examining extended
+                // precision. This may be required to implement the polygamma function
+                // using the zeta function.
+
+                // Check if tail can converge on current sum
+
+                // Rising factorial term : (s)_{2k-1}
+                DD f = DD.of(s).frexp(exp);
+                long ef = exp[0];
+
+                // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+                DD p = apn.pow(-1 - s, e);
+                long ep = e[0];
+                // Divide by (a+n)^2 using multiplication
+                apn = apn.pow(-2, e);
+                long eapn = e[0];
+
+                // Sum of an alternating series as each F changes sign.
+                // Sum until terms will not impact the result.
+                // Use the tail epsilon to obtain a minimum exponent for terms.
+                final long stop = (long) es - eb;
+                // Initialise with the first term.
+                // Avoids addition of fractional representation to zero (which has a zero exponent).
+                DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
+                long et = exp[0] + ef + ep;
+                int ets = intExponent(et);
+                int i;
+                // Limit iterations to a realistic table size
+                for (i = 1; i < maxM; i++) {
+                    if (et < stop) {
+                        break;
+                    }
+                    // p = (a+n)^-(2k-1+s)
+                    p = p.multiply(apn).frexp(exp);
+                    ep += exp[0] + eapn;
+                    // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+                    // compute the multiplicand as a long as it cannot overflow when M is small
+                    f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
+                    ef += exp[0];
+                    // FDD is finite. f*p in [0, 2).
+                    final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
+                    et = exp[0] + ef + ep;
+                    tsum = add(tsum, ets, t, intExponent(et), exp);
+                    ets = exp[0];
+                }
+
+                if (i >= expectedMaxM) {
+                    if (expectedMaxM < maxM) {
+                        Assertions.fail(String.format("z(%d, %s) n=%d p=%d : %s * 2^%d + %s * 2^%d : %d%n",
+                            s, a, n, eb, sum.hi(), es, tsum.hi(), ets, i));
+                    }
+                    // This was expected so stop
+                    return;
+                }
+                if (i >= obsM) {
+                    if (i > obsM) {
+                        cases.clear();
+                    }
+                    cases.add(new double[] {s, a});
+                    obsM = i;
+                }
+                // Sanity check the zeta result is correct
+                sum = add(sum, es, tsum, ets, exp);
+                final double actual = Math.scalb(sum.hi(), exp[0]);
+                final double expected = HurwitzZeta.value(s, a);
+                TestUtils.assertEquals(expected, actual, 10);
             }
-            // Tail convergence is an issue when s >= a+n
-            // Stop when a+n > 2s. Ideally we should check the first
-            // terms of the tail series compared to the sum(S + I)
-            // exactly how the method implements the sum(S + I + T).
-//            if (a + k >= 10 * s) {
-//                System.out.print("large n: ");
-//                break;
-//            }
-            sum = add(sum, es, r, intExponent(e[0]), exp);
-            es = exp[0];
         }
-        System.out.printf("%s %s %d %d : %s * 2^%d + %s * 2^%d%n",
-            s, a, eb, k, sum.hi(), es, r.hi(), e[0]);
+        // XXX: Debugging
+        //cases.stream().limit(100).map(Arrays::toString).forEach(System.out::println);
     }
 
     /**
