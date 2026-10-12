@@ -16,12 +16,16 @@
  */
 package org.apache.commons.numbers.gamma;
 
+import org.apache.commons.numbers.core.DD;
+
 /**
  * Special math functions.
  *
  * @since 1.1
  */
 final class SpecialMath {
+    /** Threshold for z in the Taylor series approximation of expm1(z * t). */
+    static final double EXT_POW_LIMIT = 0x1p26;
     /** Minimum x for log1pmx(x). */
     private static final double X_MIN = -1;
     /** Low threshold to use log1p(x) - x. */
@@ -36,6 +40,10 @@ final class SpecialMath {
     private static final double TWO_POW_M20 = 0x1.0p-20;
     /** 2^-53. */
     private static final double TWO_POW_M53 = 0x1.0p-53;
+    /** ln(0.5). */
+    private static final double LN_0_5 = Math.log(0.5);
+    /** ln(1.5). */
+    private static final double LN_1_5 = Math.log(1.5);
 
     /** Private constructor. */
     private SpecialMath() {
@@ -224,6 +232,7 @@ final class SpecialMath {
      *
      * @param v Value (assumed to be positive finite and an integer)
      * @return true if odd
+     * @since 1.4
      */
     static boolean isOdd(double v) {
         // Note:
@@ -233,5 +242,157 @@ final class SpecialMath {
         // This is corrected by inverting the sign of v and the extreme is even: -2^63.
         // The isOdd function is correct for all positive finite v.
         return (((long) -v) & 0x1) == 1;
+    }
+
+    /**
+     * Extended precision power function {@code (x+n)^z}.
+     *
+     * <p>This method is used in the zeta function to compute the power function terms of
+     * the infinite series {@code (a+k)^-s}. It is limited to the expected arguments
+     * of the zeta function use case:
+     *
+     * <ul>
+     * <li>{@code x > -1}
+     * <li>{@code n >= 1}
+     * <li>{@code x+n > 0} and finite
+     * <li>{@code z < -1} and finite
+     * </ul>
+     *
+     * <p>This method has no advantage over {@code Math.pow(x+n, z)} when there is no
+     * round-off component to (x+n). In the event that {@code (x+n)} is exact this method
+     * will return the same result as {@code Math.pow(x+n, z)}.
+     *
+     * <p>Calling with {@code n=0} will consume resources for no benefit. More generally
+     * this method should not be called when {@code x + n} does not create a change of
+     * exponent between {@code x} and {@code x + n}, and may offer no benefit even if the
+     * exponent does change depending on the arguments. For example if {@code |x| < 2^52}
+     * and an integer then addition of any {@code int} value will be exact.
+     *
+     * <p>Note: This method has been developed for use with integer {@code n} but can
+     * be adapted to a {@code double} argument {@code n}; and for a larger domain of
+     * input arguments.
+     *
+     * @param x Argument x ({@code 0 <= |x| < 2^53})
+     * @param n Argument n ({@code > 0})
+     * @param z Exponent z ({@code < -1})
+     * @return the result
+     * @since 1.4
+     */
+    static double powxpn(double x, int n, double z) {
+        // (s+ss)^z = s^z * (1+ss/s)^z
+        //          = s^z * exp(z*log1p(ss/s))
+        //          = s^z * s^z * [ (1+ss/s)^z - 1 ]
+        //          = s^z + s^z * expm1(z*log1p(ss/s))
+        //
+        // ss/s < 1 * machine epsilon : log1p(ss/s) = ss/s
+        // ss/s < 2 * machine epsilon : log1p(ss/s) ~ ss/s
+        //
+        // Taylor series:
+        // (1 + x)^n = 1 + nx + n(n-1)x^2/2! + n(n-1)(n-2)x^3/3! + ...
+        // for |x| < 1 and real n
+
+        // Compute the exact double-double sum.
+        // Avoid generation of a DD intermediate by directly using twoSum.
+        double s = x + n;
+        double ss = twoSumLow(x, n, s);
+
+        // Skip impossible rounding
+        if (ss == 0) {
+            // Handles (x+n) = 0 or 1 for the correct pow result
+            return Math.pow(s, z);
+        }
+
+        double t;
+
+        // Edge cases:
+        // s < 1 can overflow to infinity
+        // s = 1 creates 1.0
+        // s > 1 can underflow to 0
+        // Care must be taken to avoid 0 * infinity == NaN
+
+        // Prevent overflow to infinity if s < 1 && ss > 0 by
+        // increasing s by 1 ulp and changing ss to negative by subtracting the ulp.
+
+        // Prevent underflow to zero if s > 1 && ss < 0 by
+        // decreasing s by 1 ulp and changing ss to positive by adding the ulp.
+
+        // Adjust s to be closer to 1.
+        // This does increase accuracy in extreme cases but:
+        // - the effect on zeta is not measurable
+        // - the branch statements are unpredictable
+//        if (s < 1 && ss > 0) {
+//            t = Math.ulp(s);
+//            s += t;
+//            ss -= t;
+//        } else if (s > 1 && ss < 0) {
+//            t = Math.ulp(s);
+//            s -= t;
+//            ss += t;
+//        }
+
+        double r = Math.pow(s, z);
+        // Do not adjust infinity.
+        // NaNs or infinite are not expected from the calling zeta function.
+        if (Double.isInfinite(r)) {
+            return r;
+        }
+
+        // 0 < t < 2^-52
+        t = ss / s;
+
+        // Limit of Taylor series where it does not equal expm1(z * t)
+        // is at approximately 2^-26.
+        // z * t < 2^-26  =>  z < 2^-26 / 2^-52 = 2^26
+        if (z < -EXT_POW_LIMIT) {
+            // z is expected to be small (practical range for a zeta result is -(1, 1075))
+            // and this path is unlikely. Use either:
+            //   s^z * exp(z*t)
+            //   s^z + s^z * expm1(z*t)
+            // Pick expm1 when its result is in the range -0.5 to 0.5.
+            // Otherwise use exp (when its result is in [0, 0.5] and [1.5, infinity].
+            final double zt = z * t;
+            if (zt < LN_0_5 || zt > LN_1_5) {
+                // Result can be 0 or infinity.
+                // Avoid 0 * infinity (infinite r has been handled).
+                t = Math.exp(z * t);
+                if (t == Double.POSITIVE_INFINITY && r == 0) {
+                    // r == 0 when s < 1 and z is large negative
+                    // t == infinity when ss < 0 and z is large negative
+                    // assume (s,ss) < 1 and return zero
+                    return 0;
+                }
+                return r * t;
+            }
+            // Fall-through with the (1 + x)^n - 1 result
+            t = Math.expm1(z * t);
+        } else {
+            // Compute (1 + x)^n - 1 using a Taylor series.
+            // This is the most common branch path when ss != 0.
+            t = z * t * (1 + (z - 1) * t * 0.5);
+        }
+
+        // t in [-0.5, 0.5]
+        return r + r * t;
+    }
+
+    /**
+     * Compute the round-off of the sum of two numbers {@code a} and {@code b} using
+     * Knuth two-sum algorithm. The values are not required to be ordered by magnitude,
+     * i.e. the result is commutative {@code s = a + b == b + a}.
+     *
+     * @param a First part of sum.
+     * @param b Second part of sum.
+     * @param x Sum.
+     * @return the sum round-off
+     */
+    private static double twoSumLow(double a, double b, double x) {
+        // (x, xx) = a + b
+        // bVirtual = x - a
+        // aVirtual = x - bVirtual
+        // bRoundoff = b - bVirtual
+        // aRoundoff = a - aVirtual
+        // xx = aRoundoff + bRoundoff
+        final double bVirtual = x - a;
+        return (a - (x - bVirtual)) + (b - bVirtual);
     }
 }
