@@ -113,6 +113,9 @@ public final class HurwitzZeta {
     private static final double DOWNSCALE = 0x1.0p-1022;
     /** Upscale to use on the initial probability tail term (always below 1). */
     private static final double UPSCALE = 0x1.0p1022;
+    /** Threshold for z in the Taylor series approximation of (1 + t)^z.
+     * Set where |z * t| < 2^-26  =>  z < 2^-26 / 2^-52 = 2^26. */
+    private static final double Z_LIMIT = 0x1p26;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}
@@ -334,7 +337,7 @@ public final class HurwitzZeta {
     private HurwitzZeta() {}
 
     /**
-     * Standard precision {@code (x+y)^z}.
+     * Standard precision {@code (x+n)^z}.
      *
      * @param x Argument x
      * @param n Argument n
@@ -343,6 +346,98 @@ public final class HurwitzZeta {
      */
     private static double stdPowxpn(double x, int n, double z) {
         return Math.pow(x + n, z);
+    }
+
+    /**
+     * Extended precision power function {@code (x+n)^z}.
+     *
+     * <p>This method is used to compute the power function terms of
+     * the infinite series {@code (a+k)^-s}. It is limited to the expected arguments
+     * of the zeta function use case:
+     *
+     * <ul>
+     * <li>{@code x > 0}
+     * <li>{@code n >= 1}
+     * <li>{@code x+n >= 1} and finite
+     * <li>{@code -(2^26) < z < -1} and finite
+     * </ul>
+     *
+     * <p>This method has no advantage over {@code Math.pow(x+n, z)} when there is no
+     * round-off component to (x+n). In the event that {@code (x+n)} is exact this method
+     * will return the same result as {@code Math.pow(x+n, z)}.
+     *
+     * <p>Calling with {@code n=0} will consume resources for no benefit. More generally
+     * this method should not be called when {@code x + n} does not create a change of
+     * exponent between {@code x} and {@code x + n}, and may offer no benefit even if the
+     * exponent does change depending on the arguments. For example if {@code |x| < 2^52}
+     * and is an integer then addition of any {@code int} value will be exact.
+     *
+     * @param x Argument x ({@code 0 < x < 2^53})
+     * @param n Argument n ({@code > 0})
+     * @param z Exponent z ({@code -(2^26) < z < -1})
+     * @return the result
+     */
+    static double extPowxpn(double x, int n, double z) {
+        // (s+ss)^z = s^z * (1+ss/s)^z
+        //
+        // Taylor series:
+        // (1 + t)^z = 1 + zt + z(z-1)t^2/2! + z(z-1)(z-2)t^3/3! + ...
+        // for |t| < 1 and real z
+
+        // Compute the exact double-double sum.
+        // Avoid generation of a DD intermediate by directly using twoSum.
+        double s = x + n;
+        double ss = twoSumLow(x, n, s);
+        double t;
+
+        // Result cases assuming (x+n) >= 1:
+        // s = 1 creates 1.0
+        // s > 1 can underflow to 0
+        // The correction must always be in the same direction, i.e. make the result smaller.
+        // Change a negative round-off to positive by moving 1 ulp from s to ss.
+        // This is an unpredictable 50:50 branch.
+        if (ss < 0) {
+            // x > 0, n >= 1 : if ss < 0 then s > 1
+            // Do not use Math.ulp. Here we know s is finite > 1. Use raw bits.
+            // These methods are intrinsic candidates.
+            t = Double.longBitsToDouble(Double.doubleToRawLongBits(s) - 1L);
+            // This will be exact as the double+int was 84 bits maximum
+            ss += s - t;
+            s = t;
+        }
+
+        final double r = Math.pow(s, z);
+
+        // 0 < t < 2^-52 (or < 2^-53 if no bit was moved)
+        t = ss / s;
+
+        // Compute (1 + t)^z - 1 using a Taylor series of 2 terms with Horner's rule.
+        // Equivalent to expm1(z * log1p(t)). Accurate to z*t < 2^-26.
+        // Result is approximately [-1.5e-8, 0] correcting r towards zero.
+        t = z * t * (1 + (z - 1) * t * 0.5);
+
+        return r + r * t;
+    }
+
+    /**
+     * Compute the round-off of the sum of two numbers {@code a} and {@code b} using
+     * Knuth two-sum algorithm. The values are not required to be ordered by magnitude,
+     * i.e. the result is commutative {@code s = a + b == b + a}.
+     *
+     * @param a First part of sum.
+     * @param b Second part of sum.
+     * @param x Sum.
+     * @return the sum round-off
+     */
+    private static double twoSumLow(double a, double b, double x) {
+        // (x, xx) = a + b
+        // bVirtual = x - a
+        // aVirtual = x - bVirtual
+        // bRoundoff = b - bVirtual
+        // aRoundoff = a - aVirtual
+        // xx = aRoundoff + bRoundoff
+        final double bVirtual = x - a;
+        return (a - (x - bVirtual)) + (b - bVirtual);
     }
 
     /**
@@ -439,22 +534,17 @@ public final class HurwitzZeta {
 
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow
 
-        // Two methods are used to increase precision
+        // Methods are used to increase precision
         // - Extended precision summation (low cost)
         // - Extended precision power function using round-off from (a+k) (selectively applied)
-        // Use of either reduces maximum error by 1 ulp.
-        // Typical RMS error < 0.4 ulp : max error < 2 ulp until the result is sub-normal.
+        // - Scaling for sub-normal tail terms (no cost)
+        // - Adding series terms in magnitude order (no cost)
 
-        // Check the extended precision power will make a difference.
-        // If a < 1 then the term a^-s dominates the result and a few extra digits
-        // of precision from the power function on remaining terms is lost.
-        // This will also be false if (a+n) is exact, or the round-off
-        // cannot be used when s is small.
-        final PowOperator pow =
-//            a > 1 && Math.abs(s * DD.ofSum(a, N).lo()) >= EPS ?
-            a > 1 && DD.ofSum(a, N).lo() != 0 ?
-            SpecialMath::powxpn :
-            HurwitzZeta::stdPowxpn;
+        // Check the extended precision power can be used.
+        // Requires small s and a round-off from (a+n).
+        final PowOperator pow = s >= Z_LIMIT || twoSumLow(a, N, a + N) == 0 ?
+            HurwitzZeta::stdPowxpn :
+            HurwitzZeta::extPowxpn;
 
         double p = pow.apply(a, N, -s);
 

@@ -1044,7 +1044,9 @@ class HurwitzZetaTest {
          * @return the result
          */
         static double extPow(double x, int y, double z) {
-            return SpecialMath.powxpn(x, y, z);
+            // Use a test function with support for (a+n) > 0.
+            // This must handle possible overflow when (a+n) < 1 and z is -large.
+            return PowXPNTest.powxpn(x, y, z);
         }
 
         /**
