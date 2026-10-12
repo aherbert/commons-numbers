@@ -244,6 +244,13 @@ final class SpecialMath {
         return (((long) -v) & 0x1) == 1;
     }
 
+    // TODO: Update the domain used to x > 0 and n >= 1.
+    // Eliminates infinity results.
+    // Move this implementation to the test class.
+    // Move the updated implementation back to the zeta class
+    // but make package private for testing?
+    // Ensure it functions the same as this one.
+
     /**
      * Extended precision power function {@code (x+n)^z}.
      *
@@ -266,7 +273,7 @@ final class SpecialMath {
      * this method should not be called when {@code x + n} does not create a change of
      * exponent between {@code x} and {@code x + n}, and may offer no benefit even if the
      * exponent does change depending on the arguments. For example if {@code |x| < 2^52}
-     * and an integer then addition of any {@code int} value will be exact.
+     * and is an integer then addition of any {@code int} value will be exact.
      *
      * <p>Note: This method has been developed for use with integer {@code n} but can
      * be adapted to a {@code double} argument {@code n}; and for a larger domain of
@@ -348,13 +355,13 @@ final class SpecialMath {
             // and this path is unlikely. Use either:
             //   s^z * exp(z*t)
             //   s^z + s^z * expm1(z*t)
-            // Pick expm1 when its result is in the range -0.5 to 0.5.
+            // Pick expm1 when its result is in the range [-0.5, 0.5].
             // Otherwise use exp (when its result is in [0, 0.5] and [1.5, infinity].
             final double zt = z * t;
             if (zt < LN_0_5 || zt > LN_1_5) {
                 // Result can be 0 or infinity.
                 // Avoid 0 * infinity (infinite r has been handled).
-                t = Math.exp(z * t);
+                t = Math.exp(zt);
                 if (t == Double.POSITIVE_INFINITY && r == 0) {
                     // r == 0 when s < 1 and z is large negative
                     // t == infinity when ss < 0 and z is large negative
@@ -364,7 +371,7 @@ final class SpecialMath {
                 return r * t;
             }
             // Fall-through with the (1 + x)^n - 1 result
-            t = Math.expm1(z * t);
+            t = Math.expm1(zt);
         } else {
             // Compute (1 + x)^n - 1 using a Taylor series.
             // This is the most common branch path when ss != 0.

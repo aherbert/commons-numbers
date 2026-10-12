@@ -300,19 +300,19 @@ public final class HurwitzZeta {
     }
 
     /**
-     * Compute the power function {@code (x+y)^z}.
+     * Compute the power function {@code (x+n)^z}.
      */
     @FunctionalInterface
     interface PowOperator {
         /**
          * Applies this operator to the given operands.
          *
-         * @param x the first operand
-         * @param y the second operand
-         * @param z the third operand
+         * @param x Argument x
+         * @param n Argument n
+         * @param z Exponent z
          * @return the operator result
          */
-        double apply(int x, double y, double z);
+        double apply(double x, int n, double z);
     }
 
     /**
@@ -334,41 +334,15 @@ public final class HurwitzZeta {
     private HurwitzZeta() {}
 
     /**
-     * Extended precision {@code (x+y)^z}. Uses the round-off from {@code x + y} to adjust
-     * the result of {@link Math#pow(double, double)}.
-     *
-     * <p>Warning: This does not check all pow edge cases and
-     * assumes {@code (x+y)} is finite.
-     *
-     * @param x the first operand
-     * @param y the second operand
-     * @param z the third operand
-     * @return the result
-     */
-    private static double extendedPowNp(int x, double y, double z) {
-        // (s+ss)^z = s^z * (1+ss/s)^z
-        //          = s^z * exp(z*log1p(ss/s))
-        // ss/s < machine epsilon : log1p(ss/s) ~ ss/s
-        // exp(x) = 1 when x < machine epsilon
-        final DD s = DD.ofSum(x, y);
-        double r = Math.pow(s.hi(), z);
-        final double t = z * s.lo();
-        if (Math.abs(t) > EPS * s.hi()) {
-            r *= Math.exp(t / s.hi());
-        }
-        return r;
-    }
-
-    /**
      * Standard precision {@code (x+y)^z}.
      *
-     * @param x the first operand
-     * @param y the second operand
-     * @param z the third operand
+     * @param x Argument x
+     * @param n Argument n
+     * @param z Exponent z
      * @return the result
      */
-    private static double powNp(int x, double y, double z) {
-        return Math.pow(x + y, z);
+    private static double stdPowxpn(double x, int n, double z) {
+        return Math.pow(x + n, z);
     }
 
     /**
@@ -477,22 +451,23 @@ public final class HurwitzZeta {
         // This will also be false if (a+n) is exact, or the round-off
         // cannot be used when s is small.
         final PowOperator pow =
-            a > 1 && Math.abs(s * DD.ofSum(a, N).lo()) >= EPS ?
-            HurwitzZeta::extendedPowNp :
-            HurwitzZeta::powNp;
+//            a > 1 && Math.abs(s * DD.ofSum(a, N).lo()) >= EPS ?
+            a > 1 && DD.ofSum(a, N).lo() != 0 ?
+            SpecialMath::powxpn :
+            HurwitzZeta::stdPowxpn;
 
-        double p = pow.apply(N, a, -s);
+        double p = pow.apply(a, N, -s);
 
         // Initialise sum with the first tail term
         DD sum = DD.of(0.5 * p);
         // S : k in [0, n-1]
         for (int k = N - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
-            sum = sum.add(pow.apply(k, a, -s));
+            sum = sum.add(pow.apply(a, k, -s));
         }
 
         // I
-        final double ti = pow.apply(N, a, 1 - s) / (s - 1);
+        final double ti = pow.apply(a, N, 1 - s) / (s - 1);
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
         if (t0 > ti) {
@@ -526,15 +501,15 @@ public final class HurwitzZeta {
         double k2 = 1;
 
         // Use to divide by (a+n)^2
-        final double apn = pow.apply(N, a, -2);
+        final double apn = pow.apply(a, N, -2);
 
         // Sub-normal p reduces accuracy:
         // Test if (a+n)^-(1+s) >= 2^-1022
         if (-(1 + s) * Math.getExponent(a + N) >= Double.MIN_EXPONENT) {
-            p = UPSCALE * pow.apply(N, a, -s - 1);
+            p = UPSCALE * pow.apply(a, N, -s - 1);
         } else {
             // If (a+n)^-s is non-zero this allows division using normal numbers
-            p = UPSCALE * pow.apply(N, a, -s) / (a + N);
+            p = UPSCALE * pow.apply(a, N, -s) / (a + N);
         }
 
         double stop = sum.hi() * EPS;
