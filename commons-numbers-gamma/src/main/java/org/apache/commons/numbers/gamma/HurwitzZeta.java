@@ -82,11 +82,12 @@ public final class HurwitzZeta {
     /** Number of terms of the series summation S. */
     private static final int N = 9;
     /** Convergence epsilon for the sum of the tail function. This prevents summation
-     * of terms that do not affect the final result. */
+     * of terms that do not affect the final result. Equal to 2^-53. */
     private static final double EPS = 0x1.0p-53;
-    /** Mutiplicative inversion of the convergence epsilon. */
+    /** Mutiplicative inversion of the convergence epsilon. Equal to 2^53. */
     private static final double INV_EPS = 0x1.0p53;
-    /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate. */
+    /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate.
+     * Equal to 2^53 - N. */
     private static final double LARGE_A = (1L << 53) - N;
     /** Threshold used when {@code a < 1} where {@code a^-s} == zeta(s, a) with the smallest supported
      * {@code s = 1 + 2^-52}. Set using zeta(s, 1) * 2^54. No possible evaluation of
@@ -109,13 +110,19 @@ public final class HurwitzZeta {
     private static final double HALF = 0.5;
     /** Maximum difference in exponents to support double-double addition. */
     private static final int MAX_EXP_DELTA = 106;
-    /** Downscale to use on the initial rising factorial tail term (always above 1). */
+    /** Downscale to use on the initial rising factorial tail term (always above 1).
+     * Equal to Double.MIN_NORMAL: 2^-1022. */
     private static final double DOWNSCALE = 0x1.0p-1022;
-    /** Upscale to use on the initial probability tail term (always below 1). */
+    /** Upscale to use on the initial probability tail term (always below 1).
+     * Multiplicative inverse of Double.MIN_NORMAL: 2^1022. */
     private static final double UPSCALE = 0x1.0p1022;
     /** Threshold for z in the Taylor series approximation of (1 + t)^z.
      * Set where |z * t| < 2^-26  =>  z < 2^-26 / 2^-52 = 2^26. */
     private static final double Z_LIMIT = 0x1p26;
+    /** Minimum normalised exponent for a double.
+     * Note 2^-1075 is the minimum non-zero double.
+     * Equivalent to Double.MIN_EXPONENT - 53. */
+    private static final int MIN_DOUBLE_EXPONENT = -1075;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}
@@ -190,120 +197,8 @@ public final class HurwitzZeta {
         F = Arrays.stream(FDD).mapToDouble(DD::hi).toArray();
     }
 
-    /** Context for the double-double zeta implementation. */
-    private static class Context {
-        /**
-         * Context for double precision.
-         * <ul>
-         * <li>53-bits to stop the tail series
-         * <li>Regular {@link DD} power function
-         * </ul>
-         */
-        static final Context DOUBLE = new Context(9, 0x1p-53, 0);
-        /**
-         * Context for double-double precision.
-         * <ul>
-         * <li>106-bits to stop the tail series
-         * <li>Accurate {@link DDMath} power function for the most important terms
-         * <li>Regular {@link DD} power function for the series
-         * </ul>
-         * <p>Note that accuracy is limited to approximately 105-bits.
-         */
-        static final Context DOUBLE_DOUBLE = new Context(15, 0x1p-106, 1);
-
-        /** N. */
-        private final int n;
-        /** Epsilon for convergence of the tail series. */
-        private final double eps;
-        /** Option for DD power function. */
-        private final int powOption;
-
-        /**
-         * Create an instance.
-         *
-         * @param n Number of terms to sum
-         * @param eps Convergence epsilon for the tail series T
-         * @param powOption Option for power function
-         */
-        Context(int n, double eps, int powOption) {
-            this.n = n;
-            this.eps = eps;
-            this.powOption = powOption;
-        }
-
-        /**
-         * Gets N.
-         * @return n
-         */
-        int getN() {
-            return n;
-        }
-
-        /**
-         * Gets the convergence epsilon for the tail series T.
-         * @return the epsilon
-         */
-        double getEps() {
-            return eps;
-        }
-
-        /**
-         * Get the function to compute {@code x^y} terms.
-         * @return function
-         */
-        DDPowOperator getDDPow() {
-            return (powOption & 1) == 0 ?
-                Context::pow :
-                Context::accuratePow;
-        }
-
-        /**
-         * Get the function to compute {@code x^y} in a summation of terms {@code x^-s}.
-         * Note that the terms {@code x^y, (x+1)^y, (x+2)^y, ...} may be of a similar
-         * magnitude or differing magnitudes depending on whether {@code x} is close to zero.
-         * The accuracy of the power function can be adapted for the series.
-         *
-         * @return function
-         */
-        DDPowOperator getSeriesDDPow() {
-            return (powOption & 2) == 0 ?
-                Context::pow :
-                Context::accuratePow;
-        }
-
-        /**
-         * Helper function to compute {@code x^y} avoiding overflow of intermediates.
-         *
-         * <p>Uses {@link DD#pow(int, long[])}.
-         *
-         * @param x Argument.
-         * @param y Argument.
-         * @return the result
-         */
-        private static DD pow(DD x, int y) {
-            final long[] exp = {0};
-            final DD r = x.pow(y, exp);
-            return r.scalb((int) exp[0]);
-        }
-
-        /**
-         * Helper function to compute {@code x^y} avoiding overflow of intermediates.
-         *
-         * <p>Uses {@link DDMath#pow(DD, int, long[])}.
-         *
-         * @param x Argument.
-         * @param y Argument.
-         * @return the result
-         */
-        private static DD accuratePow(DD x, int y) {
-            final long[] exp = {0};
-            final DD r = DDMath.pow(x, y, exp);
-            return r.scalb((int) exp[0]);
-        }
-    }
-
     /**
-     * Compute the power function {@code (x+n)^z}.
+     * Compute the power function {@code (x+n)^z} in double precision.
      */
     @FunctionalInterface
     interface PowOperator {
@@ -342,6 +237,76 @@ public final class HurwitzZeta {
         DD apply(DD x, int n, long[] exp);
     }
 
+    /** Context for the double-double zeta implementation. */
+    private static class Context {
+        /**
+         * Context for double precision.
+         * <ul>
+         * <li>N = 9
+         * <li>53-bits to stop the tail series
+         * <li>Regular {@link DD} power function for the most important terms
+         * </ul>
+         */
+        static final Context DOUBLE = new Context(9, 53, 0);
+        /**
+         * Context for double-double precision.
+         * <ul>
+         * <li>N = 15
+         * <li>106-bits to stop the tail series
+         * <li>Accurate {@link DDMath} power function for the most important terms
+         * </ul>
+         * <p>Note that accuracy is limited to approximately 105-bits.
+         */
+        static final Context DOUBLE_DOUBLE = new Context(15, 106, 1);
+
+        /** N. */
+        private final int n;
+        /** Precision in bits for convergence of the tail series. */
+        private final int precision;
+        /** Option for DD power function. */
+        private final int powOption;
+
+        /**
+         * Create an instance.
+         *
+         * @param n Number of terms to sum
+         * @param precision Convergence precision in bits for the tail series T
+         * @param powOption Option for power function
+         */
+        Context(int n, int precision, int powOption) {
+            this.n = n;
+            this.precision = precision;
+            this.powOption = powOption;
+        }
+
+        /**
+         * Gets N.
+         * @return n
+         */
+        int getN() {
+            return n;
+        }
+
+        /**
+         * Gets the precision in bits for the tail series T.
+         * @return the precision
+         */
+        int getPrecision() {
+            return precision;
+        }
+
+        /**
+         * Get the function to compute {@code x^y} terms not used in the series sum.
+         * May return an extended precision power function.
+         * @return function
+         */
+        ScaledPowOperator getPow() {
+            return (powOption & 1) == 0 ?
+                DD::pow :
+                DDMath::pow;
+        }
+    }
+
     /** No instances. */
     private HurwitzZeta() {}
 
@@ -364,6 +329,10 @@ public final class HurwitzZeta {
      * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
      * <li>If either argument is nan, then the result is nan.</li>
      * </ul>
+     *
+     * <p>Note: This function is evaluated for \( s \gt 1 \) where the series is convergent.
+     * The special case of the Riemann zeta function with \( a = 1 \) may be evaluated for
+     * \( s \lt 1 \) using {@link RiemannZeta#value(double)}.
      *
      * @param s Argument.
      * @param a Argument.
@@ -446,7 +415,7 @@ public final class HurwitzZeta {
         // - Adding series terms in magnitude order (no cost)
 
         // Check the extended precision power can be used.
-        // Requires small s and a round-off from (a+n).
+        // If s is large or there is no round-off from (a+n) use standard precision.
         final PowOperator pow = s >= Z_LIMIT || twoSumLow(a, N, a + N) == 0 ?
             HurwitzZeta::stdPowxpn :
             HurwitzZeta::extPowxpn;
@@ -486,11 +455,12 @@ public final class HurwitzZeta {
         // If a or s are large then (a+n)^-(2k-1+s) will underflow.
         // We can downscale the rising factorial (always above 1)
         // and upscale p (always below 1) by the same amount.
-        // The loop will still exit immediately if p = 0
+        // The loop will still exit immediately if p = (a+n)^-s = 0
         // (zeta evaluation is limited by Math.pow).
         // Scaling could dynamically use the exponent of f and p. Here we use
         // fixed scaling which can be pre-applied to a possible sub-normal
-        // power term before division by (a+n).
+        // power term before division by (a+n). This allows a few more terms
+        // of the tail to be computed when the zeta result is sub-normal.
         double f = s * DOWNSCALE;
         // 2k - 1
         double k2 = 1;
@@ -504,13 +474,14 @@ public final class HurwitzZeta {
             p = UPSCALE * pow.apply(a, N, -s - 1);
         } else {
             // If (a+n)^-s is non-zero this allows division using normal numbers
-            p = UPSCALE * pow.apply(a, N, -s) / (a + N);
+            p = UPSCALE * p / (a + N);
         }
 
         double stop = sum.hi() * EPS;
         double rescale = 1;
         if (stop < Double.MIN_NORMAL) {
-            // Compute a scaled tail sum so convergence is on a normal number
+            // Compute a scaled tail sum so convergence is on a normal number.
+            // Upscaling sum cannot overflow due to overflow check on t0.
             stop = sum.hi() * INV_EPS;
             // Either scale p down or scale f up
             f *= INV_EPS * INV_EPS;
@@ -559,11 +530,16 @@ public final class HurwitzZeta {
         // Check case of total cancellation.
         final boolean odd = SpecialMath.isOdd(s);
         final double x = a - ca;
+
+        // Exponent for fractional representation
+        final int[] exp = {0};
+
         // Intentional float comparison
         if (odd && x == -HALF) {
             if (s <= MAX_REFLECTION_S) {
                 // Use extended precision but evaluated with precision for a double result
-                return zetaImp((int) s, DD.ONE.subtract(a), null, Context.DOUBLE).hi();
+                final DD r = zetaImp((int) s, DD.ONE.subtract(a), null, exp, Context.DOUBLE);
+                return Math.scalb(r.hi(), exp[0]);
             }
             // All possible zeta(s, 1-a >= 1.5) underflow
             return 0.0;
@@ -580,7 +556,7 @@ public final class HurwitzZeta {
         final int is = (int) s;
 
         // Compute the two terms either side of zero:
-        // -1 < xn < 0 < xn + 1 < 1
+        // -1 < x < 0 < x + 1 < 1
         // These are the largest terms and contain most of the error of the function.
         final DD xn = DD.of(x);
         final DD xp = DD.ONE.add(x);
@@ -593,15 +569,9 @@ public final class HurwitzZeta {
             // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
             // All other individual terms are smaller so further DD computation is not possible.
             return delta > 0 ?
-                pp.scalb((int) expp[0]).hi() :
-                pn.scalb((int) expn[0]).hi();
+                Math.scalb(pp.hi(), intExponent(expp[0])) :
+                Math.scalb(pn.hi(), intExponent(expn[0]));
         }
-        // Add to a scaled term to avoid overflow, then re-scale after the sum
-        final DD sum = pn.add(pp.scalb((int) delta)).scalb((int) expn[0]);
-
-        // Rescale terms (may over/underflow)
-        pp = pp.scalb((int) expp[0]);
-        pn = pn.scalb((int) expn[0]);
 
         // Here the remaining series above and below zero are effectively both zeta
         // evaluations with zeta(s >= 2, a > 1). This is always < 1.65; individual terms x^-s < 1.
@@ -609,10 +579,13 @@ public final class HurwitzZeta {
         // The result can be finite even if the rescaled terms are infinite. However
         // we do not support further computation from infinite terms so check
         // if anything can be added to these terms.
-        final double d = sum.hi();
-        if (Math.max(Math.abs(pn.hi()), pp.hi()) > LARGE_T0) {
+        if (Math.max(expn[0], expp[0]) > MAX_EXP_DELTA) {
             // Limit of double-double arithmetic
-            return d;
+            // Add a scaled term avoiding overflow by re-scaling after the sum
+            return Math.scalb(
+                pn.add(pp.scalb((int) delta)).hi(),
+                intExponent(expn[0])
+            );
         }
 
         // x = a - ceil(a) : x in -(1, 0)
@@ -627,11 +600,18 @@ public final class HurwitzZeta {
         // Evaluate zeta with extra precision when cancellation occurs
         final Context c = odd ? Context.DOUBLE_DOUBLE : Context.DOUBLE;
 
-        DD z = zetaImp(is, xp, pp, c);
+        exp[0] = intExponent(expp[0]);
+        DD z = zetaImp(is, xp, pp, exp, c);
+        int ez = exp[0];
+
         DD za;
         DD zb;
+        int eza;
+        int ezb;
         // A single call to zeta uses many pow operations;
         // use a direct sum when zeta will use more.
+        // Prepare the exponent for the term we have.
+        exp[0] = intExponent(expn[0]);
         if (x - a > 2 * (c.getN() + 2)) {
             // Note: The difference (za - zb) incurs cancellation.
             // This should not be an issue as x in -(1, 0)
@@ -641,8 +621,10 @@ public final class HurwitzZeta {
             // zeta(2, 30) = 0.0339
             // Significant cancellation (leading digits the same) is not possible.
             // Take care to change the sign of a provided result for the zeta method.
-            za = zetaImp(is, xn.negate(), pn.abs(), c);
-            zb = zetaImp(is, DD.ONE.subtract(a), null, c);
+            za = zetaImp(is, xn.negate(), pn.abs(), exp, c);
+            eza = exp[0];
+            zb = zetaImp(is, DD.ONE.subtract(a), null, exp, c);
+            ezb = exp[0];
             // Both terms are positive. Correct the sign for final addition.
             if (odd) {
                 za = za.negate();
@@ -653,27 +635,39 @@ public final class HurwitzZeta {
             // Sum terms in ascending order of magnitude
             // Using a double to track the iterations is fine as (a+n) is exact until > x.
             za = pn;
+            eza = exp[0];
             zb = DD.ZERO;
-            final DDPowOperator pow = c.getSeriesDDPow();
+            ezb = 0;
+            final long[] e = {0};
             for (double aa = a; aa < x; aa += 1.0) {
-                zb = zb.add(pow.apply(DD.of(aa), -is));
+                final DD r = DD.of(aa).pow(-is, e);
+                zb = add(zb, ezb, r, intExponent(e[0]), exp);
+                ezb = exp[0];
+            }
+            // Sort for the summation by magnitude
+            if (ezb > eza) {
+                final DD tmp = za;
+                za = zb;
+                zb = tmp;
+                final int etmp = eza;
+                eza = ezb;
+                eza = etmp;
             }
         }
 
-        // Sum in magnitude order. Here z is positive.
-        if (Math.abs(za.hi()) > z.hi()) {
-            final DD tmp = za;
-            za = z;
-            z = tmp;
+        // Sum in magnitude order
+        // zb < za : check z against za
+        if (ez > eza) {
+            // za,zb < z
+            za = add(za, eza, zb, ezb, exp);
+            eza = exp[0];
+        } else {
+            // z,zb < za
+            z = add(z, ez, zb, ezb, exp);
+            ez = exp[0];
         }
-        // za < z
-        if (Math.abs(zb.hi()) > Math.abs(z.hi())) {
-            final DD tmp = zb;
-            zb = z;
-            z = tmp;
-        }
-        // za,zb < z
-        return za.add(zb).add(z).hi();
+        z = add(za, eza, z, ez, exp);
+        return Math.scalb(z.hi(), exp[0]);
     }
 
     /**
@@ -683,97 +677,246 @@ public final class HurwitzZeta {
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
      *
-     * @param s Argument {@code s > 1}, expected {@code s < 1067}
+     * @param s Argument {@code 1 < s <= 1837}
      * @param a Argument {@code a > 0}
      * @param a0 {@code a^-s} (can be null)
      * @param c Evaluation context.
      * @return zeta(s, a)
      */
-    private static DD zetaImp(int s, DD a, DD a0, Context c) {
+    private static DD zetaImp(int s, DD a, DD a0, int[] exp, Context c) {
         // Note:
-        // Closest sum of terms when cancellation occurs and we need full DD accuracy
-        // s = 3, a ~ 0.5:
-        // 0.5^-3 ~ 8 : zeta(3, 1.5) = 0.414
-        // Computing with the standard DD pow function has enough accuracy to not accumulate
-        // error to the zeta result when a < 1.
-        // When a >> 1 then the terms are all similar magnitude and we may benefit from DDmath.
+        // The power function uses a long exponent to support the full range
+        // of a double to an integer power: (2^1024)^(2^31) = 2^(2^10 * 2^31) = 2^(2^41)
+        // Here we can clip the long to an integer. The final result is either
+        // infinite or zero if the exponent is outside [-1075, 1024) so special
+        // routines are used to clip the long exponents to integer and add them
+        // without exceeding the range of an integer.
+        // Only the first term is above 1; all other terms are < 1 and can be added
+        // exactly even if sub-normal.
 
-        final DDPowOperator pow = c.getDDPow();
-        // Power function for the series.
-        // Allows switching to the faster DD pow.
-        final DDPowOperator powS = c.getSeriesDDPow();
+        // For the exponent of the power result
+        final long[] e = {0};
+
+        // Note:
+        // Computing with the standard DD pow function has enough accuracy to not accumulate
+        // error to the zeta result when a < 1 as the first term (provided) dominates the result.
+        // When a >> 1 then the terms are all similar magnitude and we may benefit from
+        // DDmath for the zeta result. However this result is then subtracted from a much larger
+        // term on the negative a computation; or only used for double precision on the complete
+        // cancellation path. In either case the full ~105 bits in the power result are not
+        // required from the pow series.
+
+        // Power function based on the context
+        final ScaledPowOperator pow = c.getPow();
 
         // First term may be provided
-        final DD t0 = a0 == null ? pow.apply(a, -s) : a0;
+        final DD t0;
+        final int et0;
+        if (a0 == null) {
+            t0 = pow.apply(a, -s, e);
+            et0 = intExponent(e[0]);
+        } else {
+            t0 = a0;
+            et0 = exp[0];
+        }
+
+        // Asymptotic Behavior as a -> inf
+        // https://dlmf.nist.gov/25.11#E43
+        // When a is large the series cannot use a+k.
+        // This reduces to N=0, the I term and the first term of T.
+        if (Math.getExponent(a.hi()) >= c.getPrecision()) {
+            // a^(1-s) / (s - 1) + a^-s / 2
+            // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
+            // sub-normal when s is small as a is large.
+            DD r = pow.apply(a, 1 - s, e);
+            long er = e[0];
+            if (s > 2) {
+                r = r.divide(s - 1).frexp(exp);
+                er += exp[0];
+            }
+            // Add 0.5 * t0 so adjust the exponent
+            return add(r, intExponent(er), t0, addExponent(et0, -1), exp);
+        }
 
         // Note:
         // This function is never called with 0 < a < 1 unless t0 is provided and finite.
         // No check for overflow/large t0 is required.
+        // Underflow can occur for large s if a is large. The function is not called
+        // when s is extremely large so this case is handled after the
+        // major part of the sum has been computed.
 
-        // TODO: Is this possible? It is called with at least a=1.5
-        // This can overflow when the function is called from the complete cancellation case
-        if (!t0.isFinite()) {
-            return t0;
-        }
-
-        // TODO:
-        // Test asymptotic behaviour. Should this be included
+        // Now any (a+n)^-s cannot overflow and the sum cannot overflow.
+        // However the terms may be sub-normal and we can add them using a fractional
+        // representation with a separate base 2 exponent.
 
         final int n = c.getN();
-        final DD apn = a.add(n);
-        DD p = powS.apply(apn, -s);
+        DD apn = a.add(n);
 
         // Initialise sum with the first tail term: 0.5 * (a+n)^-s
-        DD sum = p.scalb(-1);
+        DD sum = apn.pow(-s, e);
+        int es = addExponent(intExponent(e[0]), -1);
         // S : k in [0, n-1]
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
-            sum = sum.add(powS.apply(a.add(k), -s));
+            DD r = a.add(k).pow(-s, e);
+            sum = add(sum, es, r, intExponent(e[0]), exp);
+            es = exp[0];
         }
 
-        // I
-        final DD ti = pow.apply(apn, 1 - s).divide(s - 1);
+        // I : (a+p)^(1-s) / (s-1)
+        DD ti = pow.apply(apn, 1 - s, e);
+        long eti = e[0];
+        if (s > 2) {
+            ti = ti.divide(s - 1).frexp(exp);
+            eti += exp[0];
+        }
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
-        if (t0.hi() > ti.hi()) {
-            sum = sum.add(ti).add(t0);
+        if (et0 > eti) {
+            sum = add(sum, es, ti, intExponent(eti), exp);
+            sum = add(sum, exp[0], t0, et0, exp);
         } else {
-            sum = sum.add(t0).add(ti);
+            sum = add(sum, es, t0, et0, exp);
+            sum = add(sum, exp[0], ti, intExponent(eti), exp);
+        }
+        es = exp[0];
+
+        // If the sum of terms is far below min double value then stop.
+        // Check if the current sum cannot be added to
+        // Double.MIN_VALUE in the working precision.
+        if (es < MIN_DOUBLE_EXPONENT - c.getPrecision()) {
+            exp[0] = 0;
+            return DD.ZERO;
         }
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        p = pow.apply(apn, -1 - s);
-        // Use to divide by (a+n)^2
-        final DD apn2 = pow.apply(apn, -2);
+        // Terms cannot overflow using the fractional representation. This also
+        // allows the tail computation to continue further when an individual
+        // part of each term computation would underflow.
+        // Note:
+        // This has a drawback when s > (a+n) and the pochammer function (s)_2k grows
+        // faster than the term (a+n)^-(2k-1-s) reduces. For large s and/or a the
+        // power term would normally underflow and the tail is ignored. Here the
+        // convergence must be possible for all expected values of s and a.
 
         // Rising factorial term : (s)_{2k-1}
-        // Note: When s is large the loop exits before the rising factorial overflows.
-        // (see zeta method for double precision)
-        DD f = DD.of(s);
-        // s+2k-1
-        long s2k = s + 1L;
+        DD f = DD.of(s).frexp(exp);
+        long ef = exp[0];
+
+        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+        DD p = pow.apply(apn, -1 - s, e);
+        long ep = e[0];
+        // Divide by (a+n)^2 using multiplication
+        apn = pow.apply(apn, -2, e);
+        long eapn = e[0];
+
+        // Set the scale for the tail series
+
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
-        DD tsum = DD.ZERO;
-        final double stop = sum.hi() * c.getEps();
-        int i;
-        for (i = 0; i < FDD.length; i++) {
-            final DD t = f.multiply(p).multiply(FDD[i]);
-            tsum = tsum.add(t);
-            if (Math.abs(t.hi()) <= stop) {
+        // Use the tail epsilon to obtain a minimum exponent for terms.
+        final long stop = (long) es - c.getPrecision();
+
+        // s+2k-1
+        long s2k = s + 1L;
+        // Initialise with the first term.
+        // Avoids addition of fractional representation to zero (which has a zero exponent).
+        DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
+        long et = ef + ep + exp[0];
+        int ets = intExponent(et);
+        for (int i = 1; i < FDD.length; i++) {
+            if (et < stop) {
                 break;
             }
             // p = (a+n)^-(2k-1+s)
-            p = p.multiply(apn2);
+            p = p.multiply(apn).frexp(exp);
+            ep += exp[0] + eapn;
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-            // compute the multiplicand as a long as it cannot overflow when 2k is small
-            f = f.multiply(s2k * (s2k + 1L));
+            // compute the multiplicand as a long as it cannot overflow when M is small
+            f = f.multiply(s2k * (s2k + 1L)).frexp(exp);
+            ef += exp[0];
             s2k += 2L;
+            // FDD is finite. f*p in [0, 2).
+            final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
+            et = ef + ep + exp[0];
+            tsum = add(tsum, ets, t, intExponent(et), exp);
+            ets = exp[0];
         }
-        return sum.add(tsum);
+        return add(sum, es, tsum, ets, exp);
+    }
+
+    /**
+     * Helper function to add the fractional representation of two DD numbers.
+     *
+     * @param a Addend a.
+     * @param ae Exponent of a.
+     * @param b Addend b.
+     * @param be Exponent of b.
+     * @param e Exponent of the result.
+     * @return the fraction part of the result
+     */
+    private static DD add(DD a, int ae, DD b, int be, int[] e) {
+        // Add if the overlap is within 106-bits
+        final long diff = (long) ae - be;
+        if (Math.abs(diff) > MAX_EXP_DELTA) {
+            // Special case where the exponent of zero is 0.
+            // This may be larger than the exponent of the other term.
+            if (ae > be && !a.isZero()) {
+                e[0] = ae;
+                return a;
+            }
+            e[0] = be;
+            return b;
+        }
+        final DD r = b.add(a.scalb((int) diff)).frexp(e);
+        e[0] = addExponent(e[0], be);
+        return r;
+    }
+
+    /**
+     * Helper function to add the two exponents and maintain the [min, max]
+     * range of an integer.
+     *
+     * @param a Exponent.
+     * @param b Exponent.
+     * @return (a + b) within the range of an integer
+     * @see Integer#MIN_VALUE
+     * @see Integer#MAX_VALUE
+     */
+    private static int addExponent(int a, int b) {
+        final int r = a + b;
+        // Hackers Delight 2-12:
+        // Overflow if both arguments have the opposite sign of the result
+        if (((a ^ r) & (b ^ r)) < 0) {
+            // Use the sign of the overflow to choose the result
+            return r < 0 ? Integer.MAX_VALUE : Integer.MIN_VALUE;
+        }
+        return r;
+    }
+
+    /**
+     * Clip the long exponent to an integer range.
+     *
+     * <p>Note that use of a direct cast to {@code int} is a 32-bit truncation. If all
+     * lower bits are zero but the high 32-bits contain non-zero bits then a cast is
+     * incorrect. This method ensures {@code long} exponents generated from large
+     * power computations are clipped to the range {@code [-(2^31), 2^31)}. This is
+     * sufficient to detect infinite or zero values, and correctly scale results
+     * using {@link Math#scalb(double, int)} or {@link DD#scalb(int)}.
+     *
+     * @param e Exponent.
+     * @return the exponent as the closest integer
+     */
+    private static int intExponent(long e) {
+        // Test if 32-bit truncation is the same number
+        final int r = (int) e;
+        if (r != e) {
+            return e < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
+        }
+        return r;
     }
 
     /**

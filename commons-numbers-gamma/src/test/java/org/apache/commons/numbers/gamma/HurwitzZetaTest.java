@@ -1845,7 +1845,7 @@ class HurwitzZetaTest {
      *
      * <p>This method is a reproduction of the logic in {@link #zetaNegativeBD(int, double)}
      * so the magnitude of terms that cancel can be computed in the search to find
-     * the roots (see {@link #testDataZetaRoots(int, int, double, double)}).
+     * the roots (see {@link #testDataZetaRoots(int, int, int, int)}).
      *
      * @param a First term in the series to calculate (negative non-integer).
      * @param b Last term in the series inclusive (negative non-integer); result provided.
@@ -1940,7 +1940,7 @@ class HurwitzZetaTest {
         }
 
         // Compute the two terms either side of zero:
-        // -1 < xn < 0 < xn + 1 < 1
+        // -1 < x < 0 < x + 1 < 1
         // These are the largest terms and contain most of the error of the function.
         final DD xn = DD.of(x);
         final DD xp = DD.ONE.add(x);
@@ -1953,8 +1953,8 @@ class HurwitzZetaTest {
             // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
             // All other individual terms are smaller so further DD computation is not possible.
             return diff > 0 ?
-                pp.scalb(intExponent(expp[0])).hi() :
-                pn.scalb(intExponent(expn[0])).hi();
+                Math.scalb(pp.hi(), intExponent(expp[0])) :
+                Math.scalb(pn.hi(), intExponent(expn[0]));
         }
 
         // Here the remaining series above and below zero are effectively both zeta
@@ -1965,7 +1965,7 @@ class HurwitzZetaTest {
         // if anything can be added to these terms.
         if (Math.max(expn[0], expp[0]) > 106) {
             // Limit of double-double arithmetic
-            // Add the smallest to the largest avoiding overflow by re-scaling after the sum
+            // Add a scaled term avoiding overflow by re-scaling after the sum
             return Math.scalb(
                 HurwitzZetaTest.accurateAdd(pn, pp.scalb((int) diff)).hi(),
                 intExponent(expn[0])
@@ -2060,10 +2060,14 @@ class HurwitzZetaTest {
             za = add(za, eza, zb, ezb, exp, add);
             eza = exp[0];
         } else {
-            // zb,z < za
+            // z,zb < za
             z = add(z, ez, zb, ezb, exp, add);
             ez = exp[0];
         }
+        // Note: DD result could be used in evaluating the polygamma function.
+        // The support domain would have to be expanded as a sub-normal zeta can
+        // be multiplied by a large factorial term:
+        // psi(n, z) = (-1)^(n+1) n! zeta(n+1, z)
         z = add(za, eza, z, ez, exp, add);
         return Math.scalb(z.hi(), exp[0]);
     }
@@ -2071,11 +2075,11 @@ class HurwitzZetaTest {
     /**
      * Helper function to add the fractional representation of two DD numbers.
      *
-     * @param a addend a.
-     * @param ae exponent of a.
-     * @param b addend b.
-     * @param be exponent of b.
-     * @param e the exponent of the result.
+     * @param a Addend a.
+     * @param ae Exponent of a.
+     * @param b Addend b.
+     * @param be Exponent of b.
+     * @param e Exponent of the result.
      * @param add Addition operator.
      * @return the fraction part of the result
      */
@@ -2137,7 +2141,7 @@ class HurwitzZetaTest {
         if (r != e) {
             return e < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
         }
-        return (int) e;
+        return r;
     }
 
     /**
@@ -2166,10 +2170,12 @@ class HurwitzZetaTest {
         // The power function uses a long exponent to support the full range
         // of a double to an integer power: (2^1024)^(2^31) = 2^(2^10 * 2^31) = 2^(2^41)
         // Here we can clip the long to an integer. The final result is either
-        // infinite or zero if the exponent is outside [-1075, 1024). Only the first
-        // term is above 1; all other terms are < 1 but can be added exactly even if sub-normal.
-        // Use long to maintain the exponent of sums. The number of terms is small
-        // so adding many full size integers will not overflow.
+        // infinite or zero if the exponent is outside [-1075, 1024) so special
+        // routines are used to clip the long exponents to integer and add them
+        // without exceeding the range of an integer.
+        // Only the first term is above 1; all other terms are < 1 and can be added
+        // exactly even if sub-normal.
+
         final long[] e = {0};
 
         // Power function and add function (allows switching to a faster method for the series)
@@ -2220,8 +2226,7 @@ class HurwitzZetaTest {
 
         // Initialise sum with the first tail term: 0.5 * (a+n)^-s
         DD sum = powS.apply(apn, -s, e);
-        // Here the exponent will be integer: 2^106 + N
-        int es = (int) (e[0] - 1);
+        int es = addExponent(intExponent(e[0]), -1);
         // S : k in [0, n-1]
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
@@ -2298,7 +2303,7 @@ class HurwitzZetaTest {
         // Initialise with the first term.
         // Avoids addition of fractional representation to zero (which has a zero exponent).
         DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
-        long et = exp[0] + ef + ep;
+        long et = ef + ep + exp[0];
         int ets = intExponent(et);
         int i;
         for (i = 1; i < c.getM(); i++) {
@@ -2320,7 +2325,7 @@ class HurwitzZetaTest {
             ef += exp[0];
             // FDD is finite. f*p in [0, 2).
             final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
-            et = exp[0] + ef + ep;
+            et = ef + ep + exp[0];
             tsum = add(tsum, ets, t, intExponent(et), exp, addS);
             ets = exp[0];
         }
