@@ -29,7 +29,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Test the extended precision {@code (x+n)^z} power function for use in the Hurwitz zeta function.
- * 
+ *
  * <p>This class contains a version of {@code powxpn} for a larger domain than the
  * implementation used in the zeta function. It handles {@code a+n < 1} which can
  * overflow. The final version in the {@link HurwitzZeta} class uses a different method
@@ -188,7 +188,7 @@ class PowXPNTest {
             t = z * t * (1 + (z - 1) * t * 0.5);
         }
 
-        // t in [-0.5, 0.5] 
+        // t in [-0.5, 0.5]
         // Corrects r towards overflow/underflow based on s < 1 or s > 1
         return r + r * t;
     }
