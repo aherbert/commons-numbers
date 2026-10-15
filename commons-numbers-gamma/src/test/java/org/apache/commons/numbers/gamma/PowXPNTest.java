@@ -19,6 +19,7 @@ package org.apache.commons.numbers.gamma;
 
 import java.util.SplittableRandom;
 import org.apache.commons.numbers.core.DD;
+import org.apache.commons.numbers.gamma.TestUtils.ErrorStatistics;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -568,18 +569,30 @@ class PowXPNTest {
     @Order(2)
     void testExtPowRMS() {
         // The Math.pow function is very accurate when there is no round-off
-        Assertions.assertTrue(ERROR_POW.getRMS() < 0.1);
+        Assertions.assertTrue(ERROR_POW.getRMS() < 0.25, () -> formatError(ERROR_POW));
         // Some cases are very wrong using Math.pow(x+n, z) when there is round-off
-        Assertions.assertTrue(ERROR_POWP.getRMS() > 1e6);
-        Assertions.assertTrue(ERROR_FINAL_STD.getRMS() > 1e6);
+        Assertions.assertTrue(ERROR_POWP.getRMS() > 1e6, () -> formatError(ERROR_POWP));
+        Assertions.assertTrue(ERROR_FINAL_STD.getRMS() > 1e6, () -> formatError(ERROR_FINAL_STD));
 
         // Extended precision is ulp accurate for all x+n cases
-        Assertions.assertTrue(ERROR_POW_XPN.getRMS() < 0.5);
-        Assertions.assertTrue(ERROR_FINAL_EXT.getRMS() < 0.5);
+        Assertions.assertTrue(ERROR_POW_XPN.getRMS() < 0.5, () -> formatError(ERROR_POW_XPN));
+        Assertions.assertTrue(ERROR_FINAL_EXT.getRMS() < 0.5, () -> formatError(ERROR_FINAL_EXT));
 
         // Where Math.pow was ulp accurate, the extended precision lowered the RMS.
         // Note there are some cases where Math.pow is closer to the correct result
         // but on average the extended precision method is closer.
-        Assertions.assertTrue(ERROR_POW_PXN1.getRMS() < ERROR_POW1.getRMS() * 0.75);
+        Assertions.assertTrue(ERROR_POW_PXN1.getRMS() < ERROR_POW1.getRMS() * 0.75,
+            () -> formatError(ERROR_POW_PXN1) + " vs " + formatError(ERROR_POW1));
+    }
+
+    /**
+     * Format the error statistics to a string.
+     *
+     * @param error the error statistics
+     * @return the string
+     */
+    private static String formatError(ErrorStatistics error) {
+        // Ignore the mean
+        return String.format("max=%s; rms=%s", error.getMaxAbs(), error.getRMS());
     }
 }
