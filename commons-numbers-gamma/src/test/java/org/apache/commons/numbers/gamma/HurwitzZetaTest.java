@@ -2584,6 +2584,83 @@ class HurwitzZetaTest {
         }
     }
 
+    @Test
+    void testFractionalAddAssumptions() {
+        // Adding double-double numbers.
+        // With a fixed mantissa of 106 bits numbers a+b cannot be added if they do not
+        // overlap by 0.5 ulp. This is 2^-106 when the first term is in [1, 2) and b is smaller.
+        // However a double-double has a floating mantissa of at least 106 bits.
+        // When using normalised numbers such as a fractional representation the low part
+        // exponent changes if the round-off from the high part has leading zeros. This expands
+        // the effective mantissa:
+        // x0 1-------
+        // x1         10000000
+        // x1         01-------
+        // x1         001-------
+        // A low part with a no leading zeros must have all trailing zeros
+        // otherwise it will be larger than 0.5 ulp(x0).
+        // So the practical working mantissa of a DD is 107+ bits in all but a single case.
+        // With random low parts we expect the probability we can add the numbers
+        // to reduce by 2 for each halving of the second term.
+        // log2(scale)  p(add)
+        // -107         1.000000
+        // -108         0.500000
+        // -109         0.250000
+        // -110         0.125000
+        // -111         0.062500
+        // -112         0.031250
+        // -b           2^b
+
+        // Special case of a 106-bit mantissa.
+        // The low part is equal to 0.5 ulp(high part).
+        final DD a = DD.ofSum(1.0, Math.scalb(1.0, -53));
+        Assertions.assertEquals(a, a.add(DD.ONE.scalb(-106)));
+
+        // Now test random mantissas.
+        // Fixed seed for stability
+        final SplittableRandom rng = new SplittableRandom(-2471564807353423733L);
+        // A sign for each number: 1 - 0 or 1 - 2
+        final IntSupplier sign = () -> 1 - (rng.nextInt() & 0x2);
+
+        int maxB = 10;
+        final int n = 1 << (maxB + 4);
+        for (int b = 0; b < maxB; b++) {
+            int added = 0;
+            for (int i = 0; i < n; i++) {
+                // Create a number with all random bits.
+                // The random numbers must have a leading 1 bit.
+                // Create numbers in [1, 2) + (0, 1] scaled to be smaller that 0.5 ulp(1.0) = 2^-53.
+                final double x0 = sign.getAsInt() * (1 + rng.nextDouble());
+                final double x1 = sign.getAsInt() * Math.scalb(1 - rng.nextDouble(), -53);
+                final double y0 = sign.getAsInt() * (1 + rng.nextDouble());
+                final double y1 = sign.getAsInt() * Math.scalb(1 - rng.nextDouble(), -53);
+                final DD x = DD.ofSum(x0, x1);
+                final DD y = DD.ofSum(y0, y1);
+                Assertions.assertEquals(x0, x.hi());
+                Assertions.assertEquals(x1, x.lo());
+                Assertions.assertEquals(y0, y.hi());
+                Assertions.assertEquals(y1, y.lo());
+                // Two double-double numbers in [1, 2).
+                final DD s = x.add(y.scalb(-107 - b));
+                if (!x.equals(s)) {
+                    added++;
+                }
+            }
+            // We could do a statistical test across all observations.
+            // Here we just check the observed additions is approximately as expected.
+            // This will fail if the additions are out by 2 which would occur if
+            // the scaling base of 107 was incorrect.
+            final double expected = Math.scalb(1, -b);
+            final double actual = (double) added / n;
+            Assertions.assertEquals(expected, actual, expected * 0.25);
+        }
+    }
+
+    @Test
+    void testAddZero() {
+        // Add a random number to zero it should always be returned.
+    }
+
     /**
      * Test the precision of the double implementation of the zeta function.
      *
