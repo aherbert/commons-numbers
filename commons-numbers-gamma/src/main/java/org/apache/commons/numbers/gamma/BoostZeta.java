@@ -211,7 +211,7 @@ public final class BoostZeta {
         }
         //
         // Trivial case:
-        // Changed threshold from 53 to a higher value where the extended precision result is 1.0.
+        // Changed threshold from 53 to a higher value where result in double precision is 1.0.
         //
         if (s > 53.0000000001) {
             return 1;
@@ -236,9 +236,8 @@ public final class BoostZeta {
             // Code to handle positive even integers is less accurate than the rational
             // function approximation. zetaImp53 is exact except for 1 ULP at s=2.
             //
-            // Remove positive odd integer case:
-            // For odd integers zetaImp53 is exact except for 1 ULP at s=53. This
-            // is exact if the asymptote also includes pow(3, -s).
+            // Remove positive odd integer case using precomputed values:
+            // For odd integers zetaImp53 is exact.
             final int v = (int) s;
             if (v == s) {
                 // Negative odd small integer.
@@ -280,7 +279,7 @@ public final class BoostZeta {
                 // catch overflow conditions when compiled with an appropriate evaluation
                 // policy and return signed infinity, or raise an error. Java floating-point
                 // arithmetic does not create overflow exceptions and will return infinity.
-                // Note that zeta(s > 170) == 1.0
+                // zeta(s > 170) == 1.0 so can be ignored.
                 final double mult = BoostGamma.sinp(0.5 * sc) * 2; // * zeta(s)
                 result = LogGamma.value(s);
                 result -= s * LOG_2PI;
@@ -463,7 +462,8 @@ public final class BoostZeta {
         } else {
             // [1.00000000001455192189104198424, 1.0]
             // Change from: 1 + Math.pow(2, -s);
-            // Adding 3^-s increases ULP accuracy as the result approaches 1.0
+            // Adding 3^-s increases ULP accuracy as the result approaches 1.0.
+            // In particular this fixes a 1 ulp error for integer s=53.
             result = Math.pow(3, -s) + Math.pow(2, -s) + 1;
         }
         return result;
