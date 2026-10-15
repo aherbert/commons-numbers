@@ -530,12 +530,14 @@ public final class HurwitzZeta {
         // Check case of total cancellation.
         final boolean odd = SpecialMath.isOdd(s);
         final double x = a - ca;
+        // If the term is half integer and s is even the computation can be recycled.
+        // Intentional float comparison.
+        final boolean halfInteger = x == -HALF;
 
         // Exponent for fractional representation
         final int[] exp = {0};
 
-        // Intentional float comparison
-        if (odd && x == -HALF) {
+        if (odd && halfInteger) {
             if (s <= MAX_REFLECTION_S) {
                 // Use extended precision but evaluated with precision for a double result
                 final DD r = zetaImp((int) s, DD.ONE.subtract(a), null, exp, Context.DOUBLE);
@@ -563,14 +565,22 @@ public final class HurwitzZeta {
         final long[] expn = {0};
         final long[] expp = {0};
         DD pn = DDMath.pow(xn, -is, expn);
-        DD pp = DDMath.pow(xp, -is, expp);
-        final long delta = expp[0] - expn[0];
-        if (Math.abs(delta) > MAX_EXP_DELTA) {
-            // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
-            // All other individual terms are smaller so further DD computation is not possible.
-            return delta > 0 ?
-                Math.scalb(pp.hi(), intExponent(expp[0])) :
-                Math.scalb(pn.hi(), intExponent(expn[0]));
+        DD pp;
+        final long delta;
+        if (halfInteger) {
+            pp = pn;
+            expp[0] = expn[0];
+            delta = 0;
+        } else {
+            pp = DDMath.pow(xp, -is, expp);
+            delta = expp[0] - expn[0];
+            if (Math.abs(delta) > MAX_EXP_DELTA) {
+                // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
+                // All other individual terms are smaller so further DD computation is not possible.
+                return delta > 0 ?
+                    Math.scalb(pp.hi(), intExponent(expp[0])) :
+                    Math.scalb(pn.hi(), intExponent(expn[0]));
+            }
         }
 
         // Here the remaining series above and below zero are effectively both zeta
@@ -621,8 +631,14 @@ public final class HurwitzZeta {
             // zeta(2, 30) = 0.0339
             // Significant cancellation (leading digits the same) is not possible.
             // Take care to change the sign of a provided result for the zeta method.
-            za = zetaImp(is, xn.negate(), pn.abs(), exp, c);
-            eza = exp[0];
+            if (halfInteger) {
+                // Already computed
+                za = z;
+                eza = ez;
+            } else {
+                za = zetaImp(is, xn.negate(), pn.abs(), exp, c);
+                eza = exp[0];
+            }
             zb = zetaImp(is, DD.ONE.subtract(a), null, exp, c);
             ezb = exp[0];
             // Both terms are positive. Correct the sign for final addition.
