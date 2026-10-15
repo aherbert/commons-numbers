@@ -47,19 +47,19 @@ class PowXPNTest {
     // Collect error statistics
 
     /** Error of Math.pow when (x+n) is exact. Should be below 1 ulp.*/
-    private static TestUtils.ErrorStatistics ERROR_POW = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_POW = new TestUtils.ErrorStatistics();
     /** Error of Math.pow when (x+n) is inexact. Can be very high. */
-    private static TestUtils.ErrorStatistics ERROR_POWP = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_POWP = new TestUtils.ErrorStatistics();
     /** Error of Math.pow when (x+n) is inexact and the result was within 1 ulp. */
-    private static TestUtils.ErrorStatistics ERROR_POW1 = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_POW1 = new TestUtils.ErrorStatistics();
     /** Error of extended precision power function. */
-    private static TestUtils.ErrorStatistics ERROR_POW_PLUS = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_POW_XPN = new TestUtils.ErrorStatistics();
     /** Error of extended precision power function when Math.pow was within 1 ulp. */
-    private static TestUtils.ErrorStatistics ERROR_POW_PLUS1 = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_POW_PXN1 = new TestUtils.ErrorStatistics();
     /** Error of Math.pow when the final implementation uses extended precision. */
-    private static TestUtils.ErrorStatistics ERROR_FINAL_STD = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_FINAL_STD = new TestUtils.ErrorStatistics();
     /** Error of the final implementation using extended precision. */
-    private static TestUtils.ErrorStatistics ERROR_FINAL_EXT = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_FINAL_EXT = new TestUtils.ErrorStatistics();
 
     /**
      * Extended precision power function {@code (x+n)^z}.
@@ -546,12 +546,12 @@ class PowXPNTest {
         // Always 1 ulp
         final double actual = powxpn(x, n, z);
         final long extUlp = TestUtils.assertEquals(expected, actual, 1,
-            ERROR_POW_PLUS::add, () -> String.format("%s, %s, %s", x, n, z));
+            ERROR_POW_XPN::add, () -> String.format("%s, %s, %s", x, n, z));
 
         // To check the extended precision function is better than Math.pow
         if (Math.abs(stdUlp) <= 1) {
             ERROR_POW1.add(stdUlp);
-            ERROR_POW_PLUS1.add(extUlp);
+            ERROR_POW_PXN1.add(extUlp);
         }
 
         // Ensure the final implementation in the HurwitzZeta function is the same when
@@ -574,12 +574,12 @@ class PowXPNTest {
         Assertions.assertTrue(ERROR_FINAL_STD.getRMS() > 1e6);
 
         // Extended precision is ulp accurate for all x+n cases
-        Assertions.assertTrue(ERROR_POW_PLUS.getRMS() < 0.5);
+        Assertions.assertTrue(ERROR_POW_XPN.getRMS() < 0.5);
         Assertions.assertTrue(ERROR_FINAL_EXT.getRMS() < 0.5);
 
         // Where Math.pow was ulp accurate, the extended precision lowered the RMS.
         // Note there are some cases where Math.pow is closer to the correct result
         // but on average the extended precision method is closer.
-        Assertions.assertTrue(ERROR_POW_PLUS1.getRMS() < ERROR_POW1.getRMS() * 0.75);
+        Assertions.assertTrue(ERROR_POW_PXN1.getRMS() < ERROR_POW1.getRMS() * 0.75);
     }
 }

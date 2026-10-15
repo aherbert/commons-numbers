@@ -677,11 +677,20 @@ public final class HurwitzZeta {
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
      *
+     * <p>Support for sub-normal double values is provided by returning the
+     * result using a fractional representation in {@code [0.5, 1)} with
+     * a base-2 exponent.
+     *
+     * <p>The first term can be provided. This must be the fractional representation
+     * with the exponent in {@code exp}.
+     *
      * @param s Argument {@code 1 < s <= 1837}
      * @param a Argument {@code a > 0}
      * @param a0 {@code a^-s} (can be null)
+     * @param exp base-2 exponent of the result.
      * @param c Evaluation context.
-     * @return zeta(s, a)
+     * @return zeta(s, a) fractional part in [0.5, 1)
+     * @see DD#frexp(int[])
      */
     private static DD zetaImp(int s, DD a, DD a0, int[] exp, Context c) {
         // Note:
@@ -817,7 +826,7 @@ public final class HurwitzZeta {
 
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
-        // Use the tail epsilon to obtain a minimum exponent for terms.
+        // Use the tail precision to obtain a minimum exponent for terms.
         final long stop = (long) es - c.getPrecision();
 
         // s+2k-1
