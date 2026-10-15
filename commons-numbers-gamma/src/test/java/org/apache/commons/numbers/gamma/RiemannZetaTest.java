@@ -812,6 +812,8 @@ class RiemannZetaTest {
         "-267, 8.37889029540787223694025360457e+319",
     })
     void testZetaNegativeOddInteger(int s, double z) {
+        // Note: Without using pre-computed values this requires ~1460 ulp to pass.
+        // The function is increasingly inaccurate with larger magnitude -s.
         assertClose(RiemannZeta::value, s, z, 0);
         // Check the function is monotonic in s (relevant when precomputed values are used).
         // This works for close s but not next s
