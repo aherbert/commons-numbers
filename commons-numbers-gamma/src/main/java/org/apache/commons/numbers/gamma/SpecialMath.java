@@ -235,4 +235,52 @@ final class SpecialMath {
         // The isOdd function is correct for all positive finite v.
         return (((long) -v) & 0x1) == 1;
     }
+
+    /**
+     * Return the sum of two integers restricted to the [min, max] range of an integer.
+     *
+     * <p>This will return the appropriate min or max value when {@link Math#addExact(int, int)}
+     * would raise an {@link ArithmeticException}.
+     *
+     * @param a Value.
+     * @param b Value.
+     * @return (a + b) within the range of an integer
+     * @see Integer#MIN_VALUE
+     * @see Integer#MAX_VALUE
+     * @see Math#addExact(int, int)
+     */
+    static int addAsInt(int a, int b) {
+        final int r = a + b;
+        // Overflow if both arguments have the opposite sign of the result
+        if (((a ^ r) & (b ^ r)) < 0) {
+            // Use the sign of the overflow to choose the result
+            return r < 0 ? Integer.MAX_VALUE : Integer.MIN_VALUE;
+        }
+        return r;
+    }
+
+    /**
+     * Return the long value restricted to the [min, max] range of an integer.
+     *
+     * <p>Note that use of a direct cast to {@code int} is a 32-bit truncation. If all
+     * lower bits are zero but the high 32-bits contain non-zero bits then a cast is
+     * incorrect.
+     *
+     * <p>This will return the appropriate min or max value when {@link Math#toIntExact(long)}
+     * would raise an {@link ArithmeticException}.
+     *
+     * @param a Value.
+     * @return the value as the closest integer
+     * @see Integer#MIN_VALUE
+     * @see Integer#MAX_VALUE
+     * @see Math#toIntExact(long)
+     */
+    static int toInt(long a) {
+        // Test if 32-bit truncation is the same number
+        final int r = (int) a;
+        if (r != a) {
+            return a < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
+        }
+        return r;
+    }
 }

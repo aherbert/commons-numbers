@@ -644,15 +644,8 @@ public final class HurwitzZeta {
                 zb = add(zb, ezb, r, intExponent(e[0]), exp);
                 ezb = exp[0];
             }
-            // Sort for the summation by magnitude
-            if (ezb > eza) {
-                final DD tmp = za;
-                za = zb;
-                zb = tmp;
-                final int etmp = eza;
-                eza = ezb;
-                eza = etmp;
-            }
+            // s >= 2. For any -1 < x < 0 : |x|^-s > zeta(s, |x|+1)
+            // No sort required for the summation by magnitude
         }
 
         // Sum in magnitude order
@@ -729,25 +722,13 @@ public final class HurwitzZeta {
             et0 = exp[0];
         }
 
-        // Asymptotic Behavior as a -> inf
-        // https://dlmf.nist.gov/25.11#E43
-        // When a is large the series cannot use a+k.
-        // This reduces to N=0, the I term and the first term of T.
-        if (Math.getExponent(a.hi()) >= c.getPrecision()) {
-            // a^(1-s) / (s - 1) + a^-s / 2
-            // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
-            // sub-normal when s is small as a is large.
-            DD r = pow.apply(a, 1 - s, e);
-            long er = e[0];
-            if (s > 2) {
-                r = r.divide(s - 1).frexp(exp);
-                er += exp[0];
-            }
-            // Add 0.5 * t0 so adjust the exponent
-            return add(r, intExponent(er), t0, addExponent(et0, -1), exp);
-        }
-
-        // Note:
+        // Edge case handling:
+        //
+        // Ignore asymptotic behavior as a -> inf.
+        // When a is large the series cannot use a+k. Occurs when a > 2^106.
+        // This function is never called with large a. The reflection case for
+        // half-integer a requires a < 2^53.
+        //
         // This function is never called with 0 < a < 1 unless t0 is provided and finite.
         // No check for overflow/large t0 is required.
         // Underflow can occur for large s if a is large. The function is not called
@@ -867,12 +848,18 @@ public final class HurwitzZeta {
      * @param e Exponent of the result.
      * @return the fraction part of the result
      */
-    private static DD add(DD a, int ae, DD b, int be, int[] e) {
+    static DD add(DD a, int ae, DD b, int be, int[] e) {
         // Add if the overlap is within 106-bits
         final long diff = (long) ae - be;
         if (Math.abs(diff) > MAX_EXP_DELTA) {
             // Special case where the exponent of zero is 0.
             // This may be larger than the exponent of the other term.
+            // The check for zero is unlikely to be true. Most summations
+            // start from the first term, or are additions of two non-zero terms.
+            // Only the sum of the tail series starts from zero. This pathway is used
+            // when the entire remaining zeta series can be added to the first term,
+            // meaning terms should be close to overlapping the 106 bit first term.
+            // Edge cases are checked using tests.
             if (ae > be && !a.isZero()) {
                 e[0] = ae;
                 return a;
@@ -896,14 +883,7 @@ public final class HurwitzZeta {
      * @see Integer#MAX_VALUE
      */
     private static int addExponent(int a, int b) {
-        final int r = a + b;
-        // Hackers Delight 2-12:
-        // Overflow if both arguments have the opposite sign of the result
-        if (((a ^ r) & (b ^ r)) < 0) {
-            // Use the sign of the overflow to choose the result
-            return r < 0 ? Integer.MAX_VALUE : Integer.MIN_VALUE;
-        }
-        return r;
+        return SpecialMath.addAsInt(a, b);
     }
 
     /**
@@ -920,12 +900,7 @@ public final class HurwitzZeta {
      * @return the exponent as the closest integer
      */
     private static int intExponent(long e) {
-        // Test if 32-bit truncation is the same number
-        final int r = (int) e;
-        if (r != e) {
-            return e < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
-        }
-        return r;
+        return SpecialMath.toInt(e);
     }
 
     /**
@@ -994,7 +969,7 @@ public final class HurwitzZeta {
             // Do not use Math.ulp. Here we know s is finite > 1. Use raw bits.
             // These methods are intrinsic candidates.
             t = Double.longBitsToDouble(Double.doubleToRawLongBits(s) - 1L);
-            // This will be exact as the double+int was 84 bits maximum
+            // (s-t) = ulp(s). Addition to ss will be exact as the double+int was 84 bits maximum
             ss += s - t;
             s = t;
         }
