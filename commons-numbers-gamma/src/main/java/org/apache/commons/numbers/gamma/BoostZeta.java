@@ -266,7 +266,8 @@ public final class BoostZeta {
                 // Set the sign without using sinp.
                 // Bypasses infinity * sinp(0.5 * s) when the reflection formula will overflow.
                 // Assumes 0.5 * s is non-integer since zeta(-2n) = 0.0.
-                return SpecialMath.isOdd(Math.floor(0.5 * s)) ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+                // isOdd requires a positive integer argument.
+                return SpecialMath.isOdd(Math.floor(-0.5 * s)) ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
             }
 
             // Swap: s is now positive; sc = 1 - s

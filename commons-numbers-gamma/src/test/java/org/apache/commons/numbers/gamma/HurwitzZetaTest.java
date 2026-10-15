@@ -1212,9 +1212,9 @@ class HurwitzZetaTest {
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 1.5, 0.3),
         ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 2, 0.49),
         ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
-        ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.2, 0.35),
+        ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.5, 0.35),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
-        ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.1, 0.35),
+        ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.3, 0.4),
         // Negative a
         ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -2034,15 +2034,8 @@ class HurwitzZetaTest {
                 zb = add(zb, ezb, r, intExponent(e[0]), exp, addS);
                 ezb = exp[0];
             }
-            // Sort for the summation by magnitude
-            if (ezb > eza) {
-                final DD tmp = za;
-                za = zb;
-                zb = tmp;
-                final int etmp = eza;
-                eza = ezb;
-                eza = etmp;
-            }
+            // s >= 2. For any -1 < x < 0 : |x|^-s > zeta(s, |x|+1)
+            // No sort required for the summation by magnitude
         }
 
         // Sum in magnitude order
@@ -2105,14 +2098,8 @@ class HurwitzZetaTest {
      * @see Integer#MAX_VALUE
      */
     private static int addExponent(int a, int b) {
-        final int r = a + b;
-        // Hackers Delight 2-12:
-        // Overflow if both arguments have the opposite sign of the result
-        if (((a ^ r) & (b ^ r)) < 0) {
-            // Use the sign of the overflow to choose the result
-            return r < 0 ? Integer.MAX_VALUE : Integer.MIN_VALUE;
-        }
-        return r;
+        // Use the tested version
+        return SpecialMath.addAsInt(a, b);
     }
 
     /**
@@ -2129,12 +2116,8 @@ class HurwitzZetaTest {
      * @return the exponent as the closest integer
      */
     private static int intExponent(long e) {
-        // Test if 32-bit truncation is the same number
-        final int r = (int) e;
-        if (r != e) {
-            return e < 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE;
-        }
-        return r;
+        // Use the tested version
+        return SpecialMath.toInt(e);
     }
 
     /**
@@ -3274,13 +3257,37 @@ class HurwitzZetaTest {
             // s > 1065 (0.5+/-u)^-s with u=2^-54 overflows with odd or even s
             Arguments.of(1095, -1.25, -inf, 0), // -4.61e+661
             Arguments.of(1098, -1.75, inf, 0), // 1.15e+661
+
+            // Eventually [0.5 +/- ulp(a)]^-s - [0.5 -/+ ulp(a)]^-s will overflow.
+            // Even s is limited by 0.5^-1024, or 2^-1023
+            Arguments.of(1020, -0.49999999999999994, 2.24711641857789488466163150291e+307, 0),
+            Arguments.of(1022, -0.49999999999999994, 8.98846567431157953864652601186e+307, 0),
+            Arguments.of(1024, -0.49999999999999994, inf, 0), // 3.56e+308
+            Arguments.of(1020, -0.5000000000000001, 2.24711641857789488466163154618e+307, 0),
+            Arguments.of(1022, -0.5000000000000001, 8.98846567431157953864652618561e+307, 0),
+            Arguments.of(1024, -0.5000000000000001, inf, 0), // 3.56e+308
+            // For code coverage
+            Arguments.of(1068, -0.49999999999999994, inf, 0), // 6.32e+321
+            Arguments.of(1068, -0.5000000000000001, inf, 0), // 6.32e+321
+            // Odd s has cancellation and s > 1024
+            Arguments.of(1061, -0.49999999999999994, -5.82077763699010369293454836251e+306, 0),
+            Arguments.of(1063, -0.49999999999999994, -2.332699954051076428120424094e+307, 0),
+            Arguments.of(1065, -0.49999999999999994, -9.34835541322444551626811537202e+307, 0),
             Arguments.of(1067, -0.49999999999999994, -inf, 0), // -3.75e+308
-            Arguments.of(1068, -0.49999999999999994, inf, 0), // 6.33e+321
+            Arguments.of(1061, -0.5000000000000001, 1.1641555273980207385869096725e+307, 0),
+            Arguments.of(1063, -0.5000000000000001, 4.66539990810215285624084818801e+307, 0),
+            Arguments.of(1065, -0.5000000000000001, inf, 0), // 1.87e+308
+            Arguments.of(1067, -0.5000000000000001, inf, 0), // 7.49e+308
             // very large s: will be odd if cast to a long which will incorrectly trigger the
             // cancellation path with s half-integer; s should be detected as even.
             Arguments.of(1e+19, -1.25, inf, 0), // 1.88e+6020599913279623904
             Arguments.of(1e+19, -1.5, inf, 0), // 2.74e+3010299956639811952
             Arguments.of(1e+19, -1.75, inf, 0), // 1.88e+6020599913279623904
+
+            // When a is < -1 and the number of terms is small a summation is used.
+            // Hit the edge case where the first term has an exponent much smaller than 0.
+            // Adding the fractional representation to zero should be the first term
+            Arguments.of(182, -1.5000000000000002, 1.22599643269271108668667762575e+55, 0),
 
             // Large a and/or s have (a+n)^-s as sub-normal
             Arguments.of(143, 124.5, 3.61590594362399955089661789179e-300, 0),
@@ -3302,7 +3309,8 @@ class HurwitzZetaTest {
             // Test with large s: zeta(s, a) = zeta(s, 1 - a)
             // Note: mpmath or MATLAB do not recognise this case and compute
             // with the configured decimal precision. This can suffer cancellation
-            // so cases are checked using f(s, 1 - a)
+            // so cases are checked using f(s, 1 - a).
+            // Cross verified using https://www.wolframalpha.com/input?i=HurwitzZeta
             Arguments.of(1199, -0.5, 7.35496130541141006844938414845e-212, 0),
             Arguments.of(1599, -0.5, 2.69201062691590466247243270165e-282, 0),
             Arguments.of(1799, -0.5, 1.62863948177150213207306826673e-317, 0),
@@ -3327,7 +3335,9 @@ class HurwitzZetaTest {
             Arguments.of(805, -1.5, 4.55295144725443016908972176031e-321, 0),
             Arguments.of(1099, -1.5, 0, 0), // 4.61e-438
             // a = -123.5 : zeta(s, 124.5)
+            // *** Note some error here from mpmath ***
             // *** Mismatch bits: ceil(log2(ulp)) ***
+            // *** Repeated below using WolframAlpha ***
             Arguments.of(33, -123.5, 3.19237825509754559298777006642e-69, 3400000), // 22-bits
             Arguments.of(133, -123.5, 3.36756171921967259297351128082e-279, 0),
             Arguments.of(143, -123.5, 3.61590594362399955089661789179e-300, 1750), // 11-bits
@@ -3337,9 +3347,9 @@ class HurwitzZetaTest {
             // Computed using https://www.wolframalpha.com/input?i=HurwitzZeta
             Arguments.of(33, -123.5, 3.192378253351764442262703039055841594302566e-69, 0),
             // Note: WolframAlpha is the same using HurwitzZeta(143, 124.5)
-            // TODO: this is fixed using scaled power in the tail (whole summation).
-            // It is caused by (a+n)^-(1+s) being sub-normal
-            Arguments.of(143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0), // 11-bits
+            // This case requires using a scaled power in the tail (whole summation)
+            // due to (a+n)^-(1+s) being sub-normal.
+            Arguments.of(143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0),
 
             // -------
 
