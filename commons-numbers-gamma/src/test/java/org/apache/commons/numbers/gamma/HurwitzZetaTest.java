@@ -3724,19 +3724,21 @@ class HurwitzZetaTest {
     @CsvSource({
         // Limit of s.
         // Set using 2^-s where the full precision of the result of any term (a+k)^-s is below
-        // the min double value.
+        // the min double value:
         // double 1075
         // double-double 1075+53 = 1128
-        //"20, 5, 53, 53", // Fails to converge even on small s
-        //"1075, 6, 53, 16",
-        //"1075, 7, 53, 12",
-        //"1075, 8, 53, 11",
-        "1075, 9, 53, 10",
-        //"20, 11, 106, 106", // Fails to converge even on small s
-        //"1128, 12, 106, 32",
-        "1128, 15, 106, 22",
+        "20, 5, 53, 53", // 0s - Fails to converge even on small s
+        "1075, 6, 53, 16", // 10s
+        "1075, 7, 53, 12", // 10s
+        "1075, 8, 53, 11", // 10s
+        "1075, 9, 53, 10", // 10s
+        // Maximum s used in the total cancellation case (only requires double precision)
+        "1837, 9, 53, 10", // ~30s
+        "20, 11, 106, 106", // 0s - Fails to converge even on small s
+        "1128, 12, 106, 32", // 13s
+        "1128, 15, 106, 22", // 14s
     })
-    // This could be enabled. Each case takes approximately 10-15s.
+    // This could be enabled. Each case takes approximately 10-30s (see above).
     @Disabled("Used to test convergence of the series S when the power term s > a")
     void testTailConvergence(int maxS, int n, int eb, int expectedMaxM) {
         Assertions.assertTrue(maxS > 1);
@@ -3753,7 +3755,10 @@ class HurwitzZetaTest {
         // Iterate s up to the configured max
         for (int s = 2; s <= maxS; s++) {
             // Iterate over a ~ s.
-            // Fail if the highest recorded convergence is at the upper limit.
+            // When s is much larger than (a+n) the series is strongly convergent
+            // Start from a = 1 to verify all a < s work.
+            // If (a+n) > s the tail converges so limit upper a. An assertions will fail the
+            // test if the highest recorded convergence is at the upper limit.
             final double upperA = Math.max(20, 2 * s);
             int obsM = 0;
             for (double a = 1; a <= upperA; a += 1.0) {
@@ -3848,7 +3853,7 @@ class HurwitzZetaTest {
                 if (i >= obsM) {
                     final int m = i;
                     Assertions.assertNotEquals(upperA, a,
-                        () -> "Invalid test range: Upper limit of a for max M=" + m);
+                        () -> "Invalid test range (increase upperA): Upper limit of a for max M=" + m);
                     obsM = i;
                 }
                 // Record the maximum M
