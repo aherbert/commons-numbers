@@ -4072,7 +4072,10 @@ class HurwitzZetaTest {
         "3, 25, 7, 11",
         // Max cancellation 51-bits (~250s)
         "3, 21, 12, 14",
-        // Higher b is impractical to search
+        // Higher b is impractical to search.
+        // This requires optimisation of the BigDecimal implementation to detect
+        // when power terms are sub-normal and stop.
+        // "3, 19, 15, 17",
     })
     @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, int minb, int maxb) throws IOException {
@@ -4083,7 +4086,10 @@ class HurwitzZetaTest {
         Assertions.assertEquals(1, ls & 1, "s must be odd");
         // Context for final evaluation around the root
         // quad-double precision should be able to evaluate to a double-double result
-        final Context context = Context.BD_QUAD_DOUBLE;
+        // Changing this to DOUBLE_DOUBLE speeds up the test by a factor of 0.6.
+        Context context;
+        context = Context.BD_QUAD_DOUBLE;
+        // context = Context.BD_DOUBLE_DOUBLE;
         // Maximum cancellation
         double maxc = 0;
         boolean nonHalfIntegerRoot = false;
