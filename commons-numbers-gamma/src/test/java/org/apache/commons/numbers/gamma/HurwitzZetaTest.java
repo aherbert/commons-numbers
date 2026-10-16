@@ -2061,6 +2061,10 @@ class HurwitzZetaTest {
     /**
      * Helper function to add the fractional representation of two DD numbers.
      *
+     * <p>Note a DD has a floating mantissa of 106+ bits. This method allows adding
+     * a small term to an effectively 107-bit larger term.
+     * See {@link #testFractionalAddAssumptions()}.
+     *
      * @param a Addend a.
      * @param ae Exponent of a.
      * @param b Addend b.
@@ -2070,17 +2074,26 @@ class HurwitzZetaTest {
      * @return the fraction part of the result
      */
     private static DD add(DD a, int ae, DD b, int be, int[] e, BiFunction<DD, DD, DD> add) {
-        // Add if the overlap is within 106-bits
+        // Add if the overlap is within 107-bits.
         final long diff = (long) ae - be;
-        if (Math.abs(diff) > 106) {
+        if (Math.abs(diff) > 107) {
             // Special case where the exponent of zero is 0.
             // This may be larger than the exponent of the other term.
-            if (ae > be && !a.isZero()) {
+            if (ae > be) {
+                if (a.isZero()) {
+                    e[0] = be;
+                    return b;
+                }
                 e[0] = ae;
                 return a;
+            } else {
+                if (b.isZero()) {
+                    e[0] = ae;
+                    return a;
+                }
+                e[0] = be;
+                return b;
             }
-            e[0] = be;
-            return b;
         }
         final DD r = add.apply(b, a.scalb((int) diff)).frexp(e);
         e[0] = addExponent(e[0], be);
@@ -2609,7 +2622,7 @@ class HurwitzZetaTest {
         // -110         0.125000
         // -111         0.062500
         // -112         0.031250
-        // -b           2^b
+        // -107+b       2^-b
 
         // Special case of a 106-bit mantissa.
         // The low part is equal to 0.5 ulp(high part).
@@ -2658,7 +2671,43 @@ class HurwitzZetaTest {
 
     @Test
     void testAddZero() {
-        // Add a random number to zero it should always be returned.
+        // Zero has an exponent of zero in the DD fractional representation.
+        final int[] exp = {-42};
+        final DD z = DD.ZERO.frexp(exp);
+        final int ez = exp[0];
+        Assertions.assertEquals(0, ez);
+        // Add any number to zero in fractional representation and it
+        // should always be returned appropriately scaled
+        final DD x = DD.ofSum(3.45, 5.67).frexp(exp);
+        final int ex = exp[0];
+        DD y;
+        for (final int b : new int[] {0, 1, -13, -263784, 26378468, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
+            // Test implementation
+            y = HurwitzZetaTest.add(z, ez, x, ex + b, exp, DD::add);
+            Assertions.assertEquals(x, y, () -> Integer.toString(b));
+            Assertions.assertEquals(ex + b, exp[0]);
+            y = HurwitzZetaTest.add(x, ex + b, z, ez, exp, DD::add);
+            Assertions.assertEquals(x, y, () -> Integer.toString(b));
+            Assertions.assertEquals(ex + b, exp[0]);
+
+            // Final version
+            y = HurwitzZeta.add(z, ez, x, ex + b, exp);
+            Assertions.assertEquals(x, y, () -> Integer.toString(b));
+            Assertions.assertEquals(ex + b, exp[0]);
+            y = HurwitzZeta.add(x, ex + b, z, ez, exp);
+            Assertions.assertEquals(x, y, () -> Integer.toString(b));
+            Assertions.assertEquals(ex + b, exp[0]);
+        }
+
+        // Zero added to zero.
+        // Do not test scaled zero. DD.frexp will not return a scale for zero
+        // so it will never be passed to the add utility function.
+        y = HurwitzZetaTest.add(z, ez, z, ez, exp, DD::add);
+        Assertions.assertEquals(z, y);
+        Assertions.assertEquals(ez, exp[0]);
+        y = HurwitzZeta.add(z, ez, z, ez, exp);
+        Assertions.assertEquals(z, y);
+        Assertions.assertEquals(ez, exp[0]);
     }
 
     /**
@@ -3076,10 +3125,12 @@ class HurwitzZetaTest {
      * @return the BigDecimal
      */
     private static BigDecimal toBigDecimal(DD f, int exp) {
-        // Convert to BigDecimal without losing precision for sub-normals
-        // r in [0.5, 1.0). This must must be 107 bits above min normal double
-        // so scaling is into normal numbers.
-        if (exp > Double.MIN_EXPONENT + 107) {
+        // Convert to BigDecimal without losing precision for sub-normals.
+        // r in [0.5, 1.0). Since the low part of the DD is floating
+        // the effective mantissa is 106+ bits.
+        // Try scaling the low part. If a normal number then scaling is allowed.
+        // Ignore scaling of a zero low part.
+        if (Math.scalb(Math.abs(f.lo()), exp) >= Double.MIN_NORMAL || f.lo() == 0) {
             return f.scalb(exp).bigDecimalValue();
         }
         // scale by 2^-exp = 1 << -exp
