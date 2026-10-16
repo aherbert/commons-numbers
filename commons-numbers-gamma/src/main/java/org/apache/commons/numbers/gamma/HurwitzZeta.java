@@ -108,8 +108,33 @@ public final class HurwitzZeta {
     private static final int MAX_REFLECTION_S = 1837;
     /** 1/2. */
     private static final double HALF = 0.5;
-    /** Maximum difference in exponents to support double-double addition. */
-    private static final int MAX_EXP_DELTA = 106;
+    /**
+     * Maximum difference in exponents to support double-double addition.
+     * Supports addition of smaller terms to an effectively 107-bit DD number.
+     *
+     * <p>Note a double-double number (x0,x1) has a floating low part (x1) and the effective
+     * mantissa is {@code >= 106} bits. It is only 106 bits if the low part is exactly
+     * +/-0.5 ulp(x0). If the low-part is smaller then the exponent of the low
+     * part changes to expand the mantissa and a smaller DD number can be added
+     * even if their exponents differ by more than 106.
+     * <pre>
+     * (x0,x1)
+     *  x0 1-------
+     *  x1         10000000
+     *  x1         01-------
+     *  x1         001-------
+     * + (y0,y1)           1------- --------
+     * </pre>
+     * <p>The probability of adding a smaller number using an exponent difference of
+     * {@code -107 - b} is approximatey {@code 2^-b}. Using b = 0 allows ignoring
+     * addition of double-double numbers where the probability of changing the least
+     * significant bit of the larger term is less than 0.5, and this is only if the
+     * least significant bit is from an effective mantissa of over 107-bits. The
+     * chance of changing any bits in the high part is zero. Allows computation
+     * of two zeta terms that may have total cancellation in the high 53-bits
+     * to have precision in the lower bits approaching the limit of DD arithmetic.
+     */
+    private static final int MAX_EXP_DELTA = 107;
     /** Downscale to use on the initial rising factorial tail term (always above 1).
      * Equal to Double.MIN_NORMAL: 2^-1022. */
     private static final double DOWNSCALE = 0x1.0p-1022;
@@ -584,7 +609,8 @@ public final class HurwitzZeta {
         }
 
         // Here the remaining series above and below zero are effectively both zeta
-        // evaluations with zeta(s >= 2, a > 1). This is always < 1.65; individual terms x^-s < 1.
+        // evaluations with zeta(s >= 2, a > 1).
+        // This is always < 1.65 (exponent=0); individual terms x^-s < 1 (exponent<0).
         // Exit early if remaining terms cannot be added.
         // The result can be finite even if the rescaled terms are infinite. However
         // we do not support further computation from infinite terms so check
@@ -856,6 +882,8 @@ public final class HurwitzZeta {
 
     /**
      * Helper function to add the fractional representation of two DD numbers.
+     * 
+     * <p>Handles the special case of adding {@link DD#ZERO} which has a zero exponent.
      *
      * @param a Addend a.
      * @param ae Exponent of a.
@@ -863,27 +891,29 @@ public final class HurwitzZeta {
      * @param be Exponent of b.
      * @param e Exponent of the result.
      * @return the fraction part of the result
+     * @see DD#frexp(int[])
      */
     static DD add(DD a, int ae, DD b, int be, int[] e) {
         // Add if the overlap is within 106-bits
-        final long diff = (long) ae - be;
-        if (Math.abs(diff) > MAX_EXP_DELTA) {
-            // Special case where the exponent of zero is 0.
-            // This may be larger than the exponent of the other term.
-            // The check for zero is unlikely to be true. Most summations
-            // start from the first term, or are additions of two non-zero terms.
-            // Only the sum of the tail series starts from zero. This pathway is used
-            // when the entire remaining zeta series can be added to the first term,
-            // meaning terms should be close to overlapping the 106 bit first term.
-            // Edge cases are checked using tests.
-            if (ae > be && !a.isZero()) {
+        final int diff = intExponent((long) ae - be);
+        if (diff > MAX_EXP_DELTA) {
+            // return a or b if a is zero
+            if (a.isZero()) {
+                e[0] = be;
+                return b;
+            }
+            e[0] = ae;
+            return a;
+        } else if (diff < -MAX_EXP_DELTA) {
+            // return b or a if b is zero
+            if (b.isZero()) {
                 e[0] = ae;
                 return a;
             }
             e[0] = be;
             return b;
         }
-        final DD r = b.add(a.scalb((int) diff)).frexp(e);
+        final DD r = b.add(a.scalb(diff)).frexp(e);
         e[0] = addExponent(e[0], be);
         return r;
     }
