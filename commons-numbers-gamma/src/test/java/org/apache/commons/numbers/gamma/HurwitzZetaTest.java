@@ -1215,6 +1215,12 @@ class HurwitzZetaTest {
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.5, 0.35),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.3, 0.4),
+        // Small s sub-normal results use the asymptotic approximation due to large a
+        ZETA_S1_4_AP9_SUB_NORMAL(HurwitzZeta::value, "hzeta_s1_4_ap9_subnormal.csv", 1.4, 0.4),
+        // Some terms of the series (a+k)^-s are sub-normal
+        ZETA_S4_32_AP9_SUB_NORMAL(HurwitzZeta::value, "hzeta_s4_32_ap9_subnormal.csv", 1.5, 0.4),
+        // Method fails when a^-s is sub-normal and the summation is of sub-normal terms
+        ZETA_S32_1024_AP9_SUB_NORMAL(HurwitzZeta::value, "hzeta_s32_1024_ap9_subnormal.csv", 5e6, 5e5),
         // Negative a
         ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -4358,6 +4364,52 @@ class HurwitzZetaTest {
                 shortFormat(ls), shortFormat(us), shortFormat(la), shortFormat(ua)))) {
             for (int i = 0; i < size; i++) {
                 out.printf("%s, %s%n", s.getAsDouble(), a.getAsDouble());
+            }
+        }
+    }
+
+    /**
+     * Create test data for {@code s in [ls, us)} where the terms of the series are
+     * sub-normal.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "1.0000000000000002, 4, false, 9",
+        "4, 32, true, 9",
+        "32, 1024, true, 9",
+    })
+    @Disabled("Used to generate test data")
+    void testDataSubNormalSample(double ls, double us, boolean uniforms, int n) throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Validate arguments
+        Assertions.assertTrue(ls > 1);
+        Assertions.assertTrue(us > ls);
+        // Create samplers
+        final DoubleSupplier s = createSampler(rng, ls, us, uniforms);
+
+        final int size = 3000;
+        final double factor = Math.log(2) * 1023;
+        // Limit a to the range where a^-s will not be significantly larger than (a+n)^-s
+        final double minA = 1.5;
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_s%s_%s_ap%d_subnormal.txt",
+                shortFormat(ls), shortFormat(us), n))) {
+            // Allow for rejection
+            for (int i = 0, j = 0; i < 10 * size && j < size; i++) {
+                final double ss = s.getAsDouble();
+                // min normal = 2^1022. Use 1023 to ensure sub-normal (a+n).
+                // (x+n)^-s ~ 2^-1023
+                // x+n = exp(log(2) * 1023 / s)
+                final double apn = Math.exp(factor / ss);
+                // TODO - fix this...
+                if (apn - 1 < minA) {
+                    // Reject ss as too small
+                    continue;
+                }
+                j++;
+                // If (a+n) is small, sample [a, a+n); otherwise use directly
+                final double a = apn < 0x1p53 ? rng.nextDouble(Math.max(minA, apn - n), apn) : apn;
+                out.printf("%s, %s%n", ss, a);
             }
         }
     }
