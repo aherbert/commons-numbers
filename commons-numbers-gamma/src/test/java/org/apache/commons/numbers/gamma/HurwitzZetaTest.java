@@ -71,11 +71,28 @@ class HurwitzZetaTest {
         "hzeta_s1_4_a8_32.csv",
         "hzeta_s4_32_a1_8.csv",
     };
-    /** Filenames of resources used for the extended precision zeta function using integer s. */
+    /** Filenames of resources used for the extended precision zeta function using integer s
+     * and a in the expected range for the negative a use case. This requires {@code 0 < a < 1}
+     * and {@code a ~ 2N}. Uses small s. When s is large the power series is strongly converging
+     * for {@code a < 0}, and the term very small for {@code a ~ 2N} so it does not impact
+     * the final result. */
     private static final String[] INT_TEST_RESOURCES = {
-        // TODO: create some data with s ~ a up to s = 1075
+        // a -> 1 so that the initial term approaches the smallest magnitude (1.0), and is
+        // the closest magnitude to remaining terms below 1.0.
+        "hzeta_is2_11_a1_1.csv",
+        // a ~ 2N
+        "hzeta_is2_11_a40_41.csv",
+    };
+    /** Filenames of resources used for the extended precision zeta function using integer s.
+     * Includes {@link #INT_TEST_RESOURCES} and contains data where s ~ a to test convergence
+     * of the tail series. */
+    private static final String[] EXT_INT_TEST_RESOURCES = {
         "hzeta_is2_11_a1_1.csv",
         "hzeta_is2_11_a40_41.csv",
+        // Data with s ~ a to test tail convergence
+        "hzeta_s9_1075_tail.csv",
+        "hzeta_s9_1837_tail.csv",
+        "hzeta_s15_1128_tail.csv",
     };
     /** Filenames of resources used for the roots of the zeta function using integer s. */
     private static final String[] ROOT_TEST_RESOURCES = {
@@ -1168,20 +1185,22 @@ class HurwitzZetaTest {
         // Testing implementations for Negative a.
         // Requires accurate evaluation with integer s.
 
-        // The double implementation is accurate
+        // The double implementation is accurate until zeta values are sub-normal
         DOUBLE_ZETA_IS((s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, Context.DOUBLE), INT_TEST_RESOURCES, 1.5, 0.5),
-        // These are within 0.5 ULP as a double-double but rounding put single errors at just over 0.5 ulp
-        BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(), INT_TEST_RESOURCES, 0.55, 0.1),
+        // These are within 0.5 ULP as a double-double but rounding put single errors at just over 0.5 ulp.
+        // The zeta values are far below the min double value.
+        BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(),
+            EXT_INT_TEST_RESOURCES, 0.56, 0.1),
         DD_ZETA_IS((s, a) -> {
             final int[] exp = {0};
             final DD r = HurwitzZetaTest.zeta((int) s, DD.of(a), null, exp, Context.DD_DOUBLE);
             return Math.scalb(r.hi(), exp[0]);
-        }, INT_TEST_RESOURCES, 0.55, 0.1),
+        }, EXT_INT_TEST_RESOURCES, 0.52, 0.1),
 
         // No cancellation - all implementations work
         DOUBLE_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 1.5, 0.5),
         DOUBLE_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 2.0, 0.5),
-        // These use a context to evaluation to double precision
+        // These use a context to evaluate to double precision
         BD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
         BD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
         DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
@@ -2223,6 +2242,7 @@ class HurwitzZetaTest {
         DD sum = powS.apply(apn, -s, e);
         int es = addExponent(intExponent(e[0]), -1);
         // S : k in [0, n-1]
+        // Note k=0 already computed as t0
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
             DD r = powS.apply(a.add(k), -s, e);
@@ -2841,27 +2861,28 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @CsvSource({
         // Full double-double precision (~34 digits)
-        // Exact after N=11. Larger N uses smaller M.
-        "12, 30, 34, 0, -53",
-//        // Use pow in the tail series (no difference)
-//        "12, 30, 34, 16, -53",
+        // Requires N=13. Larger N uses smaller M.
+        "13, 30, 34, 0, -53",
+        // Use pow in the tail series (no difference)
+        "13, 30, 34, 16, -53",
         // If the computation is limited to fewer bits it cannot achieve double-double precision.
         // This has implications for the DD version because DD arithmetic is typically
         // performed to a few eps of 2^-106.
-        "12, 30, 33, 0, -53",
+        "13, 30, 33, 0, -53",
         // Not enough
-        "12, 30, 32, 0, -53",
+        "13, 30, 32, 0, -53",
         // Push more precision.
         // Demonstrates the BigDecimal method can be a reference implementation,
         // e.g. when used to find the roots of zeta (see method to find roots).
-        "20, 30, 53, 40, 0, -59",
+        "20, 30, 53, 0, 0, -59",
         // Full double precision (~17 digits)
-        "6, 15, 18, 0, 0",
-        "6, 15, 17, 0, 0",
+        // Requires N=7. Larger N uses smaller M.
+        "7, 15, 18, 0, 0",
+        "7, 15, 17, 0, 0",
         // Not enough
-        "6, 15, 16, 0, 0",
+        "7, 15, 16, 0, 0",
         // Quad double precision. Requires test resources to have more than 68 digits of precision
-        "30, 50, 70, 0, -159",
+        "30, 40, 70, 0, -159",
         // Not enough
         "35, 40, 65, 0, -159",
     })
@@ -2902,8 +2923,9 @@ class HurwitzZetaTest {
 
                 @Override
                 public String[] getFilenames() {
-                    // TODO: These need to be improved to push zeta(s, a) to the limit
-                    return INT_TEST_RESOURCES;
+                    // Use resources to push zeta(s, a) beyond the limit where it will
+                    // realistically be used
+                    return EXT_INT_TEST_RESOURCES;
                 }
 
                 @Override
@@ -2921,16 +2943,24 @@ class HurwitzZetaTest {
      * <p>Note that when {@code a >= 1} the function requires {@code n >= 6} to converge
      * the tail series in double precision, and {@code n >= 12} in double-double precision.
      * (see {@link #testTailConvergence(int, int, int, int)}. For all
-     * possible {@code a > 0} this requires {@code n + 1} on those limits.
+     * possible {@code a > 0} this requires {@code n + 1} on those limits for convergence.
+     * Higher {@code n} may be required to maximise accuracy.
+     *
+     * <p>Differences between some options may only be observed when using a sub-set of
+     * the {@link #INT_TEST_RESOURCES}. The current resources include data for zeta(s, a) below
+     * the sub-normal range with a ~ s and much larger than 1. The current use case for
+     * the negative a evaluation will use {@code 0 < a < 1} for the major terms on both
+     * sides. Extended precision for positive a may be required for a polygamma implementation
+     * but is not required for the zeta implementation.
      */
     @ParameterizedTest
     @CsvSource({
         // Extended precision
-//        "13, 30, -106, 0, -53",
+        "13, 30, -106, 0, -53",
         // DD.pow and DDMath pow are the similar accuracy when s = 2 and a < 1.
         // When s is larger and a > 1 the DDMath pow gains a few bits in the result
         // but the max is ~105 bits
-//        "13, 30, -106, 3, -53",
+        "13, 30, -106, 3, -53",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
         // be selectively used for the *same* precision. However zeta evaluations
@@ -2939,92 +2969,32 @@ class HurwitzZetaTest {
         // in the total cancellation path which requires double precision
         "13, 30, -106, 1, -53",
 
-//        // Use accurate add for all addition. Lowers max error to below 2 ulp.
-//        "13, 30, -106, 193, -53", // 1 vs 1 + 64 + 128
-//        // Use accurate add only for main addition.
-//        // Lowers RMS error almost as much as always using accurate add.
-//        // Lowers max error less. It is around 2 ulp.
-//        "13, 30, -106, 65, -53", // 1 vs 1 + 64
-
-//        // Use pow in the tail series (no difference)
-//        "13, 30, -106, 19, -53", // 3 vs 3 + 16
-
-        // Higher tail convergence.
-        // No difference to max error. RMS is lower. Higher M.
-//         "13, 20, -108, 3, -53",
-//         "13, 20, -110, 3, -53",
-
-        // Maximum precision. Max ulp is ~1.
+        // Maximum precision. Accurate add and DDMath.pow.
+        // Max ulp is ~1.
         // Note: Cancellation in the negative zeta implementation has not been observed
         // above 55-bits. This level of precision may only gain ~ 1 ulp around the roots.
         "15, 20, -106, 195, -53", // 1 vs 3 + 64 + 128
 
-//        // Full double precision (~17 digits).
-//        "7, 15, -53, 0, 0",
-//        // Extra tail terms lower error in double precision
-//        "7, 15, -58, 0, 0",
-//        // Not enough
-//        "7, 15, -48, 0, 0",
+        // Use accurate add for all addition. Does not change accuracy when
+        // the power term may have several bits of error.
+        "13, 30, -106, 193, -53", // 1 vs 1 + 64 + 128
+
+        // Use pow in the tail series (no difference)
+        "13, 30, -106, 19, -53", // 3 vs 3 + 16
+
+        // Higher tail convergence.
+        // No difference to max error. RMS is lower. Higher M.
+        // "13, 20, -108, 3, -53",
+        // "13, 20, -110, 3, -53",
+
+        // Full double precision (~17 digits).
+        "7, 15, -53, 0, 0",
+        // Extra tail terms lower error in double precision
+        "7, 15, -58, 0, 0",
+        // Not enough
+        "7, 15, -48, 0, 0",
     })
     @Disabled("Used to parameterize the zeta function")
-//    JDK Temurin 25.492-b09
-//    ZETA 12 27 [ 2.29]  2^-106      0     max        3.07011   RMS       0.412309   mean      0.0875241  n 6000  (536ms)
-//    ZETA 13 23 [ 4.26]  2^-106      0     max        2.59016   RMS       0.410850   mean      0.0971494  n 6000  (126ms)
-//    ZETA 14 21 [ 2.97]  2^-106      0     max        2.27674   RMS       0.411569   mean      0.0877914  n 6000  (111ms)
-//    ZETA 15 19 [ 4.57]  2^-106      0     max        2.01027   RMS       0.405337   mean       0.101524  n 6000  (79.7ms)
-//    ZETA 16 18 [ 4.37]  2^-106      0     max        2.57996   RMS       0.407013   mean      0.0915703  n 6000  (103ms)
-//    ZETA 17 17 [ 4.17]  2^-106      0     max        2.71980   RMS       0.413568   mean      0.0992331  n 6000  (64.0ms)
-//    ZETA 18 16 [ 3.98]  2^-106      0     max        1.98655   RMS       0.409168   mean      0.0975157  n 6000  (68.7ms)
-//    ZETA 19 16 [ 2.50]  2^-106      0     max        2.44859   RMS       0.414108   mean      0.0960212  n 6000  (83.2ms)
-//    ZETA 20 15 [ 3.78]  2^-106      0     max        2.42035   RMS       0.420354   mean      0.0959756  n 6000  (61.3ms)
-//    ZETA 21 15 [ 2.40]  2^-106      0     max        2.43510   RMS       0.426675   mean      0.0995124  n 6000  (61.7ms)
-//    ZETA 22 14 [ 3.58]  2^-106      0     max        2.15693   RMS       0.422801   mean      0.0982975  n 6000  (93.3ms)
-//    ZETA 23 14 [ 2.93]  2^-106      0     max        2.82756   RMS       0.421105   mean      0.0960616  n 6000  (97.5ms)
-//    ZETA 24 14 [ 1.65]  2^-106      0     max        2.45491   RMS       0.452852   mean       0.132598  n 6000  (97.4ms)
-//    ZETA 25 13 [ 3.38]  2^-106      0     max        2.26548   RMS       0.435602   mean       0.123050  n 6000  (66.8ms)
-//    ZETA 26 13 [ 2.78]  2^-106      0     max        2.44869   RMS       0.443805   mean       0.128603  n 6000  (64.9ms)
-//    ZETA 27 13 [ 2.20]  2^-106      0     max        2.29412   RMS       0.442603   mean       0.118546  n 6000  (75.2ms)
-//    ZETA 28 13 [ 1.60]  2^-106      0     max        2.57996   RMS       0.442626   mean       0.125948  n 6000  (80.3ms)
-//    ZETA 29 12 [ 3.75]  2^-106      0     max        2.32642   RMS       0.453306   mean       0.130465  n 6000  (87.7ms)
-//    ZETA 30 12 [ 2.64]  2^-106      0     max        3.09103   RMS       0.450510   mean       0.135335  n 6000  (74.0ms)
-//    ZETA 12 27 [ 2.29]  2^-106      3     max        1.85357   RMS       0.337659   mean    -0.00875702  n 6000  (118ms)
-//    ZETA 13 23 [ 4.26]  2^-106      3     max        1.66375   RMS       0.329578   mean    -0.00380905  n 6000  (113ms)
-//    ZETA 14 21 [ 2.97]  2^-106      3     max        2.07906   RMS       0.341900   mean    -0.00516039  n 6000  (75.5ms)
-//    ZETA 15 19 [ 4.57]  2^-106      3     max        1.73543   RMS       0.332590   mean     0.00326387  n 6000  (87.7ms)
-//    ZETA 16 18 [ 4.37]  2^-106      3     max        1.79626   RMS       0.332334   mean    -0.00609823  n 6000  (110ms)
-//    ZETA 17 17 [ 4.17]  2^-106      3     max        1.91673   RMS       0.343813   mean    -0.00106374  n 6000  (110ms)
-//    ZETA 18 16 [ 3.98]  2^-106      3     max        1.97123   RMS       0.341576   mean    -0.00445114  n 6000  (123ms)
-//    ZETA 19 16 [ 2.50]  2^-106      3     max        2.19008   RMS       0.344773   mean     0.00237011  n 6000  (116ms)
-//    ZETA 20 15 [ 3.78]  2^-106      3     max        1.69247   RMS       0.347592   mean    0.000288137  n 6000  (131ms)
-//    ZETA 21 15 [ 2.40]  2^-106      3     max        2.16186   RMS       0.361138   mean     0.00489525  n 6000  (90.5ms)
-//    ZETA 22 14 [ 3.58]  2^-106      3     max        1.93003   RMS       0.360064   mean    -0.00105923  n 6000  (90.4ms)
-//    ZETA 23 14 [ 2.93]  2^-106      3     max        2.43510   RMS       0.352853   mean     0.00441574  n 6000  (88.3ms)
-//    ZETA 24 14 [ 1.65]  2^-106      3     max        2.43829   RMS       0.360489   mean   -5.25587e-05  n 6000  (87.8ms)
-//    ZETA 25 13 [ 3.38]  2^-106      3     max        1.69362   RMS       0.354297   mean     0.00132827  n 6000  (89.7ms)
-//    ZETA 26 13 [ 2.78]  2^-106      3     max        2.15685   RMS       0.359617   mean   -0.000496315  n 6000  (94.4ms)
-//    ZETA 27 13 [ 2.20]  2^-106      3     max        1.91100   RMS       0.364957   mean     0.00319608  n 6000  (94.9ms)
-//    ZETA 28 13 [ 1.60]  2^-106      3     max        1.81662   RMS       0.365004   mean     0.00582140  n 6000  (97.6ms)
-//    ZETA 29 12 [ 3.75]  2^-106      3     max        2.14301   RMS       0.363566   mean     0.00178562  n 6000  (98.2ms)
-//    ZETA 30 12 [ 2.64]  2^-106      3     max        1.93526   RMS       0.373871   mean    0.000988832  n 6000  (119ms)
-//    ZETA 12 27 [ 2.29]  2^-106      1     max        2.31405   RMS       0.377437   mean      0.0616597  n 6000  (64.4ms)
-//    ZETA 13 23 [ 4.26]  2^-106      1     max        2.16908   RMS       0.373585   mean      0.0699618  n 6000  (65.1ms)
-//    ZETA 14 21 [ 2.97]  2^-106      1     max        2.27674   RMS       0.382555   mean      0.0646990  n 6000  (60.1ms)
-//    ZETA 15 19 [ 4.57]  2^-106      1     max        2.01027   RMS       0.374996   mean      0.0785920  n 6000  (60.7ms)
-//    ZETA 16 18 [ 4.37]  2^-106      1     max        2.57996   RMS       0.377833   mean      0.0735059  n 6000  (60.7ms)
-//    ZETA 17 17 [ 4.17]  2^-106      1     max        2.17965   RMS       0.389165   mean      0.0776589  n 6000  (61.8ms)
-//    ZETA 18 16 [ 3.98]  2^-106      1     max        2.00754   RMS       0.390932   mean      0.0768197  n 6000  (63.6ms)
-//    ZETA 19 16 [ 2.50]  2^-106      1     max        2.44859   RMS       0.389018   mean      0.0773909  n 6000  (63.5ms)
-//    ZETA 20 15 [ 3.78]  2^-106      1     max        2.31405   RMS       0.397969   mean      0.0775694  n 6000  (64.6ms)
-//    ZETA 21 15 [ 2.40]  2^-106      1     max        2.43510   RMS       0.404924   mean      0.0777078  n 6000  (73.3ms)
-//    ZETA 22 14 [ 3.58]  2^-106      1     max        2.15693   RMS       0.403686   mean      0.0818054  n 6000  (100ms)
-//    ZETA 23 14 [ 2.93]  2^-106      1     max        2.82756   RMS       0.402097   mean      0.0799600  n 6000  (103ms)
-//    ZETA 24 14 [ 1.65]  2^-106      1     max        2.43829   RMS       0.405664   mean      0.0849162  n 6000  (105ms)
-//    ZETA 25 13 [ 3.38]  2^-106      1     max        2.16978   RMS       0.400977   mean      0.0852163  n 6000  (103ms)
-//    ZETA 26 13 [ 2.78]  2^-106      1     max        2.32642   RMS       0.405747   mean      0.0887224  n 6000  (106ms)
-//    ZETA 27 13 [ 2.20]  2^-106      1     max        2.28386   RMS       0.409589   mean      0.0849096  n 6000  (104ms)
-//    ZETA 28 13 [ 1.60]  2^-106      1     max        2.57996   RMS       0.408873   mean      0.0919685  n 6000  (103ms)
-//    ZETA 29 12 [ 3.75]  2^-106      1     max        2.32642   RMS       0.422648   mean      0.0946815  n 6000  (107ms)
-//    ZETA 30 12 [ 2.64]  2^-106      1     max        2.55036   RMS       0.418220   mean      0.0996763  n 6000  (107ms)
     void testPrecisonDD(int ln, int un, int b, int options, int scale)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
@@ -3066,7 +3036,9 @@ class HurwitzZetaTest {
 
                 @Override
                 public String[] getFilenames() {
-                    return INT_TEST_RESOURCES;
+                    // Use resources to push zeta(s, a) beyond the limit where it will
+                    // realistically be used
+                    return EXT_INT_TEST_RESOURCES;
                 }
 
                 @Override
@@ -3136,8 +3108,9 @@ class HurwitzZetaTest {
         // the effective mantissa is 106+ bits.
         // Try scaling the low part. If a normal number then scaling is allowed.
         // Ignore scaling of a zero low part.
-        if (Math.scalb(Math.abs(f.lo()), exp) >= Double.MIN_NORMAL || f.lo() == 0) {
-            return f.scalb(exp).bigDecimalValue();
+        if (Math.scalb(Math.abs(f.lo()), exp) >= Double.MIN_NORMAL ||
+            f.lo() == 0 && Math.scalb(Math.abs(f.hi()), exp) >= Double.MIN_NORMAL) {
+            return f.scalb(exp).bigDecimalValue().round(MathContext.DECIMAL128);
         }
         // scale by 2^-exp = 1 << -exp
         final BigDecimal v = f.bigDecimalValue();
@@ -4369,7 +4342,46 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Create test data for {@code s in [ls, us)} where the terms of the series are
+     * Create test data for {@code s > a + N} where the tail series may eventually diverge
+     * as the Pochammer term (s)_2k-1 (eventually) grows faster than the power term reduces.
+     * 
+     * @see #testTailConvergence(int, int, int, int)
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // Set using 2^-s where the full precision of the result of any term (a+k)^-s is below
+        // the min double value:
+        // double 1075
+        // double-double 1075+53 = 1128
+        "1075, 9",
+        "1128, 15",
+        // Maximum s used in the total cancellation case (only requires double precision)
+        "1837, 9",
+    })
+    @Disabled("Used to generate test data")
+    void testDataTailConvergence(int maxS, int n) throws IOException {
+        // Validate arguments
+        Assertions.assertTrue(maxS > n);
+        Assertions.assertTrue(n > 1);
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Create samplers
+        final IntSupplier s = () -> n + rng.nextInt(maxS - n);
+
+        final int size = 3000;
+        // Limit a to the range where a^-s will not be significantly larger than (a+n)^-s
+        final double minA = 1.5;
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_s%d_%d_tail.txt", n, maxS))) {
+            for (int i = 0; i < size; i++) {
+                final double ss = s.getAsInt();
+                final double a = rng.nextDouble(Math.max(minA, ss - 2 * n), ss);
+                out.printf("%s, %s%n", ss, a);
+            }
+        }
+    }
+
+    /**
+     * Create test data for integer {@code s in [ls, us)} where the terms of the series are
      * sub-normal.
      */
     @ParameterizedTest

@@ -450,6 +450,7 @@ public final class HurwitzZeta {
         // Initialise sum with the first tail term
         DD sum = DD.of(0.5 * p);
         // S : k in [0, n-1]
+        // Note k=0 already computed as t0
         for (int k = N - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
             sum = sum.add(pow.apply(a, k, -s));
@@ -788,6 +789,7 @@ public final class HurwitzZeta {
         DD sum = apn.pow(-s, e);
         int es = addExponent(intExponent(e[0]), -1);
         // S : k in [0, n-1]
+        // Note k=0 already computed as t0
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
             DD r = a.add(k).pow(-s, e);
