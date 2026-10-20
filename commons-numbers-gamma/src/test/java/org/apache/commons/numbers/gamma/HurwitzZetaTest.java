@@ -2941,17 +2941,31 @@ class HurwitzZetaTest {
      * Test the precision of the DD implementation of the zeta function.
      *
      * <p>Note that when {@code a >= 1} the function requires {@code n >= 6} to converge
-     * the tail series in double precision, and {@code n >= 12} in double-double precision.
-     * (see {@link #testTailConvergence(int, int, int, int)}. For all
-     * possible {@code a > 0} this requires {@code n + 1} on those limits for convergence.
-     * Higher {@code n} may be required to maximise accuracy.
+     * the tail series in double precision, and {@code n >= 12} in double-double
+     * precision. (see {@link #testTailConvergence(int, int, int, int)}. For all possible
+     * {@code a > 0} this requires {@code n + 1} on those limits for convergence. Higher
+     * {@code n} may be required to maximise accuracy.
      *
      * <p>Differences between some options may only be observed when using a sub-set of
-     * the {@link #INT_TEST_RESOURCES}. The current resources include data for zeta(s, a) below
-     * the sub-normal range with a ~ s and much larger than 1. The current use case for
-     * the negative a evaluation will use {@code 0 < a < 1} for the major terms on both
-     * sides. Extended precision for positive a may be required for a polygamma implementation
-     * but is not required for the zeta implementation.
+     * the {@link #EXT_INT_TEST_RESOURCES}. The current resources include data for zeta(s, a)
+     * below the sub-normal range with a ~ s and much larger than 1. The current use case
+     * for the negative a evaluation will use {@code 0 < a < 1} for the major terms on
+     * both sides. Extended precision for positive a may be required for a polygamma
+     * implementation but is not required for the zeta implementation.
+     *
+     * <p>These data contain cases where the result is not accurate to 104+ bits using DD
+     * pow even when the first term is computed using DDMath pow. The next term in the
+     * series (a+1)^-s can have multiple bits of error when s is large and this can
+     * propagate up to the exact first term a^-s when a is far above 1. This can be fixed
+     * by using DDMath for all terms, or optionally choosing to use DDMath when terms
+     * (a+k)^-s are expected to have bit errors that overlap with a^-s. The error bits can
+     * be approximated using ~ 16 * s, although this is a conservative upper bound and it
+     * may be possible to use a few bits lower for the bound. E.g. (a+1)^-100 is expected to
+     * have 1600 ulp error, or log2(1600) ~ 10.6 bits. If this overlaps with a^-100 by
+     * (106 - 11) = 95-bits or more then compute using DDMath. Continue with DDMath
+     * until (a+k)^-s has no overlap with a^-s. When using the ascending sum starting at
+     * (a+N)^-s the running sum must be compared with the known term a^-s. When it approaches
+     * overlap then switch to DDMath pow for remaining terms.
      */
     @ParameterizedTest
     @CsvSource({
