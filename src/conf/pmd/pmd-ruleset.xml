@@ -140,7 +140,8 @@
       <property name="violationSuppressXPath"
         value="./ancestor-or-self::ClassDeclaration[@SimpleName='QuickSelect'
                or @SimpleName='Selection'
-               or @SimpleName='BoostZeta']"/>
+               or @SimpleName='BoostZeta'
+               or @SimpleName='HurwitzZeta']"/>
     </properties>
   </rule>
   <rule ref="category/java/design.xml/NPathComplexity">
@@ -168,6 +169,7 @@
                or @SimpleName='BigFraction'
                or @SimpleName='BoostGamma'
                or @SimpleName='BoostBeta'
+               or @SimpleName='HurwitzZeta'
                or @SimpleName='DD']"/>
     </properties>
   </rule>
@@ -182,6 +184,7 @@
                or @SimpleName='BoostGamma'
                or @SimpleName='BoostBeta'
                or @SimpleName='BoostZeta'
+               or @SimpleName='HurwitzZeta'
                or @SimpleName='InvGamma1pm1'
                or @SimpleName='BrentSolver'
                or @SimpleName='DDMath'

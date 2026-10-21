@@ -108,6 +108,8 @@ public final class HurwitzZeta {
     private static final int MAX_REFLECTION_S = 1837;
     /** 1/2. */
     private static final double HALF = 0.5;
+    /** 2. */
+    private static final int TWO = 2;
     /**
      * Maximum difference in exponents to support double-double addition.
      * Supports addition of smaller terms to an effectively 107-bit DD number.
@@ -590,8 +592,8 @@ public final class HurwitzZeta {
         final DD xp = DD.ONE.add(x);
         final long[] expn = {0};
         final long[] expp = {0};
-        DD pn = DDMath.pow(xn, -is, expn);
-        DD pp;
+        final DD pn = DDMath.pow(xn, -is, expn);
+        final DD pp;
         final long delta;
         if (halfInteger) {
             pp = pn;
@@ -792,7 +794,7 @@ public final class HurwitzZeta {
         // Note k=0 already computed as t0
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
-            DD r = a.add(k).pow(-s, e);
+            final DD r = a.add(k).pow(-s, e);
             sum = add(sum, es, r, intExponent(e[0]), exp);
             es = exp[0];
         }
@@ -800,7 +802,7 @@ public final class HurwitzZeta {
         // I : (a+p)^(1-s) / (s-1)
         DD ti = pow.apply(apn, 1 - s, e);
         long eti = e[0];
-        if (s > 2) {
+        if (s > TWO) {
             ti = ti.divide(s - 1).frexp(exp);
             eti += exp[0];
         }
@@ -845,7 +847,7 @@ public final class HurwitzZeta {
         long ep = e[0];
         // Divide by (a+n)^2 using multiplication
         apn = pow.apply(apn, -2, e);
-        long eapn = e[0];
+        final long eapn = e[0];
 
         // Set the scale for the tail series
 
