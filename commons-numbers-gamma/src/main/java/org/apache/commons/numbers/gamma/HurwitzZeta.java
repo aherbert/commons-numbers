@@ -884,7 +884,7 @@ public final class HurwitzZeta {
 
     /**
      * Helper function to add the fractional representation of two DD numbers.
-     * 
+     *
      * <p>Handles the special case of adding {@link DD#ZERO} which has a zero exponent.
      *
      * @param a Addend a.
