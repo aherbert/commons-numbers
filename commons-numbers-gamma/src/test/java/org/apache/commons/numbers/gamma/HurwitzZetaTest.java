@@ -3186,6 +3186,23 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Spot tests for the zeta function using {@code s = 2}. Uses data from the trigamma test
+     * for a polygamma (psi) implementation:
+     * <pre>
+     * psi(n, x) = (-1)^(n+1) n! zeta(n+1, x).
+     * psi(1, x) = -1^2 * 1! * zeta(2, x)
+     *           = zeta(2, x)
+     * </pre>
+     */
+    @ParameterizedTest
+    @MethodSource(value = "org.apache.commons.numbers.gamma.TrigammaTest#testTrigamma")
+    void testZetaTrigamma(double x, double expected) {
+        // Note: The Trigamma function passes with relative/absolute error 1e-9.
+        // The zeta function is within 1 ULP.
+        TestUtils.assertEquals(expected, HurwitzZeta.value(2, x), 1, null, () -> Double.toString(x));
+    }
+
+    /**
      * Spot tests for the negative zeta test implementations.
      */
     @ParameterizedTest

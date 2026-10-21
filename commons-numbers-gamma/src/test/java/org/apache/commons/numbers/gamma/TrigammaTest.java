@@ -18,7 +18,6 @@ package org.apache.commons.numbers.gamma;
 
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -74,6 +73,7 @@ class TrigammaTest {
             Arguments.of(-1e-3, 1000001.6473414317354171881001598),
             Arguments.of(-1e-4, 100000001.64517450111835638165592),
             Arguments.of(-1e-5, 10000000001.644956472249912465609),
+            Arguments.of(0, Double.POSITIVE_INFINITY),
             Arguments.of(1e-11, 10000000000000001210062.259295271),
             Arguments.of(1e-10, 99999999999999992715.20547096706),
             Arguments.of(1e-9, 999999999999999877.08175114888441),
@@ -99,21 +99,12 @@ class TrigammaTest {
             Arguments.of(20, 0.051270822935203119831536294588382),
             Arguments.of(50, 0.020201333226697125805970645065733),
             Arguments.of(100, 0.010050166663333571395245668465701),
-            Arguments.of(12345.6789, 0.00008100328132573320889689179458686)
+            Arguments.of(12345.6789, 0.00008100328132573320889689179458686),
+            // See NUMBERS-219
+            Arguments.of(Double.NaN, Double.NaN),
+            Arguments.of(Double.POSITIVE_INFINITY, 0),
+            Arguments.of(Double.NEGATIVE_INFINITY, Double.NaN)
         );
-    }
-
-    @Test
-    void testTrigammaZero() {
-        Assertions.assertEquals(Double.POSITIVE_INFINITY, Trigamma.value(0));
-    }
-
-    @Test
-    void testTrigammaNonRealArgs() {
-        // See NUMBERS-219
-        Assertions.assertEquals(Double.NaN, Trigamma.value(Double.NaN));
-        Assertions.assertEquals(0, Trigamma.value(Double.POSITIVE_INFINITY));
-        Assertions.assertEquals(Double.NaN, Trigamma.value(Double.NEGATIVE_INFINITY));
     }
 }
 
