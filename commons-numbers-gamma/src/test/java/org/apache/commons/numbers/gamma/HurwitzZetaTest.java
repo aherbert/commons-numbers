@@ -1476,7 +1476,7 @@ class HurwitzZetaTest {
             DD::add :
             (x, y) -> DD.of(x.hi() + y);
         DD sum;
-        double eps = c.getSumEps();
+        final double eps = c.getSumEps();
         int n;
         if (eps == 0) {
             // Fixed number of terms summed in ascending order of magnitude.
@@ -1815,7 +1815,7 @@ class HurwitzZetaTest {
         // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
         p = apn.pow(-(1 + s), mc);
         // Compute using the power function
-        boolean usePow = c.isSet(Context.TAIL_POW);
+        final boolean usePow = c.isSet(Context.TAIL_POW);
         if (!usePow) {
             // Divide by (a+n)^2 using multiplication
             apn = apn.pow(-2, mc);
@@ -1964,8 +1964,8 @@ class HurwitzZetaTest {
         final DD xp = DD.ONE.add(x);
         final long[] expn = {0};
         final long[] expp = {0};
-        DD pn = DDMath.pow(xn, -s, expn);
-        DD pp = DDMath.pow(xp, -s, expp);
+        final DD pn = DDMath.pow(xn, -s, expn);
+        final DD pp = DDMath.pow(xp, -s, expp);
         final long diff = expp[0] - expn[0];
         if (Math.abs(diff) > 106) {
             // Cannot add these terms given the largest is [0.5, 1.0) with ulp 2^-106.
@@ -2055,7 +2055,7 @@ class HurwitzZetaTest {
             final BiFunction<DD, DD, DD> addS = c.isSet(Context.AA_SERIES) ? HurwitzZetaTest::accurateAdd : DD::add;
             final long[] e = {0};
             for (double aa = a; aa < x; aa += 1.0) {
-                DD r = powS.apply(DD.of(aa), -s, e);
+                final DD r = powS.apply(DD.of(aa), -s, e);
                 zb = add(zb, ezb, r, intExponent(e[0]), exp, addS);
                 ezb = exp[0];
             }
@@ -2245,7 +2245,7 @@ class HurwitzZetaTest {
         // Note k=0 already computed as t0
         for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
-            DD r = powS.apply(a.add(k), -s, e);
+            final DD r = powS.apply(a.add(k), -s, e);
             sum = add(sum, es, r, intExponent(e[0]), exp, addS);
             es = exp[0];
         }
@@ -2301,7 +2301,7 @@ class HurwitzZetaTest {
         DD p = pow.apply(apn, -1 - s, e);
         long ep = e[0];
         // Compute using the power function
-        boolean usePow = c.isSet(Context.TAIL_POW);
+        final boolean usePow = c.isSet(Context.TAIL_POW);
         long eapn = 0;
         if (!usePow) {
             // Divide by (a+n)^2 using multiplication
@@ -2661,7 +2661,7 @@ class HurwitzZetaTest {
         // A sign for each number: 1 - 0 or 1 - 2
         final IntSupplier sign = () -> 1 - (rng.nextInt() & 0x2);
 
-        int maxB = 10;
+        final int maxB = 10;
         final int n = 1 << (maxB + 4);
         for (int b = 0; b < maxB; b++) {
             int added = 0;
@@ -3790,7 +3790,7 @@ class HurwitzZetaTest {
                 // S : k in [0, n-1]
                 for (int k = n - 1; k >= 0; k--) {
                     // Descending k sums in order of magnitude for increased precision
-                    DD r = DD.ofSum(a, k).pow(-s, e);
+                    final DD r = DD.ofSum(a, k).pow(-s, e);
                     sum = add(sum, es, r, intExponent(e[0]), exp, DD::add);
                     es = exp[0];
                 }
@@ -3820,7 +3820,7 @@ class HurwitzZetaTest {
                 long ep = e[0];
                 // Divide by (a+n)^2 using multiplication
                 apn = apn.pow(-2, e);
-                long eapn = e[0];
+                final long eapn = e[0];
 
                 // Sum of an alternating series as each F changes sign.
                 // Sum until terms will not impact the result.
@@ -4104,7 +4104,7 @@ class HurwitzZetaTest {
         double maxc = 0;
         boolean nonHalfIntegerRoot = false;
         // Cases to record
-        final ArrayList<String> cases = new ArrayList<String>();
+        final ArrayList<String> cases = new ArrayList<>();
         // Threshold to include the case in the results
         final double threshold = 45;
         // Used to store information about the maximum a for all s
@@ -4121,9 +4121,9 @@ class HurwitzZetaTest {
                 // Done
                 break;
             }
-            double ua = Math.scalb(1.0, b);
-            double la = ua > 1 ? ua * 0.5 : 0;
-            double ulp = Math.ulp(ua - 0.5);
+            final double ua = Math.scalb(1.0, b);
+            final double la = ua > 1 ? ua * 0.5 : 0;
+            final double ulp = Math.ulp(ua - 0.5);
             // Iterate s
             for (int s = ls; s <= upperS; s += 2) {
                 boolean halfIntegerRoots = roots[s] > 0;
@@ -4182,7 +4182,7 @@ class HurwitzZetaTest {
                     final double[] results = {f0, fx, f1};
                     // Record the root (if not half-integer) and both sides.
                     // Only do this when cancellation of is above the threshold for 1 of the results.
-                    final ArrayList<String> record = new ArrayList<String>();
+                    final ArrayList<String> record = new ArrayList<>();
                     double casec = 0;
                     for (int i = 0; i < 3; i++) {
                         final double a = args[i];

@@ -45,7 +45,7 @@
   <suppress checks="UnnecessaryParentheses" files=".*[/\\]BrentSolver\.java" />
   <suppress checks="UnnecessaryParentheses" files=".*[/\\]gamma[/\\]BoostBeta.java" />
   <suppress checks="UnnecessaryParentheses" files=".*[/\\]gamma[/\\]BoostGamma.java" />
-  <suppress checks="LineLength" files=".*[/\\]gamma[/\\]HurwitzZeta.java" lines="160-212"/>
+  <suppress checks="LineLength" files=".*[/\\]gamma[/\\]HurwitzZeta.java" lines="162-214"/>
   <suppress checks="MethodLength" files=".*[/\\]HurwitzZeta\.java" />
   <!-- All documentation is within deprecated tags. -->
   <suppress checks="SummaryJavadoc" files=".*[/\\]combinatorics[/\\]FactorialDouble.java" />
