@@ -4358,7 +4358,7 @@ class HurwitzZetaTest {
     /**
      * Create test data for {@code s > a + N} where the tail series may eventually diverge
      * as the Pochammer term (s)_2k-1 (eventually) grows faster than the power term reduces.
-     * 
+     *
      * @see #testTailConvergence(int, int, int, int)
      */
     @ParameterizedTest
