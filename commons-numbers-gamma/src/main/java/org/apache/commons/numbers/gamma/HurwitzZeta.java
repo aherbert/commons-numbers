@@ -1056,7 +1056,7 @@ public final class HurwitzZeta {
 
         final double r = Math.pow(s, z);
 
-        // 0 < t < 2^-52 (or < 2^-53 if no bit was moved)
+        // 0 <= t <= 2^-52 (or <= 2^-53 if no bit was moved)
         t = ss / s;
 
         // Compute (1 + t)^z - 1 using a Taylor series of 2 terms with Horner's rule.
