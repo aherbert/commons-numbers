@@ -84,8 +84,8 @@ public final class HurwitzZeta {
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. Equal to 2^-53. */
     private static final double EPS = 0x1.0p-53;
-    /** Mutiplicative inversion of the convergence epsilon. Equal to 2^53. */
-    private static final double INV_EPS = 0x1.0p53;
+    /** Mutiplicative inversion of the convergence epsilon, squared. Equal to 2^106. */
+    private static final double INV_EPS2 = 0x1.0p106;
     /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate.
      * Equal to 2^53 - N. */
     private static final double LARGE_A = (1L << 53) - N;
@@ -500,7 +500,9 @@ public final class HurwitzZeta {
         if (-(1 + s) * Math.getExponent(a + N) >= Double.MIN_EXPONENT) {
             p = UPSCALE * pow.apply(a, N, -s - 1);
         } else {
-            // If (a+n)^-s is non-zero this allows division using normal numbers
+            // If (a+n)^-s is non-zero this allows division using normal numbers.
+            // If it was zero then the series is converged, or the result is sub-normal
+            // and accuracy is already lost and the tail is ignored.
             p = UPSCALE * p / (a + N);
         }
 
@@ -508,10 +510,11 @@ public final class HurwitzZeta {
         double rescale = 1;
         if (stop < Double.MIN_NORMAL) {
             // Compute a scaled tail sum so convergence is on a normal number.
-            // Terms and stop criteria are 2^106 larger.
+            // Sum, tail terms and stop criteria are 2^106 larger.
             // Upscaling sum cannot overflow due to overflow check on t0.
-            stop = sum.hi() * INV_EPS;
-            f *= INV_EPS * INV_EPS;
+            stop = sum.hi();
+            sum = DD.ofSum(sum.hi() * INV_EPS2, sum.lo() * INV_EPS2);
+            f *= INV_EPS2;
             rescale = EPS * EPS;
         }
 
@@ -534,7 +537,7 @@ public final class HurwitzZeta {
             f *= s + k2;
             k2 += 1.0;
         }
-        return sum.add(tsum * rescale).hi();
+        return sum.add(tsum).hi() * rescale;
     }
 
     /**
