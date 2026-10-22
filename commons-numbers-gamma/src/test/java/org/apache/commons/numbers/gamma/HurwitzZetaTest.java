@@ -3844,7 +3844,7 @@ class HurwitzZetaTest {
                     // compute the multiplicand as a long as it cannot overflow when M is small
                     f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
                     ef += exp[0];
-                    // FDD is finite. f*p in [0, 2).
+                    // f*p in [0.25, 2); FDD*2 is finite.
                     final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
                     et = exp[0] + ef + ep;
                     tsum = add(tsum, ets, t, intExponent(et), exp, DD::add);

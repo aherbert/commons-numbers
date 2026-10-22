@@ -94,8 +94,7 @@ public final class HurwitzZeta {
      * all remaining terms for any s could be added to {@code a^-s} when {@code a < 1}.
      *
      * <p>Approximately equal to 2^106 thus remaining terms (all less than 1) cannot be added in
-     * double-double precision. Allows usage in the negative zeta implementation on the initial
-     * terms. */
+     * double-double precision. */
     private static final double LARGE_T0 = 8.11296384146066920939820185959e+31;
     /** Asymptotic threshold for large {@code s} when {@code a < 0}.
      * Used when any possible {@code [0.5+/-ulp(a)]^-s - [0.5-/+ulp(a)]^-s} will overflow.
@@ -370,7 +369,7 @@ public final class HurwitzZeta {
         if (Double.isNaN(s) || Double.isNaN(a) || s < 1 || a == Double.NEGATIVE_INFINITY) {
             return Double.NaN;
         }
-        // s > 1
+        // s >= 1
         // a > -infinity
         // Check special cases
         if (s == Double.POSITIVE_INFINITY) {
@@ -469,16 +468,16 @@ public final class HurwitzZeta {
         }
 
         // T
+        // The following recycles the power term p: (a+n)^-(2k-1+s).
+        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
+        // The first power is (a+n)^-(1+s) not (a+n)^-1.
+        //
         // Rising factorial term : (s)_{2k-1}
         // Note: When s is large the loop exits before the rising factorial overflows.
         // (a+n) >= 9 : 9^-340 = 0 : max (2k-1+s) = 339
         // (339)_{2k-1}; k=50 = Pochammer(339, 99) = 1.5e256
         // The rising factorial will not overflow for k <= 50 before (a+n)^-(2k-1+s) is
         // zero. This is within the length of table F.
-        //
-        // The following recycles the power term p: (a+n)^-(2k-1+s).
-        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
-        // The first power is (a+n)^-(1+s) not (a+n)^-1.
         //
         // If a or s are large then (a+n)^-(2k-1+s) will underflow.
         // We can downscale the rising factorial (always above 1)
@@ -488,7 +487,7 @@ public final class HurwitzZeta {
         // Scaling could dynamically use the exponent of f and p. Here we use
         // fixed scaling which can be pre-applied to a possible sub-normal
         // power term before division by (a+n). This allows a few more terms
-        // of the tail to be computed when the zeta result is sub-normal.
+        // of the tail to be computed when the zeta result or terms are sub-normal.
         double f = s * DOWNSCALE;
         // 2k - 1
         double k2 = 1;
@@ -509,9 +508,9 @@ public final class HurwitzZeta {
         double rescale = 1;
         if (stop < Double.MIN_NORMAL) {
             // Compute a scaled tail sum so convergence is on a normal number.
+            // Terms and stop criteria are 2^106 larger.
             // Upscaling sum cannot overflow due to overflow check on t0.
             stop = sum.hi() * INV_EPS;
-            // Either scale p down or scale f up
             f *= INV_EPS * INV_EPS;
             rescale = EPS * EPS;
         }
@@ -541,6 +540,31 @@ public final class HurwitzZeta {
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} for negative {@code a}.
      *
+     * <p>The zeta function for negative a can be computed by summing all terms (a+k)^-s
+     * until (a+k) is positive and then adding the zeta evaluation for (a+k). This has issues:
+     *
+     * <ul>
+     * <li>As the magnitude of a increases the number of terms to sum becomes impractical.
+     * <li>When s is odd the sum of (a+k)^-s for (a+k) below zero is negative. This results
+     * in cancellation when added to the zeta evaluation for (a+k) above zero and loss of
+     * precision close to roots of the function.
+     * <li>When a is a half-integer and s is odd all the terms for (a+k) below zero
+     * match corresponding terms for (a+k) above zero leading to total cancellation of all
+     * the negative terms.
+     * </ul>
+     *
+     * <p>This implementation computes the sum of (a+k)^-s below zero and above zero
+     * using double-double arithmetic. Addition of double-double sums for the two sides handles
+     * most of the cancellation when s is odd.
+     *
+     * <p>The special case when a is a half-integer and s is odd is handled with a call to
+     * evaluate only the remaining terms on the positive side.
+     * This is named as the reflection identity.
+     *
+     * <p>When the number of terms for (a+k) below zero is large this can be computed using
+     * a difference of zeta evaluations. This has negligible cancellation as one zeta evaluation
+     * will include {@code -1 < (a+k) < 0} and is much larger than the other zeta evaluation.
+     *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be negative.
      *
@@ -550,25 +574,21 @@ public final class HurwitzZeta {
      * @return zeta(s, a)
      */
     private static double zetaNegativeImp(double s, double a, double ca) {
-        // a < 0 (non-integer) and s is a positive integer.
-        // If s is odd then the negative series sum will be negative
-        // and the addition of zeta(s, x > 0) has cancellation.
-        // This is largest when a is close to half-integer.
+        // Exponent for fractional representation
+        final int[] exp = {0};
 
-        // Check case of total cancellation.
+        // Check case of total cancellation
         final boolean odd = SpecialMath.isOdd(s);
         final double x = a - ca;
         // If the term is half integer and s is even the computation can be recycled.
         // Intentional float comparison.
         final boolean halfInteger = x == -HALF;
 
-        // Exponent for fractional representation
-        final int[] exp = {0};
-
         if (odd && halfInteger) {
+            // Compute zeta(s, 1 - a)
             if (s <= MAX_REFLECTION_S) {
                 // Use extended precision but evaluated with precision for a double result
-                final DD r = zetaImp((int) s, DD.ONE.subtract(a), null, exp, Context.DOUBLE);
+                final DD r = zetaImp((int) s, DD.ofDifference(1, a), null, exp, Context.DOUBLE);
                 return Math.scalb(r.hi(), exp[0]);
             }
             // All possible zeta(s, 1-a >= 1.5) underflow
@@ -589,13 +609,14 @@ public final class HurwitzZeta {
         // -1 < x < 0 < x + 1 < 1
         // These are the largest terms and contain most of the error of the function.
         final DD xn = DD.of(x);
-        final DD xp = DD.ONE.add(x);
+        final DD xp = DD.ofSum(1, x);
         final long[] expn = {0};
         final long[] expp = {0};
         final DD pn = DDMath.pow(xn, -is, expn);
         final DD pp;
         final long delta;
         if (halfInteger) {
+            // s must be even so copy the existing positive-valued xn result
             pp = pn;
             expp[0] = expn[0];
             delta = 0;
@@ -619,8 +640,8 @@ public final class HurwitzZeta {
         // we do not support further computation from infinite terms so check
         // if anything can be added to these terms.
         if (Math.max(expn[0], expp[0]) > MAX_EXP_DELTA) {
-            // Limit of double-double arithmetic
-            // Add a scaled term avoiding overflow by re-scaling after the sum
+            // Limit of double-double arithmetic.
+            // Add a scaled term avoiding overflow by re-scaling after the sum.
             return Math.scalb(
                 pn.add(pp.scalb((int) delta)).hi(),
                 intExponent(expn[0])
@@ -659,16 +680,16 @@ public final class HurwitzZeta {
             // zeta(2, 2)  = 0.6449
             // zeta(2, 30) = 0.0339
             // Significant cancellation (leading digits the same) is not possible.
-            // Take care to change the sign of a provided result for the zeta method.
             if (halfInteger) {
                 // Already computed
                 za = z;
                 eza = ez;
             } else {
+                // Take care to change the sign of a provided result for the zeta method.
                 za = zetaImp(is, xn.negate(), pn.abs(), exp, c);
                 eza = exp[0];
             }
-            zb = zetaImp(is, DD.ONE.subtract(a), null, exp, c);
+            zb = zetaImp(is, DD.ofDifference(1, a), null, exp, c);
             ezb = exp[0];
             // Both terms are positive. Correct the sign for final addition.
             if (odd) {
@@ -696,14 +717,15 @@ public final class HurwitzZeta {
         // Sum in magnitude order
         // zb < za : check z against za
         if (ez > eza) {
-            // za,zb < z
+            // za,zb < z : za = za + zb
             za = add(za, eza, zb, ezb, exp);
             eza = exp[0];
         } else {
-            // z,zb < za
+            // z,zb < za : z = z + zb
             z = add(z, ez, zb, ezb, exp);
             ez = exp[0];
         }
+        // z = za + z
         z = add(za, eza, z, ez, exp);
         return Math.scalb(z.hi(), exp[0]);
     }
@@ -740,6 +762,11 @@ public final class HurwitzZeta {
         // without exceeding the range of an integer.
         // Only the first term is above 1; all other terms are < 1 and can be added
         // exactly even if sub-normal.
+        // Addition of fractional representations is handled by a special routine
+        // that can detect addition of zero. Use of scaled addition is not far slower
+        // that standard addition as the result from the power function has to be scaled
+        // for use in standard addition. So the amount of scaling is the same on each term
+        // and the extra expense is re-scaling the running sum.
 
         // For the exponent of the power result
         final long[] e = {0};
@@ -753,7 +780,7 @@ public final class HurwitzZeta {
         // cancellation path. In either case the full ~105 bits in the power result are not
         // required from the pow series.
 
-        // Power function based on the context
+        // Power function for main terms based on the context
         final ScaledPowOperator pow = c.getPow();
 
         // First term may be provided
@@ -875,7 +902,7 @@ public final class HurwitzZeta {
             f = f.multiply(s2k * (s2k + 1L)).frexp(exp);
             ef += exp[0];
             s2k += 2L;
-            // FDD is finite. f*p in [0, 2).
+            // f*p in [0.25, 2); FDD*2 is finite.
             final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
             et = ef + ep + exp[0];
             tsum = add(tsum, ets, t, intExponent(et), exp);
@@ -898,10 +925,10 @@ public final class HurwitzZeta {
      * @see DD#frexp(int[])
      */
     static DD add(DD a, int ae, DD b, int be, int[] e) {
-        // Add if the overlap is within 106-bits
+        // Add if the exponent overlap changes the larger 106-bit term
         final int diff = intExponent((long) ae - be);
         if (diff > MAX_EXP_DELTA) {
-            // return a or b if a is zero
+            // return a, or b if a is zero
             if (a.isZero()) {
                 e[0] = be;
                 return b;
@@ -909,7 +936,7 @@ public final class HurwitzZeta {
             e[0] = ae;
             return a;
         } else if (diff < -MAX_EXP_DELTA) {
-            // return b or a if b is zero
+            // return b, or a if b is zero
             if (b.isZero()) {
                 e[0] = ae;
                 return a;
