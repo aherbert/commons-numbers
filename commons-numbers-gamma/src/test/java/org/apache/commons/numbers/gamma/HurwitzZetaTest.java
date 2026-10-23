@@ -1442,6 +1442,7 @@ class HurwitzZetaTest {
         }
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow.
 
+        // TODO - update this comment
         // ----------
         // Note on sub-normals
         //
@@ -1553,6 +1554,9 @@ class HurwitzZetaTest {
         final double ti = pow.apply(a, n, 1 - s) / (s - 1);
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term
+        // TODO - determine if this is useful. When a in [0, 1] the series is
+        // strongly converging and ti may be much smaller than t0, or a double-double
+        // sum handles the incorrect order.
         if (t0 > ti) {
             sum = add.apply(sum, ti);
             sum = add.apply(sum, t0);
@@ -1626,14 +1630,17 @@ class HurwitzZetaTest {
             f *= 0x1p-1022;
             p *= 0x1p1022;
 
+            // TODO:
+            // Determine if this benefits the sum.
+            // The current DD sum low part is sub-normal. Scaling up allows the
+            // tail to be added to an imprecise sum; and the tail terms
+            // will also be imprecise if p was sub-normal.
             if (stop < Double.MIN_NORMAL) {
-                // Compute a scaled tail sum so convergence is on a normal number
-                // The sum < 2^106 due to a check on t0.
-                // Scaling cannot overflow the stop criteria.
-                stop = sum.hi() * 0x1p106 * c.getTailEps();
-                // Either scale p down or scale f up.
-                // The result is sub-normal so it is likely p was sub-normal or zero
-                // before upscaling.
+                // Compute a scaled tail sum so convergence is on a normal number.
+                // Sum, tail terms and stop criteria are 2^106 larger.
+                // Upscaling sum cannot overflow due to overflow check on t0.
+                sum = sum.scalb(106);
+                stop = sum.hi() * c.getTailEps();
                 f *= 0x1p106;
                 rescale = -106;
             }
@@ -1669,7 +1676,7 @@ class HurwitzZetaTest {
         }
         // Used to histogram convergence when testing
         M[i]++;
-        return sum.add(tsum.scalb(rescale)).hi();
+        return Math.scalb(sum.add(tsum).hi(), rescale);
     }
 
     /**
@@ -3464,9 +3471,9 @@ class HurwitzZetaTest {
             Arguments.of(143, 124.5, 3.61590594362399955089661789179e-300, 0),
 
             // Large a and/or s have a^-s as sub-normal
-            Arguments.of(147, 124.5, 1.48298686245279271827660650487e-308, 1),
-            Arguments.of(148, 124.5, 1.18689831491506998542539609447e-310, 3),
-            Arguments.of(149, 124.5, 9.499650589522059112318304392e-313, 0),
+            Arguments.of(147, 124.5, 1.48298686245279271827660650487e-308, 2),
+            Arguments.of(148, 124.5, 1.18689831491506998542539609447e-310, 4),
+            Arguments.of(149, 124.5, 9.499650589522059112318304392e-313, 1),
             Arguments.of(152, 124.5, 4.87185978234820120308892496184e-319, 1),
 
             // Note: large negative a can be evaluated as complex using mpmath.
@@ -3521,6 +3528,10 @@ class HurwitzZetaTest {
             // This case requires using a scaled power in the tail (whole summation)
             // due to (a+n)^-(1+s) being sub-normal.
             Arguments.of(143, -123.5, 3.615905943623999550732130915723115628045590e-300, 0),
+
+            // Copied from a = 124.5 cases
+            Arguments.of(147, -123.5, 1.48298686245279271827660650487e-308, 0),
+            Arguments.of(149, -123.5, 9.499650589522059112318304392e-313, 0),
 
             // -------
 
