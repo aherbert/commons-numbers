@@ -1174,8 +1174,6 @@ class HurwitzZetaTest {
         String[] getFilenames();
     }
 
-    // TODO - Get more data for larger s and negative a
-
     /**
      * Define the test cases for each resource file for two argument functions.
      * This encapsulates the function to test, the expected maximum and RMS error, and
@@ -1234,12 +1232,15 @@ class HurwitzZetaTest {
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.5, 0.35),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.3, 0.4),
-        // Small s sub-normal results use the asymptotic approximation due to large a
-        ZETA_S1_4_AP9_SUB_NORMAL(HurwitzZeta::value, "hzeta_s1_4_ap9_subnormal.csv", 1.4, 0.4),
-        // Some terms of the series (a+k)^-s are sub-normal
-        ZETA_S4_32_AP9_SUB_NORMAL(HurwitzZeta::value, "hzeta_s4_32_ap9_subnormal.csv", 1.5, 0.4),
-        // Method fails when a^-s is sub-normal and the summation is of sub-normal terms
-        ZETA_S32_1024_AP9_SUB_NORMAL(HurwitzZeta::value, "hzeta_s32_1024_ap9_subnormal.csv", 5e6, 5e5),
+        // Terms of the series (a+k)^-s are sub-normal
+        // 1.67% of results are sub-normal
+        ZETA_S32_1024_AP9_SUB_NORMAL_1023(HurwitzZeta::value, "hzeta_s32_1024_ap9_subnormal1023.csv", 8, 0.5),
+        // 39.2% of results are sub-normal
+        ZETA_S32_1024_AP1_SUB_NORMAL_1040(HurwitzZeta::value, "hzeta_s32_1024_ap1_subnormal1040.csv", 10, 1.2),
+        // 48.6% of results are sub-normal
+        ZETA_S32_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s32_1024_ap1_subnormal1053.csv", 8, 0.9),
+        // 100% of results are sub-normal
+        ZETA_S32_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s32_1024_ap0.1_subnormal1073.csv", 2.6, 0.35),
         // Negative a
         ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -1250,6 +1251,8 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A1_15_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0x1p-30.csv", 0, 0),
         ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0, 0),
         ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+        ZETA_S6_50_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s6_50_na400_999_p0.5_p0x1p-3.csv", 0.52, 0.1),
+        ZETA_S7_51_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s7_51_na400_999_p0.5_p0x1p-3.csv", 1, 0),
         ZETA_ROOTS(HurwitzZeta::value, ROOT_TEST_RESOURCES, 0.7, 0.05);
 
 //        JDK Oracle Corporation 25.503-b01
@@ -2007,10 +2010,8 @@ class HurwitzZetaTest {
         // Evaluate zeta with extra precision
         final Context c = odd ? Context.DD_DOUBLE_DOUBLE : Context.DD_DOUBLE;
 
-        // Used scaled terms in the DD implementation.
+        // Use scaled terms in the DD implementation.
         // This allows correct convergence of the tail when sub-normal.
-        // TODO: Add some test data at the critical point where the result terms are
-        // close to or sub-normal.
 
         exp[0] = intExponent(expp[0]);
         DD z = zeta(s, xp, pp, exp, c);
@@ -2838,10 +2839,7 @@ class HurwitzZetaTest {
                 @Override
                 public String[] getFilenames() {
                     // Use combined data from multiple resources in order to
-                    // find N and M values.
-                    // TODO: These need to be improved to push zeta(s, a) to the limit:
-                    // a < 1
-                    // s > large : a >> 1
+                    // find N and M values
                     return TEST_RESOURCES;
                 }
 
@@ -3610,6 +3608,8 @@ class HurwitzZetaTest {
                         final double a = in.getDouble(1);
                         final double actual = tc.getFunction().applyAsDouble(s, a);
                         final BigDecimal expected = in.getBigDecimal(2);
+                        if (expected.doubleValue() < Double.MIN_NORMAL) {
+                        }
                         TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
                             () -> tc + " s=" + s + ", a=" + a);
                     } catch (final NumberFormatException ex) {
@@ -4412,17 +4412,22 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Create test data for integer {@code s in [ls, us)} where the terms of the series are
+     * Create test data for {@code s in [ls, us)} where the terms of the series are
      * sub-normal.
      */
     @ParameterizedTest
     @CsvSource({
-        "1.0000000000000002, 4, false, 9",
-        "4, 32, true, 9",
-        "32, 1024, true, 9",
+        // (x+n)^-s ~ 2^-b
+        // Only some sub-normal terms
+        "32, 1024, true, 9, 1023",
+        // Many terms of the summation are sub-normal
+        "32, 1024, true, 1, 1040",
+        "32, 1024, true, 1, 1053",
+        // Result should be sub-normal
+        "32, 1024, true, 0.1, 1073",
     })
     @Disabled("Used to generate test data")
-    void testDataSubNormalSample(double ls, double us, boolean uniforms, int n) throws IOException {
+    void testDataSubNormalSample(double ls, double us, boolean uniforms, double n, int b) throws IOException {
         final SplittableRandom rng = new SplittableRandom(SEED);
         // Validate arguments
         Assertions.assertTrue(ls > 1);
@@ -4431,12 +4436,12 @@ class HurwitzZetaTest {
         final DoubleSupplier s = createSampler(rng, ls, us, uniforms);
 
         final int size = 3000;
-        final double factor = Math.log(2) * 1023;
+        final double factor = Math.log(2) * b;
         // Limit a to the range where a^-s will not be significantly larger than (a+n)^-s
         final double minA = 1.5;
         try (PrintStream out = getPrintStream(
-            String.format("hzeta_s%s_%s_ap%d_subnormal.txt",
-                shortFormat(ls), shortFormat(us), n))) {
+            String.format("hzeta_s%s_%s_ap%s_subnormal%d.txt",
+                shortFormat(ls), shortFormat(us), shortFormat(n), b))) {
             // Allow for rejection
             for (int i = 0, j = 0; i < 10 * size && j < size; i++) {
                 final double ss = s.getAsDouble();
@@ -4444,9 +4449,9 @@ class HurwitzZetaTest {
                 // (x+n)^-s ~ 2^-1023
                 // x+n = exp(log(2) * 1023 / s)
                 final double apn = Math.exp(factor / ss);
-                // TODO - fix this...
+                // Require some range for selection of a
                 if (apn - 1 < minA) {
-                    // Reject ss as too small
+                    // Reject ss as too large
                     continue;
                 }
                 j++;
@@ -4488,12 +4493,14 @@ class HurwitzZetaTest {
         // a = -[1.5, 15.5] +/- 9.31e-10
         // This creates large cancellation when a ~ half-integer and requires
         // an extended precision power function to maintain precision over all
-        // terms that cancel. The implementation only uses extended precision on
-        // the most significant terms.
+        // terms that cancel.
         "2, 4, 1, 15, 0.5, 30",
         "3, 5, 1, 15, 0.5, 30",
         // a = -[40.5, 99.5] +/- 9.31e-10
         "3, 5, 40, 99, 0.5, 30",
+        // larger s and a. Avoid the poles at integer a.
+        "6, 50, 400, 999, 0.5, 3",
+        "7, 51, 400, 999, 0.5, 3",
     })
     @Disabled("Used to generate test data")
     void testDataNegativeASample(int ls, int us,
