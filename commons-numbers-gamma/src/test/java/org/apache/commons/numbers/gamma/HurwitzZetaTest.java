@@ -51,6 +51,41 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Test the {@link HurwitzZeta} function.
+ *
+ * <p>This class contains a test implementation for the Euler-Maclaurin formula which can
+ * be configured using an evaluation context. This changes the number of terms in the
+ * series summation (N); the power function used for the terms; and methods to compute the
+ * tail series. Test fixtures exist to run reference data for different contexts to output
+ * the precision. These are disabled but can be used to benchmark any changes to the zeta
+ * implementation. The final implementation has been chosen using options that achieve a
+ * consistent low maximum and root mean squared error across various test data.
+ *
+ * <p>Test fixtures used to generate the data are also provided. The evaluation of
+ * zeta(s, a) on the test data was performed using variable precision implementations in
+ * MATLAB 2026a; or Python's mpmath 1.4.1. Note that mpmath was preferred as the software is
+ * freely available. In some cases mpmath does not converge (it computes different results
+ * in the first 15 digits when the number of digits of precision is changed between 30 and
+ * 100). When the java implementation failed on test cases the data was either recomputed
+ * with higher digits of precision; the reference implementation changed; and/or cases
+ * cross verified using WolframAlpha HurwitzZeta online evaluator and cases updated to the
+ * consensus.
+ *
+ * <p>The Euler-Maclaurin formula integrals are valid for (a+N) above zero, and evaluation
+ * is more stable when (a+N) is many integers above 0. Evaluation of the zeta function
+ * with negative argument {@code a} requires summation of (a+k)^-s until (a+k) is
+ * positive. This sum can be added to the zeta evaluation for the positive (a+k). When the
+ * power term is negative the sum of terms for (a+k) below zero is negative and
+ * cancellation occurs. This class contains a BigDecimal and double-double (DD) test
+ * implementation that sums the terms in extended precision to reduce cancellation. This
+ * is possible as the power term s for negative a must be an integer, otherwise the zeta
+ * result is complex which this implementation does not support. Both BigDecimal and DD
+ * support the power function with an integer exponent, and can compute values that
+ * overflow or underflow a double.
+ * 
+ * <p>Cases of extreme cancellation occurs at the roots of the function. A test fixture
+ * is provided that searches for roots and saves the (s, a) cases for reference evaluation.
+ * These cases require a double-double implementation. Using the double implementation
+ * the cancellation can be so large that the result may have no correct bits.
  */
 class HurwitzZetaTest {
     /** Seed for data generation. */
