@@ -506,21 +506,10 @@ public final class HurwitzZeta {
             p = UPSCALE * p / (a + N);
         }
 
-        double stop = sum.hi() * EPS;
-        double rescale = 1;
-        if (stop < Double.MIN_NORMAL) {
-            // Compute a scaled tail sum so convergence is on a normal number.
-            // Sum, tail terms and stop criteria are 2^106 larger.
-            // Upscaling sum cannot overflow due to overflow check on t0.
-            stop = sum.hi();
-            sum = DD.ofSum(sum.hi() * INV_EPS2, sum.lo() * INV_EPS2);
-            f *= INV_EPS2;
-            rescale = EPS * EPS;
-        }
-
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         // Note: an extended precision sum here has no effect on the final result.
+        final double stop = sum.hi() * EPS;
         double tsum = 0;
         int i;
         for (i = 0; i < F.length; i++) {
@@ -537,7 +526,7 @@ public final class HurwitzZeta {
             f *= s + k2;
             k2 += 1.0;
         }
-        return sum.add(tsum).hi() * rescale;
+        return sum.add(tsum).hi();
     }
 
     /**
