@@ -44,6 +44,65 @@ public final class BoostZeta {
      * large with larger negative {@code s} until all non-zero values cannot be represented
      * as a double. */
     private static final double LARGE_NEGATIVE_S = -267;
+    /** Exact result for zeta(n). The Boost implementation uses precomputed
+     * Bernoulli numbers for the even integer case; and tabulates the odd integer case.
+     * Computed using mpmath (1.14.1). Max n = 53. */
+    private static final double[] Z = {
+        -0.5,
+        Double.POSITIVE_INFINITY,
+        1.64493406684822643647241516665,
+        1.20205690315959428539973816151,
+        1.08232323371113819151600369654,
+        1.03692775514336992633136548646,
+        1.01734306198444913971451792979,
+        1.00834927738192282683979754985,
+        1.00407735619794433937868523851,
+        1.00200839282608221441785276923,
+        1.0009945751278180853371459589,
+        1.00049418860411946455870228253,
+        1.00024608655330804829863799805,
+        1.00012271334757848914675183653,
+        1.00006124813505870482925854511,
+        1.00003058823630702049355172851,
+        1.00001528225940865187173257149,
+        1.00000763719763789976227360029,
+        1.00000381729326499983985646164,
+        1.00000190821271655393892565696,
+        1.00000095396203387279611315204,
+        1.00000047693298678780646311672,
+        1.00000023845050272773299000365,
+        1.00000011921992596531107306779,
+        1.00000005960818905125947961244,
+        1.00000002980350351465228018606,
+        1.00000001490155482836504123466,
+        1.00000000745071178983542949198,
+        1.00000000372533402478845705482,
+        1.0000000018626597235130490064,
+        1.00000000093132743241966818287,
+        1.0000000004656629065033784073,
+        1.0000000002328311833676505492,
+        1.00000000011641550172700519776,
+        1.00000000005820772087902700889,
+        1.00000000002910385044497099687,
+        1.00000000001455192189104198424,
+        1.00000000000727595983505748101,
+        1.00000000000363797954737865119,
+        1.00000000000181898965030706595,
+        1.00000000000090949478402638893,
+        1.0000000000004547473783042154,
+        1.00000000000022737368458246525,
+        1.00000000000011368684076802278,
+        1.00000000000005684341987627586,
+        1.00000000000002842170976889302,
+        1.00000000000001421085482803161,
+        1.00000000000000710542739521085,
+        1.00000000000000355271369133711,
+        1.00000000000000177635684357912,
+        1.00000000000000088817842109308,
+        1.00000000000000044408921031438,
+        1.0000000000000002220446050798,
+        1.00000000000000011102230251411,
+    };
     /** Exact result for zeta(-2n + 1). The Boost implementation uses precomputed
      * Bernoulli numbers for B_2n divided by -2n. Here we tabulate the zeta
      * result as the table size is the same. All other odd negative s are infinite.
@@ -206,9 +265,10 @@ public final class BoostZeta {
      * @return zeta(s)
      */
     private static double zetaImp(double s, double sc) {
-        if (sc == 0) {
-            return Double.POSITIVE_INFINITY;
-        }
+        // This case is handled in the integer s cases:
+        // if sc == 0:
+        //    return infinity
+
         //
         // Trivial case:
         // Changed threshold from 53 to a higher value where result in double precision is 1.0.
@@ -219,36 +279,38 @@ public final class BoostZeta {
         //
         // Start by seeing if we have a simple closed form for integer s:
         //
-        if (Math.floor(s) == s && s < 0) {
-            // Change from Boost implementation to only handle negative s.
-            // Handle any negative even integer. Finite values below -(2^63) are clipped
-            // to -(2^63) and will be even.
-            if (((long) s & 1) == 0) {
-                // Negative even integer
-                return 0;
-            }
-
+        if (Math.floor(s) == s) {
             // Special handling for small integer s using Bernoulli number B_{2n} (B2N).
-            // Note: Change from the Boost implementation:
-            //
-            // Remove positive even integer case:
-            //   2^(v-1) * pow(pi, v) * abs(B2N[v/2]) / v!
-            // Code to handle positive even integers is less accurate than the rational
-            // function approximation. zetaImp53 is exact except for 1 ULP at s=2.
-            //
-            // Remove positive odd integer case using precomputed values:
-            // For odd integers zetaImp53 is exact.
-            final int v = (int) s;
-            if (v == s) {
-                // Negative odd small integer.
-                // Result:
-                // n = (1 - v) / 2
-                // -B2N[n] / (1 - v)
-                final int n = -v / 2;
-                if (n < ZN.length) {
-                    // Tabulated result to avoid B2N division
-                    return ZN[n];
+            if (s < 0) {
+                // Handle any negative even integer. Finite values below -(2^63) are clipped
+                // to -(2^63) and will be even.
+                if (((long) s & 1) == 0) {
+                    // Negative even integer
+                    return 0;
                 }
+                final int v = (int) s;
+                if (v == s) {
+                    // Negative odd small integer.
+                    // Result:
+                    // n = (1 - v) / 2
+                    // -B2N[n] / (1 - v)
+                    final int n = -v / 2;
+                    if (n < ZN.length) {
+                        // Tabulated result to avoid B2N division
+                        return ZN[n];
+                    }
+                }
+            } else {
+                // Positive even integer case:
+                //   2^(v-1) * pow(pi, v) * abs(B2N[v/2]) / v!
+                //
+                // Positive odd integer case uses tabulated values.
+                //
+                // Change to simple tabulation of the exact result for even and odd.
+                // Note: zetaImp53 is exact for integer s except s=2. However the zeta function
+                // has important use in series evaluations and direct look-up will benefit any
+                // downstream use case.
+                return Z[(int) s];
             }
         }
 
