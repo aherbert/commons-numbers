@@ -1567,12 +1567,21 @@ class HurwitzZetaTest {
 
         double expScale = 1;
         // Note: This threshold can be set to t0 < 1e-10 to verify the implementation
-        // works. It is not as accurate as using the power function.
-        if (c.isSet(Context.LOG_SUM_EXP) && t0 < Double.MIN_NORMAL) {
+        // works; or tuned to test different ranges of sub-normal terms.
+        // The choice of when to use log-sum-exp requires knowledge of the expected
+        // output value. The method is generally not as accurate as using the power function
+        // with summation of sub-normal terms and tail scaling. Note that the computed scaled
+        // result is rescaled by multiplication by a sub-normal value which may lose precision.
+        // When the zeta result approaches 2^-1075 the implementation improves accuracy.
+        // When combined with tail scaling it improves the RMS error (not the max error).
+        // On a large amount of test data with a sub-normal zeta result the method is far worse
+        // when tail scaling is omitted so it is not a substitute for tail scaling.
+        if (c.isSet(Context.LOG_SUM_EXP) && t0 < 0x1p-1023 && a + c.getN() < s - 1) {
             // log-sum-exp
             // All terms adjusted by t0. Note that when a is large and s is small
-            // then the I term (a+p)^(1-s) / (s-1) may be larger than t0 and would
-            // be a better choice.
+            // then the I term (a+n)^(1-s) / (s-1) may be larger than t0 and would
+            // be a better choice. Protect this case by requiring a+n < s-1 so that
+            // (a+n)^-s * (a+n) / (s-1) is smaller than (a+n)^-s.
             expScale = t0;
             t0 = 1;
             final double la = -s * Math.log(a);
@@ -2900,6 +2909,7 @@ class HurwitzZetaTest {
         "7, 15, 0, -53, 7", // 3 vs 3 + 4  <== Optimum
         // Using tail series scaling to prevent underflow
         // (exactly the same - test data has no sub-normal results; scaling is exact)
+        // Test resources can be changed to the sub-normal resource to show differences.
         "7, 12, 0, -53, 263", // 7 vs 7 + 256  <== Optimum
 //        // Using divide in the tail series (negligible RMS difference)
 //        "7, 12, 0, -53, 12", // 4 vs 4 + 8
@@ -2924,17 +2934,18 @@ class HurwitzZetaTest {
 //        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
 //         "8, 50, -35, -53, 7",
         // Using log-sum-exp to prevent underflow.
-        // This implementation is significantly worse than a standard
-        // implementation working with sub-normal terms.
+        // This implementation is significantly worse than a standard implementation working 
+        // with sub-normal terms and tail scaling until the first term a^-s
+        // is close to min value (2^-1075) where it improves accuracy.
         // Requires updating the test resources to the sub-normal data;
         // and changing the tolerances so the assertions pass.
-        // "7, 12, 0, -53, 519", // 7 vs 7 + 512
+        // "7, 12, 0, -53, 775", // 7 + 256 vs 7 + 256 + 512
     })
     @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options)
         throws IOException {
         // Default to not use variable convergence on series sum S
-        final double epsS = bs == 0 ?  0 : Math.scalb(1.0, bs);
+        final double epsS = bs == 0 ? 0 : Math.scalb(1.0, bs);
         final double epsT = Math.scalb(1.0, bt);
         for (int n = ln; n <= un; n++) {
             // Reset
@@ -2966,14 +2977,14 @@ class HurwitzZetaTest {
                     // Use combined data from multiple resources in order to
                     // find N and M values
                     return TEST_RESOURCES;
-                    // For testing the log-sum-exp implementation
+                    // For testing the log-sum-exp implementation and tail scaling
                     // return SUB_NORMAL_RESOURCES;
                 }
 
                 @Override
                 public String toString() {
                     return String.format("ZETA %s  2^%d  %3d",
-                        zetaName(0), bt, options);
+                        zetaName(bs == 0 ? c.getN() : 0), bt, options);
                 }
             };
             assertFunction(test);
@@ -3021,7 +3032,6 @@ class HurwitzZetaTest {
             final Context c = Context.of(n, FBD.length)
                 .withMathContext(new MathContext(digits))
                 .withOptions(options);
-            final int nn = n;
             final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
 
                 @Override
@@ -3055,7 +3065,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return String.format("ZETA %s  dps=%3d  %2d", zetaName(nn), digits, options);
+                    return String.format("ZETA %s  dps=%3d  %2d", zetaName(c.getN()), digits, options);
                 }
             };
             assertFunction(test);
@@ -3144,7 +3154,6 @@ class HurwitzZetaTest {
             final Context c = Context.of(n, FDD.length)
                 .withTailEpsilon(eps)
                 .withOptions(options);
-            final int nn = n;
             final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
 
                 @Override
@@ -3182,7 +3191,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return String.format("ZETA %s  2^%-4d  %3d", zetaName(nn), b, options);
+                    return String.format("ZETA %s  2^%-4d  %3d", zetaName(c.getN()), b, options);
                 }
             };
             assertFunction(test);
