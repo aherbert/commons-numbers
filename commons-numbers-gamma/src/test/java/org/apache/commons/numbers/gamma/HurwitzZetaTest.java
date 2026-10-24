@@ -84,8 +84,29 @@ import org.junit.jupiter.params.provider.MethodSource;
  *
  * <p>Cases of extreme cancellation occurs at the roots of the function. A test fixture
  * is provided that searches for roots and saves the (s, a) cases for reference evaluation.
- * These cases require a double-double implementation. Using the double implementation
+ * These cases require a double-double implementation to evaluate. Using the double implementation
  * the cancellation can be so large that the result may have no correct bits.
+ *
+ * <p>Relation to polygamma
+ *
+ * <p>The Hurwitz zeta function is related to the polygamma function (psi) for positive integer
+ * n != 0 (which is the digamma function). A reflection formula exists for polygamma:
+ *
+ * <pre>
+ * psi(n, x) = (-1)^(n+1) n! zeta(n+1, x)
+ *
+ *                                           d^n cot(pi x)
+ * psi(n, 1-x) = (-1)^(n) psi(n, x) + (-1)^n -------------
+ *                                              d x^n
+ * </pre>
+ *
+ * <p>Where [ d^n cot(pi x) / d x^n ] is the n-th partial derivative of cot(pi x)
+ * (cos(pi x) / sin(pi x)).
+ * This derivative can be tabulated for small n and has a general form for large n (see
+ * <a href="https://www.boost.org/doc/libs/latest/libs/math/doc/html/math_toolkit/sf_gamma/polygamma.html">
+ * Boost Polygamma documentation</a>). No attempt was made to use a polygamma reflection
+ * for negative arguments. The derivative of the cot function would be increasingly
+ * imprecise with large n when implemented using double precision trigonometric functions.
  */
 class HurwitzZetaTest {
     /** Seed for data generation. */
