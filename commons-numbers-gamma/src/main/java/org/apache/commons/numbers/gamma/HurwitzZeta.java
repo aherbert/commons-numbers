@@ -84,8 +84,6 @@ public final class HurwitzZeta {
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. Equal to 2^-53. */
     private static final double EPS = 0x1.0p-53;
-    /** Mutiplicative inversion of the convergence epsilon, squared. Equal to 2^106. */
-    private static final double INV_EPS2 = 0x1.0p106;
     /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate.
      * Equal to 2^53 - N. */
     private static final double LARGE_A = (1L << 53) - N;
@@ -460,12 +458,9 @@ public final class HurwitzZeta {
         // I
         final double ti = pow.apply(a, N, 1 - s) / (s - 1);
 
-        // Add in magnitude order. When a in [0, 1] it may be the dominant term
-        if (t0 > ti) {
-            sum = sum.add(ti).add(t0);
-        } else {
-            sum = sum.add(t0).add(ti);
-        }
+        // The dominant term may be t0 when a in [0, 1], or ti when a is large and s is small.
+        // Adding in double-double precision handles either magnitude order.
+        sum = sum.add(t0).add(ti);
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
@@ -474,7 +469,7 @@ public final class HurwitzZeta {
         //
         // Rising factorial term : (s)_{2k-1}
         // Note: When s is large the loop exits before the rising factorial overflows.
-        // (a+n) >= 9 : 9^-340 = 0 : max (2k-1+s) = 339
+        // (a+n) >= 9 : 9^-340 = 0 : max (2k-1+s) = 339 before p underflows.
         // (339)_{2k-1}; k=50 = Pochammer(339, 99) = 1.5e256
         // The rising factorial will not overflow for k <= 50 before (a+n)^-(2k-1+s) is
         // zero. This is within the length of table F.
@@ -988,7 +983,7 @@ public final class HurwitzZeta {
      * Extended precision power function {@code (x+n)^z}.
      *
      * <p>This method is used to compute the power function terms of
-     * the infinite series {@code (a+k)^-s}. It is limited to the expected arguments
+     * the infinite series {@code (x+k)^-s}. It is limited to the expected arguments
      * of the zeta function use case:
      *
      * <ul>

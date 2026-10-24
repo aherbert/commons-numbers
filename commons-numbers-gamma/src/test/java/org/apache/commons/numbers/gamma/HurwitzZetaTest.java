@@ -1553,10 +1553,10 @@ class HurwitzZetaTest {
         // Use of (a+n)^(1-s) = (a+n)^-1 * apn to recycle the power lowers precision.
         final double ti = pow.apply(a, n, 1 - s) / (s - 1);
 
-        // Add in magnitude order. When a in [0, 1] it may be the dominant term
-        // TODO - determine if this is useful. When a in [0, 1] the series is
-        // strongly converging and ti may be much smaller than t0, or a double-double
-        // sum handles the incorrect order.
+        // Add in magnitude order. When a in [0, 1] it may be the dominant term.
+        // Note: This makes a measurable difference to the RMS error when the summation
+        // is in single precision. When in double-double precision the difference
+        // cannot be measured with the test resources.
         if (t0 > ti) {
             sum = add.apply(sum, ti);
             sum = add.apply(sum, t0);
@@ -2847,7 +2847,7 @@ class HurwitzZetaTest {
 //        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
 //         "8, 50, -35, -53, 7",
     })
-    @Disabled("Used to parameterize the zeta function")
+//    @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options)
         throws IOException {
         // Default to not use variable convergence on series sum S
