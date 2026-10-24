@@ -81,7 +81,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * result is complex which this implementation does not support. Both BigDecimal and DD
  * support the power function with an integer exponent, and can compute values that
  * overflow or underflow a double.
- * 
+ *
  * <p>Cases of extreme cancellation occurs at the roots of the function. A test fixture
  * is provided that searches for roots and saves the (s, a) cases for reference evaluation.
  * These cases require a double-double implementation. Using the double implementation
@@ -2847,7 +2847,7 @@ class HurwitzZetaTest {
 //        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
 //         "8, 50, -35, -53, 7",
     })
-//    @Disabled("Used to parameterize the zeta function")
+    @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options)
         throws IOException {
         // Default to not use variable convergence on series sum S
@@ -3654,8 +3654,6 @@ class HurwitzZetaTest {
                         final double a = in.getDouble(1);
                         final double actual = tc.getFunction().applyAsDouble(s, a);
                         final BigDecimal expected = in.getBigDecimal(2);
-                        if (expected.doubleValue() < Double.MIN_NORMAL) {
-                        }
                         TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
                             () -> tc + " s=" + s + ", a=" + a);
                     } catch (final NumberFormatException ex) {
