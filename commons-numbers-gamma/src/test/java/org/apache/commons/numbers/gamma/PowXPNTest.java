@@ -34,7 +34,7 @@ import org.junit.jupiter.params.provider.CsvSource;
  * <p>This class contains a version of {@code powxpn} for a larger domain than the
  * implementation used in the zeta function. It handles {@code a+n < 1} which can
  * overflow. The final version in the {@link HurwitzZeta} class uses a different method
- * for negative {@code a} and so the {@code powxpn} function supports {@code a + n > 1}.
+ * for negative {@code a} and so only supports {@code a + n > 1}.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class PowXPNTest {
@@ -47,16 +47,17 @@ class PowXPNTest {
 
     // Collect error statistics
 
-    /** Error of Math.pow when (x+n) is exact. Should be below 1 ulp.*/
+    /** Error of Math.pow when (x+n) is exact. Should be below 1 ulp. */
     private static final TestUtils.ErrorStatistics ERROR_POW = new TestUtils.ErrorStatistics();
     /** Error of Math.pow when (x+n) is inexact. Can be very high. */
     private static final TestUtils.ErrorStatistics ERROR_POWP = new TestUtils.ErrorStatistics();
-    /** Error of Math.pow when (x+n) is inexact and the result was within 1 ulp. */
+    /** Error of Math.pow when (x+n) is inexact and the result was within 1 ulp. Used to
+     * compare to the rounding performed by the extended precision version. */
     private static final TestUtils.ErrorStatistics ERROR_POW1 = new TestUtils.ErrorStatistics();
     /** Error of extended precision power function. */
     private static final TestUtils.ErrorStatistics ERROR_POW_XPN = new TestUtils.ErrorStatistics();
     /** Error of extended precision power function when Math.pow was within 1 ulp. */
-    private static final TestUtils.ErrorStatistics ERROR_POW_PXN1 = new TestUtils.ErrorStatistics();
+    private static final TestUtils.ErrorStatistics ERROR_POW_XPN1 = new TestUtils.ErrorStatistics();
     /** Error of Math.pow when the final implementation uses extended precision. */
     private static final TestUtils.ErrorStatistics ERROR_FINAL_STD = new TestUtils.ErrorStatistics();
     /** Error of the final implementation using extended precision. */
@@ -133,18 +134,20 @@ class PowXPNTest {
         // Prevent underflow to zero if s > 1 && ss < 0 by
         // decreasing s by 1 ulp and changing ss to positive by adding the ulp.
 
-        // The correction must be in the same direction so we adjust (s,ss)
-        // by 1 ulp to be closer to 1.
+        // The correction must be in the same direction the power result is away from 1.0
+        // so we adjust (s,ss) by 1 ulp to be closer to 1.
         // This does increase accuracy and may prevent infinite or zero results in extreme cases
         // but the branch statements are unpredictable.
         if (s < 1 && ss > 0) {
             t = Math.ulp(s);
             s += t;
             ss -= t;
+            // Now s <= 1, ss < 0
         } else if (s > 1 && ss < 0) {
             t = Math.ulp(s);
             s -= t;
             ss += t;
+            // Now s >= 1, ss > 0
         }
 
         double r = Math.pow(s, z);
@@ -170,7 +173,7 @@ class PowXPNTest {
             final double zt = z * t;
             if (zt < LN_0_5 || zt > LN_1_5) {
                 // Result can be 0 or infinity.
-                // Avoid 0 * infinity (infinite r has been handled).
+                // Avoid infinity * r=0 (infinite r has been handled).
                 t = Math.exp(zt);
                 if (t == Double.POSITIVE_INFINITY && r == 0) {
                     // r == 0 when s < 1 and z is large negative
@@ -178,7 +181,7 @@ class PowXPNTest {
                     // assume (s,ss) < 1 and return zero
                     return 0;
                 }
-                // Can correct s=r=1 to infinity is ss < 0; or 0 if ss > 0
+                // Can correct s=r=1 to infinity if ss < 0; or 0 if ss > 0
                 return r * t;
             }
             // Fall-through with the (1 + t)^z - 1 result
@@ -200,6 +203,9 @@ class PowXPNTest {
      * <p>Note if the series is extended to 3 terms the threshold rises from 2^26 to 2^36.
      * The max error is still 2 ulp and the RMS stays around the same 0.7 level.
      * The power argument is not expected to be large so 2 terms is enough.
+     *
+     * <p>The threshold of 2^26 is conservative and this test can pass if the level is
+     * 2^28, depending on the RNG output. Consistent failures occur at 2^29.
      */
     @Test
     void testExtPowThreshold() {
@@ -208,25 +214,25 @@ class PowXPNTest {
         final int maxB = Math.getExponent(EXT_POW_LIMIT);
         // Test z using powers of 2 to fully explore the range [1, LIMIT)
         for (int b = 0; b < maxB; b++) {
-            double threshold = Math.scalb(1.0, b);
+            final double threshold = Math.scalb(1.0, b);
             for (int i = 0; i < 100; i++) {
                 // The round-off in +/- [0, 2*eps)
-                final double n = (0.5 - rng.nextDouble()) * 0x1p-51;
-                Assertions.assertTrue(Math.abs(n) < 0x1p-52);
-                final double x = rng.nextDouble() * threshold;
-                // (1 + x)^n - 1 = expm1(log1p(x) * n) = expm1(x * n) when x is < 2^-52.
-                final double expected = Math.expm1(x * n);
-                // Taylor series: (1 + x)^n = 1 + nx + n(n-1)x^2/2! + n(n-1)(n-2)x^3/3! + ...
-                // for |x| < 1 and real n
+                final double t = (0.5 - rng.nextDouble()) * 0x1p-51;
+                Assertions.assertTrue(Math.abs(t) < 0x1p-52);
+                final double z = rng.nextDouble() * threshold;
+                // (1 + t)^z - 1 = expm1(log1p(t) * z) = expm1(t * z) when t is < 2^-52.
+                final double expected = Math.expm1(Math.log1p(t) * z);
+                // Taylor series: (1 + t)^z = 1 + zt + z(z-1)t^2/2! + z(z-1)(z-2)t^3/3! + ...
+                // for |t| < 1 and real z
                 // 2-term version
-                final double actual = x * n * (1 + (x - 1) * n * 0.5);
+                final double actual = z * t * (1 + (z - 1) * t * 0.5);
                 // 3-term version (see method javadoc why this is not required)
-                //final double actual = z * t * (1 + (z - 1) * t * 0.5 * (1 + (z - 2) * t * 0.3333333333333333));
+                // final double actual = z * t * (1 + (z - 1) * t * 0.5 * (1 + (z - 2) * t * 0.3333333333333333));
                 TestUtils.assertEquals(expected, actual, 2, stats::add,
                     () -> Integer.toString(Math.getExponent(threshold)));
             }
         }
-        Assertions.assertTrue(stats.getRMS() < 0.75, () -> Double.toString(stats.getRMS()));
+        Assertions.assertTrue(stats.getRMS() < 0.7, () -> Double.toString(stats.getRMS()));
     }
 
     @ParameterizedTest
@@ -525,9 +531,9 @@ class PowXPNTest {
         if (lo == 0) {
             // Expect standard pow to be 1 ulp (it approaches 0 ulp RMS)
             stdUlp = TestUtils.assertEquals(expected, Math.pow(x + n, z), 1,
-                ERROR_POW::add, () -> String.format("%s, %s, %s", x, n, z));
+                ERROR_POW::add, () -> String.format("pow(%s + %d, %s)", x, n, z));
         } else {
-            // Skip edge cases of x+1 == 1 which have round-off
+            // Skip edge cases of x+1 == 1 which have round-off for standard pow
             final double xpn = x + n;
             if (xpn == 1) {
                 // Flag to ignore
@@ -541,25 +547,26 @@ class PowXPNTest {
             } else {
                 // This can be very wrong
                 stdUlp = TestUtils.assertEquals(expected, Math.pow(xpn, z), 10000000000L,
-                    ERROR_POWP::add, () -> String.format("%s, %s, %s", x, n, z));
+                    ERROR_POWP::add, () -> String.format("pow(%s + %d, %s)", x, n, z));
             }
         }
         // Always 1 ulp
         final double actual = powxpn(x, n, z);
         final long extUlp = TestUtils.assertEquals(expected, actual, 1,
-            ERROR_POW_XPN::add, () -> String.format("%s, %s, %s", x, n, z));
+            ERROR_POW_XPN::add, () -> String.format("powxpn(%s, %d, %s)", x, n, z));
 
         // To check the extended precision function is better than Math.pow
         if (Math.abs(stdUlp) <= 1) {
             ERROR_POW1.add(stdUlp);
-            ERROR_POW_PXN1.add(extUlp);
+            ERROR_POW_XPN1.add(extUlp);
         }
 
         // Ensure the final implementation in the HurwitzZeta function is the same when
         // the domain is applicable. Collect error statistics to compare to Math.pow.
         // Ignore edge case where x+1 == 1 with round-off.
         if (x > 0 && n >= 1 && z >= -EXT_POW_LIMIT && stdUlp != Long.MAX_VALUE) {
-            Assertions.assertEquals(actual, HurwitzZeta.extPowxpn(x, n, z), "Final implementation differs");
+            Assertions.assertEquals(actual, HurwitzZeta.extPowxpn(x, n, z),
+                () -> String.format("final pow(%s + %d, %s)", x, n, z));
             ERROR_FINAL_STD.add(stdUlp);
             ERROR_FINAL_EXT.add(extUlp);
         }
@@ -581,8 +588,8 @@ class PowXPNTest {
         // Where Math.pow was ulp accurate, the extended precision lowered the RMS.
         // Note there are some cases where Math.pow is closer to the correct result
         // but on average the extended precision method is closer.
-        Assertions.assertTrue(ERROR_POW_PXN1.getRMS() < ERROR_POW1.getRMS() * 0.75,
-            () -> formatError(ERROR_POW_PXN1) + " vs " + formatError(ERROR_POW1));
+        Assertions.assertTrue(ERROR_POW_XPN1.getRMS() < ERROR_POW1.getRMS() * 0.75,
+            () -> formatError(ERROR_POW_XPN1) + " vs " + formatError(ERROR_POW1));
     }
 
     /**
