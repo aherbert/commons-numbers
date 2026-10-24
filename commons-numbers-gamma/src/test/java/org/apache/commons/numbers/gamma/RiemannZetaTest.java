@@ -608,8 +608,15 @@ class RiemannZetaTest {
         "54, 1.0000000000000000555111512484548124372373659050943",
     })
     void testZetaEvenInteger(int s, double z) {
-        // Exact except at s=2
-        assertClose(RiemannZeta::value, s, z, s == 2 ? 1 : 0);
+        // Boost uses Bernoulli numbers to compute the value.
+        // However the 53-bit rational approximation is exact for all even s != 2.
+        // The final implementation uses tabulated values so positive even and odd
+        // integer s are handled together.
+        // Check this is exact.
+        assertClose(RiemannZeta::value, s, z, 0);
+        // Check the function is monotonic in s (relevant when precomputed values are used).
+        Assertions.assertTrue(z >= RiemannZeta.value(Math.nextUp((double) s)));
+        Assertions.assertTrue(z <= RiemannZeta.value(Math.nextDown((double) s)));
     }
 
     @ParameterizedTest
