@@ -438,7 +438,7 @@ final class TestUtils {
      * @param expected expected value
      * @param actual actual value
      * @param maxUlps maximum units of least precision between the two values
-     * @param error Consumer for the ulp difference between the values (always positive)
+     * @param error Consumer for the ulp difference between the values
      * @param msg failure message
      * @return ulp difference between the values (signed)
      */
@@ -490,34 +490,34 @@ final class TestUtils {
      *
      * <p>This method is for values that can be computed to arbitrary precision.
      *
-     * <p>This method expresses the error relative the units in the last place (ulp)
-     * of the expected value when converted to a {@code double} type. If the actual
+     * <p>This method expresses the error relative to the expected value. If the actual
      * value equals the expected value the error is 0. Otherwise the error is
-     * computed relative to the ulp of the expected value.
+     * computed relative to expected value. This can becomes extremely large when
+     * expected approaches zero, and is not suitable if expected is zero (unless the
+     * actual is also zero).
      *
-     * <p>The ulp of the expected value can be scaled by {@code 2^b}. For example this
-     * can be used to report errors for double precision using {@code b == 0}, or
-     * double-double precision using {@code b == -53}.
+     * <p>The relative error can be scaled by {@code 2^b}. For example this
+     * can be used to report errors for approximately double precision using
+     * {@code b == 52} for a relative ULP of 2^-52, or
+     * double-double precision using {@code b == 105}.
      *
-     * <p>Set {@code maxUlps} to negative to report the ulps to the stdout and
+     * <p>Set {@code maxError} to negative to report the error to the stdout and
      * ignore failures.
      *
-     * <p>The ulp difference is signed. The sign of the error
+     * <p>The error difference is signed. The sign of the error
      * is the same as that returned from Double.compare(actual, expected); it is
      * computed using {@code actual - expected}.
      *
      * @param expected expected value
      * @param actual actual value
-     * @param maxUlps maximum units of least precision between the two values
-     * @param b scale for the ulp
-     * @param error Consumer for the ulp difference between the values (always positive)
+     * @param maxError maximum relative error between the two values
+     * @param b scale for the error
+     * @param error Consumer for the error difference between the values
      * @param msg failure message
-     * @return ulp difference between the values (signed)
+     * @return scaled relative error between the values (signed)
      */
-    static double assertEquals(BigDecimal expected, BigDecimal actual, double maxUlps, int b,
+    static double assertEquals(BigDecimal expected, BigDecimal actual, double maxError, int b,
             DoubleConsumer error, Supplier<String> msg) {
-        final double e = expected.doubleValue();
-
         double delta;
         boolean equal;
         if (expected.compareTo(actual) == 0) {
@@ -526,13 +526,11 @@ final class TestUtils {
         } else {
             // Two finite numbers
             delta = actual.subtract(expected)
-                        .divide(new BigDecimal(Math.ulp(e)), MathContext.DECIMAL64).doubleValue();
-            // Express relative error using a scaled double ulp.
-            // Do not scale the ulp by b; scale the delta by -b.
-            // Avoids ulp being set to zero if expected is sub-normal.
-            delta = Math.scalb(delta, -b);
+                        .divide(expected, MathContext.DECIMAL64).doubleValue();
+            // Express relative error using a scaled double
+            delta = Math.scalb(delta, b);
             // Allow input of a negative maximum ULPs
-            equal = Math.abs(delta) <= Math.abs(maxUlps);
+            equal = Math.abs(delta) <= Math.abs(maxError);
         }
 
         if (error != null) {
@@ -540,7 +538,7 @@ final class TestUtils {
         }
 
         // DEBUG:
-        if (maxUlps < 0) {
+        if (maxError < 0) {
             // CHECKSTYLE: stop Regex
             if (!equal || reportAllDeviations) {
                 System.out.printf("%sexpected <%s> != actual <%s> (ulps=%s)%n",
