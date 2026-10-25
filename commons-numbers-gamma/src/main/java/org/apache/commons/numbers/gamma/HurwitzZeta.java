@@ -53,7 +53,7 @@ import org.apache.commons.numbers.core.DDMath;
  *
  * <p>The integrals are well defined when \( a + N \gt 0 \). Negative \( a \) may require the
  * sum \( S \) of a large number of terms \( N \). The implementation uses a difference
- * of zeta evaluations to compute the sum \( S \) over
+ * of zeta evaluations to compute the sum \( S \) over negative
  * \( a, a+1, a+2, \cdots, a - \lceil a \rceil  \) to avoid long runtime times.
  *
  * <p>Negative \( a \) with an odd integer power \( s \) requires summation of negative and positive
@@ -63,6 +63,13 @@ import org.apache.commons.numbers.core.DDMath;
  * <p>\[ \zeta(s, -\frac{1}{2} - n) = \zeta(s, n + \frac{3}{2}) \]
  *
  * <p>for \( s = 3, 5, 7, \ldots \) and \( n = 0, -1, -2, \ldots \)
+ * 
+ * <p>The function is extremely sensitive to small changes in input for large \( s \) and
+ * negative \( a \). For odd \( s \) the function changes directly from \( -\infty \) to
+ * \( \infty \) somewhere between each negative integer \( a \) close to the half-integer midpoint.
+ * For even \( s \) the function is \( \infty \) at each negative integer and may be finite
+ * in between. For these reasons results should be treated with caution when \( s \)
+ * is large and \( a \) negative.
  *
  * <p>References
  * <ol>
