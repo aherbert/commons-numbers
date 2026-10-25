@@ -412,9 +412,7 @@ class HurwitzZetaTest {
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
      * Uses {@code 2k!} divided by Bernoulli number {@code B_2k}.
-     * The table size is suitable for N ~ M ~ P for P-bits of precision (53 entries)
-     * as stated in Johansson (2015) section 3.1. In practice the result in double
-     * precision requires lower N & M values.
+     * Precomputed from {@link #NUM} and {@link #DENOM} for use in test implementations.
      */
     private static final double[] F = {
         12.0,
@@ -528,6 +526,7 @@ class HurwitzZetaTest {
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
      * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
+     * Precomputed from {@link #NUM} and {@link #DENOM} for use in test implementations.
      * This is the inverse of table {@link #M}.
      */
     private static final double[] FM = {
@@ -642,6 +641,7 @@ class HurwitzZetaTest {
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
      * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
+     * Precomputed from {@link #NUM} and {@link #DENOM} for use in test implementations.
      * This is the same as table {@link #FM} in 70-digits of precision.
      */
     private static final BigDecimal[] FBD = {
@@ -756,6 +756,7 @@ class HurwitzZetaTest {
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
      * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
+     * Precomputed from {@link #NUM} and {@link #DENOM} for use in test implementations.
      * This is the same as table {@link #FM} in double-double precision.
      */
     private static final DD[] FDD = {
@@ -920,7 +921,7 @@ class HurwitzZetaTest {
         /** Use extended precision summation. */
         static final int EXT_SUM = 4;
 
-        /** Use divide to update the power term (a+n)^-s in the tail series. */
+        /** Use divide to recycle and update the power term (a+n)^-s in the tail series. */
         static final int TAIL_DIVIDE = 8;
         /** Use the power function to compute the power term in the tail series. */
         static final int TAIL_POW = 16;
@@ -965,7 +966,8 @@ class HurwitzZetaTest {
         static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70));
 
         /** Default epsilon for the sum series. Typically the series will terminate at the
-         * configured N unless the power exponent s is very large. This is not generally useful. */
+         * configured N unless the power exponent s is very large. This is not generally
+         * useful and disabled by setting to zero. */
         private static final double EPS_S = 0;
         /** Default epsilon for the tail series. */
         private static final double EPS_T = 0x1p-53;
@@ -1001,6 +1003,7 @@ class HurwitzZetaTest {
          */
         private Context(int n, int m, double epsS, double epsT, MathContext mc,
             int options) {
+            // Assume all tables for the tail series are the same size
             if (m > F.length) {
                 throw new IllegalArgumentException("Unsupported M: " + m);
             }
@@ -1214,7 +1217,9 @@ class HurwitzZetaTest {
         double getRmsTolerance();
     }
 
-    /** Define a test for an extended precision zeta function. */
+    /** Define a test for an extended precision zeta function.
+     * Results are computed as BigDecimal. Errors are reported using the
+     * scaled relative error 2^b * (actual - expected) / expected. */
     private interface ExtendedPrecisionTestCase extends TestError {
         /**
          * @return function to test
@@ -1227,7 +1232,13 @@ class HurwitzZetaTest {
         String[] getFilenames();
 
         /**
-         * @return Scale to apply to the expected ULP.
+         * Get the scale for the relative error. Use 52 for the approximate equivalent
+         * of 1 ULP in double precision; 105 for double-double precision.
+         * Note that arbitrary precision computation using BigDecimal does
+         * not have an equivalent to a ULP as the mantissa is not fixed. Scaling
+         * the relative error is for convenience.
+         * 
+         * @return Scale to apply to the relative error.
          * @see Math#scalb(double, int)
          */
         int scale();
@@ -2398,10 +2409,11 @@ class HurwitzZetaTest {
         // If the sum of terms is far below min double value then stop.
         // The smallest normalised exponent is -1023 - 52 = -1075.
         // Make sure the 106-bit double-double cannot be added to Double.MIN_VALUE.
-        if (es < -1075 - 106) {
-            exp[0] = 0;
-            return DD.ZERO;
-        }
+        // This is disabled to allow computation on extremely small values.
+        //if (es < -1075 - 106) {
+        //    exp[0] = 0;
+        //    return DD.ZERO;
+        //}
 
         // T
         // The following recycles the power term p: (a+n)^-(2k-1+s).
@@ -2998,29 +3010,25 @@ class HurwitzZetaTest {
     @CsvSource({
         // Full double-double precision (~34 digits)
         // Requires N=13. Larger N uses smaller M.
-        "13, 30, 34, 0, -53",
+        "13, 30, 34, 0, 105",
         // Use pow in the tail series (no difference)
-        "13, 30, 34, 16, -53",
+        "13, 30, 34, 16, 105",
         // If the computation is limited to fewer bits it cannot achieve double-double precision.
         // This has implications for the DD version because DD arithmetic is typically
         // performed to a few eps of 2^-106.
-        "13, 30, 33, 0, -53",
+        "13, 30, 33, 0, 105",
         // Not enough
-        "13, 30, 32, 0, -53",
-        // Push more precision.
-        // Demonstrates the BigDecimal method can be a reference implementation,
-        // e.g. when used to find the roots of zeta (see method to find roots).
-        "20, 30, 53, 0, 0, -59",
+        "13, 30, 32, 0, 105",
         // Full double precision (~17 digits)
         // Requires N=7. Larger N uses smaller M.
-        "7, 15, 18, 0, 0",
-        "7, 15, 17, 0, 0",
+        "7, 15, 18, 0, 52",
+        "7, 15, 17, 0, 52",
         // Not enough
-        "7, 15, 16, 0, 0",
+        "7, 15, 16, 0, 52",
         // Quad double precision. Requires test resources to have more than 68 digits of precision
-        "30, 40, 70, 0, -159",
+        "30, 40, 70, 0, 211",
         // Not enough
-        "35, 40, 65, 0, -159",
+        "35, 40, 65, 0, 211",
     })
     @Disabled("Used to parameterize the zeta function")
     void testPrecisionBigDecimal(int ln, int un, int digits, int options, int scale)
@@ -3104,44 +3112,45 @@ class HurwitzZetaTest {
      */
     @ParameterizedTest
     @CsvSource({
-        // Extended precision
-        "13, 30, -106, 0, -53",
-        // DD.pow and DDMath pow are the similar accuracy when s = 2 and a < 1.
+        // Extended precision (ulp ~ 2^-105)
+        // DD.pow
+        "13, 30, -106, 0, 105",
+        // DD.pow and DDMath pow are similar accuracy when s = 2 and a < 1.
         // When s is larger and a > 1 the DDMath pow gains a few bits in the result
         // but the max is ~105 bits
-        "13, 30, -106, 3, -53",
+        "13, 30, -106, 3, 105",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
         // be selectively used for the *same* precision. However zeta evaluations
         // with a above 1 are only used: (1) as a term added to a much larger
         // zeta evaluation and precision does not require all the bits; (2)
         // in the total cancellation path which requires double precision
-        "13, 30, -106, 1, -53",
+        "13, 30, -106, 1, 105",
 
         // Maximum precision. Accurate add and DDMath.pow.
         // Max ulp is ~1.
         // Note: Cancellation in the negative zeta implementation has not been observed
         // above 55-bits. This level of precision may only gain ~ 1 ulp around the roots.
-        "15, 20, -106, 195, -53", // 1 vs 3 + 64 + 128
+        "15, 20, -106, 195, 105", // 3 vs 3 + 64 + 128
 
         // Use accurate add for all addition. Does not change accuracy when
         // the power term may have several bits of error.
-        "13, 30, -106, 193, -53", // 1 vs 1 + 64 + 128
+        "15, 20, -106, 193, 105", // 1 vs 1 + 64 + 128
 
         // Use pow in the tail series (no difference)
-        "13, 30, -106, 19, -53", // 3 vs 3 + 16
+        "13, 30, -106, 19, 105", // 3 vs 3 + 16
 
         // Higher tail convergence.
         // No difference to max error. RMS is lower. Higher M.
-        // "13, 20, -108, 3, -53",
-        // "13, 20, -110, 3, -53",
+        // "13, 20, -108, 3, 105",
+        // "13, 20, -110, 3, 105",
 
-        // Full double precision (~17 digits).
-        "7, 15, -53, 0, 0",
+        // Double precision (ulp ~ 2^-52)
+        "7, 15, -53, 0, 52",
         // Extra tail terms lower error in double precision
-        "7, 15, -58, 0, 0",
+        "7, 15, -58, 0, 52",
         // Not enough
-        "7, 15, -48, 0, 0",
+        "7, 15, -48, 0, 52",
     })
     @Disabled("Used to parameterize the zeta function")
     void testPrecisonDD(int ln, int un, int b, int options, int scale)
@@ -3159,7 +3168,7 @@ class HurwitzZetaTest {
                 @Override
                 public double getTolerance() {
                     // Do not fail individual cases
-                    return 100;
+                    return 1e5;
                 }
 
                 @Override
