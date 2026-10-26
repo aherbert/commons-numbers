@@ -233,7 +233,7 @@ final class SpecialMath {
         // to the primitive long creates an odd value: 2^63-1.
         // This is corrected by inverting the sign of v and the extreme is even: -2^63.
         // The isOdd function is correct for all positive finite v.
-        return (((long) -v) & 0x1) == 1;
+        return ((long) -v & 0x1) == 1;
     }
 
     /**
