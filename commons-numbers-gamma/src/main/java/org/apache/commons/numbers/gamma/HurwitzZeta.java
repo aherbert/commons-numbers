@@ -63,7 +63,7 @@ import org.apache.commons.numbers.core.DDMath;
  * <p>\[ \zeta(s, -\frac{1}{2} - n) = \zeta(s, n + \frac{3}{2}) \]
  *
  * <p>for \( s = 3, 5, 7, \ldots \) and \( n = 0, -1, -2, \ldots \)
- * 
+ *
  * <p>The function is extremely sensitive to small changes in input for large \( s \) and
  * negative \( a \). For odd \( s \) the function changes directly from \( -\infty \) to
  * \( \infty \) somewhere between each negative integer \( a \) close to the half-integer midpoint.
@@ -470,26 +470,32 @@ public final class HurwitzZeta {
         sum = sum.add(t0).add(ti);
 
         // T
-        // The following recycles the power term p: (a+n)^-(2k-1+s).
+        // The following recycles the power term p: (a+n)^-(2k-1+s) using division by (a+N)^2.
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        //
-        // Rising factorial term : (s)_{2k-1}
-        // Note: When s is large the loop exits before the rising factorial overflows.
-        // (a+n) >= 9 : 9^-340 = 0 : max (2k-1+s) = 339 before p underflows.
-        // (339)_{2k-1}; k=50 = Pochammer(339, 99) = 1.5e256
-        // The rising factorial will not overflow for k <= 50 before (a+n)^-(2k-1+s) is
-        // zero. This is within the length of table F.
         //
         // If a or s are large then (a+n)^-(2k-1+s) will underflow.
         // We can downscale the rising factorial (always above 1)
         // and upscale p (always below 1) by the same amount.
-        // The loop will still exit immediately if p = (a+n)^-s = 0
-        // (zeta evaluation is limited by Math.pow).
         // Scaling could dynamically use the exponent of f and p. Here we use
         // fixed scaling which can be pre-applied to a possible sub-normal
-        // power term before division by (a+n). This allows a few more terms
-        // of the tail to be computed when the zeta result or terms are sub-normal.
+        // power term. This allows a few terms of the tail to be computed
+        // when the zeta result or terms are sub-normal and a significant
+        // improvement in accuracy for sub-normal results.
+        //
+        // The loop will exit immediately if p = (a+n)^-(1-s) = 0:
+        // Extend support for large s by computing sub-normal (a+n)^-(1+s)
+        // in parts with fixed scaling:
+        //   scale * (a+n)^-(1+s) = (a+n)^-(1+s)/2 * scale * (a+n)^-(1+s)/2
+        // The limit on (1+s):
+        //   9^-(1+s) = 2^-(1075+1022) : 1+s = log(2)/log(9) * (1075+1022) = 662
+        //
+        // Rising factorial term : (s)_{2k-1}
+        // The maximum s is < 662.
+        // (662)_{2k-1}; k=53 = Pochammer(662, 105) = 3.96e299
+        // The rising factorial will not overflow for k <= 53 before (a+n)^-(1+s) is
+        // zero. This is within the length of table F.
+        // For larger s where p=0 the loop exits immediately.
         double f = s * DOWNSCALE;
         // 2k - 1
         double k2 = 1;
@@ -497,15 +503,16 @@ public final class HurwitzZeta {
         // Use to divide by (a+n)^2
         final double apn = pow.apply(a, N, -2);
 
+        // The tail requires the most accurate start-point for (a+n)^-(1+s).
+        // Compute using the power function not (a+n)^-s / (a+N).
         // Sub-normal p reduces accuracy:
-        // Test if (a+n)^-(1+s) >= 2^-1022
-        if (-(1 + s) * Math.getExponent(a + N) >= Double.MIN_EXPONENT) {
+        // p is currently (a+n)^-s. Test if the desired term is sub-normal.
+        if (p > (a + N) * Double.MIN_NORMAL) {
             p = UPSCALE * pow.apply(a, N, -s - 1);
         } else {
-            // If (a+n)^-s is non-zero this allows division using normal numbers.
-            // If it was zero then the series is converged, or the result is sub-normal
-            // and accuracy is already lost and the tail is ignored.
-            p = UPSCALE * p / (a + N);
+            // Compute in parts with scaling: x^y = x^(y/2) * x^(y/2)
+            p = pow.apply(a, N, (-s - 1) * 0.5);
+            p = p * UPSCALE * p;
         }
 
         // Sum of an alternating series as each F changes sign.
