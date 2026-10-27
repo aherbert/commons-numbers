@@ -1614,11 +1614,14 @@ class HurwitzZetaTest {
         DD sum;
         final double eps = c.getSumEps();
         int n;
+        // After the series sum this is (a+n)^-s for use in the tail series
+        double p;
         if (eps == 0) {
             // Fixed number of terms summed in ascending order of magnitude.
             n = c.getN();
             // Initialise sum with the first tail term.
-            sum = DD.of(0.5 * pow.apply(a, n, -s));
+            p = pow.apply(a, n, -s);
+            sum = DD.of(0.5 * p);
             // S : k in [1, n-1]
             for (int k = n; --k > 0;) {
                 // Descending k sums in order of magnitude for increased precision.
@@ -1632,7 +1635,7 @@ class HurwitzZetaTest {
             n = 0;
             sum = DD.ZERO;
             // S : k in [1, n]
-            double p = 0;
+            p = 0;
             for (; n < c.getN();) {
                 n++;
                 p = powS.apply(a, n, -s);
@@ -1698,7 +1701,6 @@ class HurwitzZetaTest {
         // Alternative implementations for (a+n)^-(2k-1+s).
         double apn = 0;
         final int powerTermOption;
-        double p;
 
         // Tail scaling. Configured before computation of p.
         double pScale = 1;
@@ -1715,33 +1717,41 @@ class HurwitzZetaTest {
         }
 
         if (c.isSet(Context.TAIL_POW)) {
-            // Compute using the power function
+            // Compute using the power function.
+            // For simpicity this does not use the x^-s = (x^-s/2)^2 trick
+            // as it would have to be applied within the loop as well.
             powerTermOption = 2;
             p = pScale * pow.apply(a, n, -(k2 + s));
-            if (pScale != 1 && p == 0 && expScale == 1) {
-                p = pow.apply(a, n, -(k2 + s) * 0.5);
-                p = p * pScale * p;
-            }
         } else if (c.isSet(Context.TAIL_DIVIDE)) {
             // Initialise (a+n)^-(2k-1+s) to (a+n)^-s
             // Divide by (a+n) twice inside the loop.
-            // An optimised implementation would recycle p from the end of the series sum.
+            // p is already (a+n)^-s
             powerTermOption = 1;
-            p = pScale * pow.apply(a, n, -s);
             apn = a + n;
-            if (pScale != 1 && p == 0 && expScale == 1) {
-                p = pow.apply(a, n, -s * 0.5);
-                p = p * pScale * p;
+            if (pScale != 1 && expScale == 1) {
+                if (p > Double.MIN_NORMAL) {
+                    p *= pScale;
+                } else {
+                    p = pow.apply(a, n, -s * 0.5);
+                    p = p * pScale * p;
+                }
+            } else {
+              p *= pScale;
             }
         } else {
             // powerTermOption == 0 or 3
             // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
             // Divide by (a+n)^2 using multiplication
             powerTermOption = 0;
-            p = pScale * pow.apply(a, n, -s - 1);
-            if (pScale != 1 && p == 0 && expScale == 1) {
-                p = pow.apply(a, n, (-s - 1) * 0.5);
-                p = p * pScale * p;
+            if (pScale != 1 && expScale == 1) {
+                if (p > (a + n) * Double.MIN_NORMAL) {
+                    p = pScale * pow.apply(a, n, -s - 1);
+                } else {
+                    p = pow.apply(a, n, (-s - 1) * 0.5);
+                    p = p * pScale * p;
+                }
+            } else {
+                p = pScale * pow.apply(a, n, -s - 1);
             }
             // The power function may be using log-sum-exp.
             if (expScale != 1) {
@@ -2941,7 +2951,7 @@ class HurwitzZetaTest {
         // - The tail power term can be be very small and underflow. This can be mitigated by
         //   scaling up the power term, and scaling down another factor by an equivalent amount.
 
-        // Extended precision power function (difference but required for all terms)
+        // Extended precision power function (improvement if used for all terms)
         "7, 15, 0, -53, 0, false",
         "7, 15, 0, -53, 1, false",
         "7, 15, 0, -53, 3, false",
@@ -2952,42 +2962,41 @@ class HurwitzZetaTest {
         "7, 15, 0, -53, 7, false", // 3 vs 3 + 4  <== Optimum
         // Using tail series scaling to prevent underflow
         // (exactly the same - test data has no sub-normal results; scaling is exact)
-        // Test resources can be changed to the sub-normal resource to show differences.
+        // Test resources using sub-normal resources show differences (see below).
         "7, 12, 0, -53, 263, false", // 7 vs 7 + 256  <== Optimum
-//        // Using divide in the tail series (negligible RMS difference)
-//        "7, 12, 0, -53, 12, false", // 4 vs 4 + 8
-//        "7, 12, 0, -53, 15, false", // 7 vs 7 + 8
-//        // Use power in the tail series (no difference)
-//        "7, 12, 0, -53, 20, false", // 4 vs 4 + 16
-//        "7, 12, 0, -53, 23, false", // 7 vs 7 + 16
-//        // Use extended precision sum in the tail series (no difference)
-//        "7, 12, 0, -53, 36, false", // 4 vs 4 + 32
-//        "7, 12, 0, -53, 39, false", // 7 vs 7 + 32
-//        // M convergence (negligible error change unless too high > -50, does increase required M)
-//        "8, 10, 0, -49, 7, false",
-//        "8, 10, 0, -50, 7, false",
-//        "8, 10, 0, -51, 7, false",
-//        "8, 10, 0, -52, 7, false",
-//        "8, 10, 0, -53, 7, false",
-//        "8, 10, 0, -54, 7, false",
-//        "8, 10, 0, -55, 7, false",
-//        "8, 10, 0, -56, 7, false",
-//        // N convergence (negligible error change unless too high where the test fails)
-//        // Mean N is close to max N. This does not allow the method to dynamically chose
-//        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
-//         "8, 50, -35, -53, 7, false",
-//
-//        // Sub-normal zeta result and/or terms.
-//        // Requires scaling of the tail series terms (option 256).
-//        "7, 12, 0, -53, 263, true", // 7 + 256
-//        // Using a scaling tail summation. Possible 1% improvement in RMS.
-//        "7, 12, 0, -53, 1287, true", // 7 + 256 + 1024
-//        // Using log-sum-exp to prevent underflow.
-//        // This implementation is does not significantly out-perform a standard implementation
-//        // working with sub-normal terms and tail scaling. Max error is similar and
-//        // RMS error 5-10% lower. When the first term a^-s is close to min value (2^-1075)
-//        // it improves the max error accuracy.
-//        "7, 12, 0, -53, 775, true", // 7 + 256 + 512
+        // Using divide in the tail series (negligible RMS difference)
+        "7, 12, 0, -53, 12, false", // 4 vs 4 + 8
+        "7, 12, 0, -53, 15, false", // 7 vs 7 + 8
+        // Use power in the tail series (no difference)
+        "7, 12, 0, -53, 20, false", // 4 vs 4 + 16
+        "7, 12, 0, -53, 23, false", // 7 vs 7 + 16
+        // Use extended precision sum in the tail series (no difference)
+        "7, 12, 0, -53, 36, false", // 4 vs 4 + 32
+        "7, 12, 0, -53, 39, false", // 7 vs 7 + 32
+        // M convergence (negligible error change unless too high > -50, does increase required M)
+        "8, 10, 0, -49, 7, false",
+        "8, 10, 0, -50, 7, false",
+        "8, 10, 0, -51, 7, false",
+        "8, 10, 0, -52, 7, false",
+        "8, 10, 0, -53, 7, false",
+        "8, 10, 0, -54, 7, false",
+        "8, 10, 0, -55, 7, false",
+        "8, 10, 0, -56, 7, false",
+        // N convergence (negligible error change unless too high where the test fails)
+        // Mean N is close to max N. This does not allow the method to dynamically chose
+        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
+         "8, 50, -35, -53, 7, false",
+
+        // Sub-normal zeta result and/or terms.
+        // Requires scaling of the tail series terms (option 256).
+        "7, 12, 0, -53, 263, true", // 7 + 256
+        // Using a scaling tail summation. Possible 1% improvement in RMS.
+        "7, 12, 0, -53, 1287, true", // 7 + 256 + 1024
+        // Using log-sum-exp to prevent underflow.
+        // This implementation does not significantly out-perform a standard implementation
+        // working with sub-normal terms and tail scaling. Max error is similar and
+        // RMS error 5-10% lower.
+        "7, 12, 0, -53, 775, true", // 7 + 256 + 512
     })
     @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options, boolean subNormal)
@@ -3030,8 +3039,10 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return String.format("ZETA %s  2^%d  %3d",
-                        zetaName(bs == 0 ? c.getN() : 0), bt, options);
+                    return String.format("ZETA %s%s  2^%d  %3d",
+                        zetaName(bs == 0 ? c.getN() : 0),
+                        bs == 0 ? "" : "  2^" + bs,
+                        bt, options);
                 }
             };
             assertFunction(test);
@@ -3111,7 +3122,7 @@ class HurwitzZetaTest {
                     return String.format("ZETA %s  dps=%3d  %2d", zetaName(c.getN()), digits, options);
                 }
             };
-            assertFunction(test);
+            assertFunction(test, 0);
         }
     }
 
@@ -3149,46 +3160,50 @@ class HurwitzZetaTest {
     @CsvSource({
         // Extended precision (ulp ~ 2^-105)
         // DD.pow
-        "13, 30, -106, 0, 105",
+        "13, 30, -106, 0, 105, 0",
         // DD.pow and DDMath pow are similar accuracy when s = 2 and a < 1.
         // When s is larger and a > 1 the DDMath pow gains a few bits in the result
         // but the max is ~105 bits
-        "13, 30, -106, 3, 105",
+        "13, 30, -106, 3, 105, 0",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
         // be selectively used for the *same* precision. However zeta evaluations
         // with a above 1 are only used: (1) as a term added to a much larger
         // zeta evaluation and precision does not require all the bits; (2)
         // in the total cancellation path which requires double precision
-        "13, 30, -106, 1, 105",
+        "13, 30, -106, 1, 105, 0",
+        // Ignore below MIN_VALUE = 2^-1074
+        // Has precision to ~100 bits.
+        "15, 20, -106, 1, 105, -1074",
 
         // Maximum precision. Accurate add and DDMath.pow.
         // Max ulp is ~1.
         // Note: Cancellation in the negative zeta implementation has not been observed
         // above 55-bits. This level of precision may only gain ~ 1 ulp around the roots.
-        "15, 20, -106, 195, 105", // 3 vs 3 + 64 + 128
+        "15, 20, -106, 195, 105, 0", // 3 vs 3 + 64 + 128
 
         // Use accurate add for all addition. Does not change accuracy when
         // the power term may have several bits of error.
-        "15, 20, -106, 193, 105", // 1 vs 1 + 64 + 128
+        "15, 20, -106, 193, 105, 0", // 1 vs 1 + 64 + 128
 
         // Use pow in the tail series (no difference)
-        "13, 30, -106, 19, 105", // 3 vs 3 + 16
+        "13, 30, -106, 19, 105, 0", // 3 vs 3 + 16
 
         // Higher tail convergence.
         // No difference to max error. RMS is lower. Higher M.
-        // "13, 20, -108, 3, 105",
-        // "13, 20, -110, 3, 105",
+        // "13, 20, -108, 3, 105, 0",
+        // "13, 20, -110, 3, 105, 0",
 
         // Double precision (ulp ~ 2^-52)
-        "7, 15, -53, 0, 52",
+        // Ignore below MIN_VALUE = 2^-1074
+        "7, 15, -53, 0, 52, -1074",
         // Extra tail terms lower error in double precision
-        "7, 15, -58, 0, 52",
+        "7, 15, -58, 0, 52, -1074",
         // Not enough
-        "7, 15, -48, 0, 52",
+        "7, 15, -48, 0, 52, -1074",
     })
     @Disabled("Used to parameterize the zeta function")
-    void testPrecisonDD(int ln, int un, int b, int options, int scale)
+    void testPrecisonDD(int ln, int un, int b, int options, int scale, int ignoreB)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
         for (int n = ln; n <= un; n++) {
@@ -3238,7 +3253,7 @@ class HurwitzZetaTest {
                     return String.format("ZETA %s  2^%-4d  %3d", zetaName(c.getN()), b, options);
                 }
             };
-            assertFunction(test);
+            assertFunction(test, ignoreB);
         }
     }
 
@@ -3808,10 +3823,19 @@ class HurwitzZetaTest {
     /**
      * Assert the function using extended precision.
      *
+     * <p>Can ignore results below {@code 2^ignoreB} when {@code ignoreB < 0}.
+     * Use to ignore extremely sub-normal results that cannot affect the zeta result
+     * in double precision.
+     *
      * @param tc Test case
+     * @param ignoreB Base-2 exponent of results to ignore
      */
-    private static void assertFunction(ExtendedPrecisionTestCase tc) {
+    private static void assertFunction(ExtendedPrecisionTestCase tc, int ignoreB) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
+        BigDecimal ignore = BigDecimal.ZERO;
+        if (ignoreB < 0) {
+            ignore = BigDecimal.valueOf(2).pow(ignoreB, MathContext.DECIMAL64);
+        }
         final long start = System.nanoTime();
         for (final String filename : tc.getFilenames()) {
             try (DataReader in = new DataReader(filename)) {
@@ -3821,8 +3845,11 @@ class HurwitzZetaTest {
                         final int s = (int) x;
                         Assertions.assertEquals(x, s, "Expecting integer s");
                         final double y = in.getDouble(1);
-                        final BigDecimal actual = tc.getFunction().apply(s, y);
                         final BigDecimal expected = in.getBigDecimal(2);
+                        if (ignoreB < 0 && expected.compareTo(ignore) <= 0) {
+                            continue;
+                        }
+                        final BigDecimal actual = tc.getFunction().apply(s, y);
                         TestUtils.assertEquals(expected, actual, tc.getTolerance(), tc.scale(),
                             stats::add,
                             () -> tc + " x=" + x + ", y=" + y);
