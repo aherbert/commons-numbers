@@ -1689,6 +1689,7 @@ class HurwitzZetaTest {
         // The limit on (2k-1+s) increases:
         // 9^-y = 2^-(1075+1022) : y = log(2)/log(9) * (1075+1022) = 662
         // Pochammer(662, 105) = 3.41e299
+        // This is still safe from overflow.
         double f = s;
         // 2k - 1
         double k2 = 1;
@@ -1725,7 +1726,7 @@ class HurwitzZetaTest {
 
         if (c.isSet(Context.TAIL_POW)) {
             // Compute using the power function.
-            // For simpicity this does not use the x^-s = (x^-s/2)^2 trick
+            // For simplicity this does not use the x^-s = (x^-s/2)^2 trick
             // as it would have to be applied within the loop as well.
             powerTermOption = 2;
             p = pScale * pow.apply(a, n, -(k2 + s));
@@ -1893,8 +1894,8 @@ class HurwitzZetaTest {
         }
 
         // x = a - ceil(a) : x in -(1, 0)
-        // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
-        // z +/- [ za - zb]
+        // zeta(s, x + 1) + (-1)^s * [ zeta(s, -x) - zeta(s, 1 - a) ]
+        // z + za + zb
 
         BigDecimal z = zeta(s, xp, pp, c);
         BigDecimal za;
@@ -2017,6 +2018,7 @@ class HurwitzZetaTest {
         for (i = 0; i < c.getM(); i++) {
             final BigDecimal t = f.multiply(p, mc).multiply(FBD[i], mc);
             tsum = tsum.add(t, mc);
+            // Bigger scale is a smaller value
             if (t.scale() >= stop) {
                 break;
             }
@@ -2041,7 +2043,7 @@ class HurwitzZetaTest {
      * <pre>
      *      b     1
      *   sum     ---
-     *      k=a  k^m
+     *      k=a  k^s
      * </pre>
      *
      * <p>Assumes {@code a} and {@code b} are negative and separated by an integer
@@ -2054,43 +2056,40 @@ class HurwitzZetaTest {
      * the roots (see {@link #testDataZetaRoots(int, int, int, int)}).
      *
      * @param a First term in the series to calculate (negative non-integer).
-     * @param b Last term in the series inclusive (negative non-integer); result provided.
+     * @param x Last term in the series inclusive (negative non-integer); result provided.
      * @param s Exponent (positive integer).
-     * @param bn {@code b^-s}.
      * @param c Evaluation context.
      * @return the sum
      */
-    private static BigDecimal negativeSeriesSum(double a, double b, int s,
-            BigDecimal bn, Context c) {
-        // This can be computed using a difference of zeta functions.
-        // A single call to zeta uses many pow operations; use zeta when the
-        // sum will use more.
+    private static BigDecimal negativeSeriesSum(double a, double x, int s, Context c) {
         final MathContext mc = c.getMathContext();
-        if (b - a > 2 * (c.getN() + 2)) {
+        final BigDecimal pn = new BigDecimal(x).pow(-s, mc);
+        // A single call to zeta uses many pow operations;
+        // use a direct sum when zeta will use more.
+        if (x - a > 2 * (c.getN() + 2)) {
             // Note: The difference incurs cancellation.
-            // This should not be an issue as function is called with b in -(1, 0)
+            // This should not be an issue as x in -(1, 0)
             // and the series is strongly converging, e.g.
             // zeta(2, 1)  = 1.6449
-            // zeta(2, 31.5) = 0.03225
+            // zeta(2, 2)  = 0.6449
+            // zeta(2, 30) = 0.0339
             // Significant cancellation (leading digits the same) is not possible.
             // Take care to change the sign of a provided result for the zeta method.
-            final BigDecimal zb = zeta(s, new BigDecimal(-b), bn.abs(), c);
-            final BigDecimal za = zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null, c);
-            final BigDecimal r = zb.subtract(za, mc);
+            final BigDecimal za = zeta(s, new BigDecimal(-x), pn.abs(), c);
+            final BigDecimal zb = zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null, c);
+            final BigDecimal r = za.subtract(zb, mc);
             return (s & 1) == 1 ? r.negate() : r;
         }
 
         // Sum terms in ascending order of magnitude.
         // Use a double to track the iterations, and mirror with a BigDecimal.
-        BigDecimal sum = BigDecimal.ZERO;
-        double x = a;
-        BigDecimal bx = new BigDecimal(a);
-        while (x < b) {
-            sum = sum.add(bx.pow(-s, mc), mc);
-            x += 1.0;
-            bx = bx.add(BigDecimal.ONE);
+        BigDecimal zb = BigDecimal.ZERO;
+        BigDecimal ba = new BigDecimal(a);
+        for (double aa = a; aa < x; aa += 1.0) {
+            zb = zb.add(ba.pow(-s, mc), mc);
+            ba = ba.add(BigDecimal.ONE);
         }
-        return sum.add(bn, mc);
+        return zb.add(pn, mc);
     }
 
     /**
@@ -2179,8 +2178,8 @@ class HurwitzZetaTest {
         }
 
         // x = a - ceil(a) : x in -(1, 0)
-        // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
-        // z +/- [ za - zb]
+        // zeta(s, x + 1) + (-1)^s * [ zeta(s, -x) - zeta(s, 1 - a) ]
+        // z + za + zb
 
         // Worst case single term cancellation:
         // priority = exponent(max(a, b)) - exponent(a - b)
@@ -2615,8 +2614,8 @@ class HurwitzZetaTest {
             // to compute the zeta terms without the already known first terms in DD precision.
 
             // x = a - ceil(a) : x in -(1, 0)
-            // (x+1)^-s + zeta(s, x + 2) +/- [ -x^-s + zeta(s, 1-x) - zeta(s, 1 - a) ]
-            // z +/- [ za - zb]
+            // (x+1)^-s + zeta(s, x + 2) + (-1)^s * [ -x^-s + zeta(s, 1-x) - zeta(s, 1 - a) ]
+            // z + za + zb
 
             // We have the two largest power terms for each side.
             // The remaining terms are increasing smaller.
@@ -2695,8 +2694,8 @@ class HurwitzZetaTest {
         }
 
         // x = a - ceil(a) : x in -(1, 0)
-        // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
-        // z +/- [ za - zb]
+        // zeta(s, x + 1) + (-1)^s * [ zeta(s, -x) - zeta(s, 1 - a) ]
+        // z + za + zb
 
         // We have the two largest power terms for each side.
         // The remaining terms are increasing smaller.
@@ -4418,8 +4417,7 @@ class HurwitzZetaTest {
                         }
                         // Get the terms that cancel
                         final BigDecimal z1 = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
-                        final BigDecimal z2 = negativeSeriesSum(a, x, s,
-                            new BigDecimal(x).pow(-s, context.getMathContext()), context);
+                        final BigDecimal z2 = negativeSeriesSum(a, x, s, context);
                         // Verify the terms are correct
                         TestUtils.assertEquals(results[i],
                             z1.add(z2, context.getMathContext()).doubleValue(), 0, null,
