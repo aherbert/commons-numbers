@@ -890,7 +890,7 @@ public final class HurwitzZeta {
         // Avoids addition of fractional representation to zero (which has a zero exponent).
         DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
         long et = ef + ep + exp[0];
-        int ets = intExponent(et);
+        int etsum = intExponent(et);
         for (int i = 1; i < FDD.length; i++) {
             if (et < stop) {
                 break;
@@ -906,10 +906,10 @@ public final class HurwitzZeta {
             // f*p in [0.25, 2); FDD*2 is finite.
             final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
             et = ef + ep + exp[0];
-            tsum = add(tsum, ets, t, intExponent(et), exp);
-            ets = exp[0];
+            tsum = add(tsum, etsum, t, intExponent(et), exp);
+            etsum = exp[0];
         }
-        return add(sum, es, tsum, ets, exp);
+        return add(sum, es, tsum, etsum, exp);
     }
 
     /**
