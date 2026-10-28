@@ -248,6 +248,7 @@ final class SpecialMath {
      * @see Integer#MIN_VALUE
      * @see Integer#MAX_VALUE
      * @see Math#addExact(int, int)
+     * @since 1.4
      */
     static int addAsInt(int a, int b) {
         final int r = a + b;
@@ -274,6 +275,7 @@ final class SpecialMath {
      * @see Integer#MIN_VALUE
      * @see Integer#MAX_VALUE
      * @see Math#toIntExact(long)
+     * @since 1.4
      */
     static int toInt(long a) {
         // Test if 32-bit truncation is the same number

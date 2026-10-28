@@ -65,7 +65,7 @@ import org.apache.commons.numbers.core.DDMath;
  * <p>for \( s = 3, 5, 7, \ldots \) and \( n = 0, -1, -2, \ldots \)
  *
  * <p>The function is extremely sensitive to small changes in input for large \( s \) and
- * negative \( a \). For odd \( s \) the function changes directly from \( -\infty \) to
+ * negative \( a \). For odd \( s \) the function changes rapidly from \( -\infty \) to
  * \( \infty \) somewhere between each negative integer \( a \) close to the half-integer midpoint.
  * For even \( s \) the function is \( \infty \) at each negative integer and may be finite
  * in between. For these reasons results should be treated with caution when \( s \)
@@ -650,8 +650,8 @@ public final class HurwitzZeta {
         }
 
         // x = a - ceil(a) : x in -(1, 0)
-        // zeta(s, x + 1) +/- [ zeta(s, -x) - zeta(s, 1 - a) ]
-        // z +/- [ za - zb]
+        // zeta(s, x + 1) + (-1)^s * [ zeta(s, -x) - zeta(s, 1 - a) ]
+        // z + za + zb
 
         // We have the two largest power terms for each side.
         // The remaining terms are increasingly smaller. Computing with
