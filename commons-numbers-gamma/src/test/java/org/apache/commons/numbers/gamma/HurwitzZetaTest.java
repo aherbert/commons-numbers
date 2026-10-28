@@ -1536,7 +1536,9 @@ class HurwitzZetaTest {
         // 262153  56.77762154420588
         // 524297  53.78940357315088
         //
-        // Could possibly be saved by scaling all power terms: (a+n)^-s = (2^-b*(a+n))^-s * (2^b)^-s
+        // Power-of2 exact scaling and (inexact) final down-scaling.
+        // Note down-scaling is inexact when s is non-integer.
+        // Scaling all power terms: (a+n)^-s = (2^-b*(a+n))^-s * (2^b)^-s
         // (2^-b*(a+n))^-s >= 2^-1022
         // -b <= 1022/s - log2(a+n) : b >= log2(a+n) + 1022/s
         // Scale all terms by 2^-b; rescale final result by 2^-sb
@@ -1548,18 +1550,17 @@ class HurwitzZetaTest {
         // zeta(86, 8000) = 2.04e-334
         // zeta(100, 8000) = 3.99e-389
         // zeta(499, 8000) = 3.78e-1947
-        // b = 1022.0/-80  + log2(8000) = 0.19 : Math.pow(2, -80) = 8.27e-25    *** possible ***
-        //   = 1022.0/-86  + log2(8000) = 1.08 : Math.pow(2, -86*2) = 1.67e-52  *** unknown ***
-        //   = 1022.0/-100 + log2(8000) = 2.75 : Math.pow(2, -100*3) = 4.9e-91  *** unknown ***
-        //   = 1022.0/-499 + log2(8000) = 10.91 : Math.pow(2, -499*11) = 0      *** n/a ***
+        // b = 1022.0/-80  + log2(8000) = 0.19  : b=1  : Math.pow(2, -80)     = 8.27e-25 *** possible ***
+        //   = 1022.0/-86  + log2(8000) = 1.08  : b=2  : Math.pow(2, -86*2)   = 1.67e-52 *** unknown ***
+        //   = 1022.0/-100 + log2(8000) = 2.75  : b=3  : Math.pow(2, -100*3)  = 4.9e-91  *** unknown ***
+        //   = 1022.0/-499 + log2(8000) = 10.91 : b=11 : Math.pow(2, -499*11) = 0        *** n/a ***
         // 8000 * 2^-1  = 4000
         //      * 2^-2  = 2000
         //      * 2^-3  = 1000
         //      * 2^-11 = 3.91
-        // Possibly the result is only recoverable if scaling b is small, e.g. b*s in [0, 106]
-        // so it will not downscale more than 106-bits.
+        // No test implementation has been tried for power-of-two scaling.
         // ----------
-        // An alternative is to use a scaled power (an application of log-sum-exp).
+        // An alternative is to use a scaled power with application of log-sum-exp.
         // The entire summation is made of power terms. These can all be scaled by the major
         // term:
         // pow(a + k, -s) = exp(-s * log(a + k))
@@ -1567,9 +1568,9 @@ class HurwitzZetaTest {
         // All power operations compute a scaled power as exp(-s * log(a + k) + s * log(a)).
         // The final result is scaled down using exp(-s * log(a)).
         //
-        // A test implementation is available for log-sum-exp. The result is
-        // not as accurate as implementations that sum directly sub-normal terms. It will
-        // also be twice the runtime cost due to use of log+exp vs pow.
+        // A test implementation is available for log-sum-exp. The result marginally 
+        // improves RMS error compared to implementations that sum directly sub-normal terms.
+        // It will be twice the runtime cost due to use of log+exp vs pow.
         // ----------
 
         PowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? Context::extPow : Context::stdPow;
@@ -1587,13 +1588,11 @@ class HurwitzZetaTest {
         // Note: This threshold can be set to t0 < 1e-10 to verify the implementation
         // works; or tuned to test different ranges of sub-normal terms.
         // The choice of when to use log-sum-exp requires knowledge of the expected
-        // output value. The method is generally not as accurate as using the power function
-        // with summation of sub-normal terms and tail scaling. Note that the computed scaled
-        // result is rescaled by multiplication by a sub-normal value which may lose precision.
-        // When the zeta result approaches 2^-1075 the implementation improves accuracy.
+        // output value; it is not generally applicable as the method has a performance and
+        // accuracy cost when all terms are normal numbers.
         // When combined with tail scaling it improves the RMS error (not the max error).
         // On a large amount of test data with a sub-normal zeta result the method is far worse
-        // when tail scaling is omitted so it is not a substitute for tail scaling.
+        // when tail scaling is omitted.
         if (c.isSet(Context.LOG_SUM_EXP) && t0 < 0x1p-1023 && a + c.getN() < s - 1) {
             // log-sum-exp
             // All terms adjusted by t0. Note that when a is large and s is small
@@ -1633,7 +1632,10 @@ class HurwitzZetaTest {
             // Maximum number of terms with early convergence.
             // Sums in descending order of magnitude and dynamically chooses n.
             n = 0;
+            // Initialise with t0 to improve early convergence behaviour.
             sum = DD.ZERO;
+            sum = DD.of(t0);
+            t0 = 0;
             // S : k in [1, n]
             p = 0;
             for (; n < c.getN();) {
@@ -1641,10 +1643,15 @@ class HurwitzZetaTest {
                 p = powS.apply(a, n, -s);
                 sum = add.apply(sum, p);
                 if (p <= eps * sum.hi()) {
-                    break;
+                    // Converged (no more terms can be added).
+                    // Note: A break statement here allows computing I and T.
+                    // If a is small compared to s then the tail series may diverge and
+                    // the result can be very wrong. Here we assume if nothing can be added
+                    // in the configured precision the result is done.
+                    return sum.hi();
                 }
             }
-            // first tail term is 0.5 * (a+n)^-s so we must subtract half the last term
+            // First tail term is 0.5 * (a+n)^-s so we must subtract half the last term
             sum = sum.add(-0.5 * p);
         }
         N[n - 1]++;
@@ -2982,10 +2989,14 @@ class HurwitzZetaTest {
         "8, 10, 0, -54, 7, false",
         "8, 10, 0, -55, 7, false",
         "8, 10, 0, -56, 7, false",
-        // N convergence (negligible error change unless too high where the test fails)
-        // Mean N is close to max N. This does not allow the method to dynamically chose
-        // N without high cost (many terms). RMS slowly reduces but max error is still ~ 2LP.
-         "8, 50, -35, -53, 7, false",
+        // N convergence. Accuracy is low as convergence on the sum S ignores the I and T terms.
+        // Mean N is close to max N so only a few test cases converge early.
+        "8, 15, -53, -53, 7, false",
+        // Accuracy improves when the sum is extended precision and convergence in extended
+        // precision is required. This effectively skips early convergence unless it is
+        // very strongly converging.
+        "8, 15, -58, -53, 7, false",
+        "8, 15, -63, -53, 7, false",
 
         // Sub-normal zeta result and/or terms.
         // Requires scaling of the tail series terms (option 256).
@@ -3001,7 +3012,10 @@ class HurwitzZetaTest {
     @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options, boolean subNormal)
         throws IOException {
-        // Default to not use variable convergence on series sum S
+        // Default to not use variable convergence on series sum S.
+        // Early convergence can be very bad and requires adjusting the tolerance.
+        final double maxTolerance = bs == 0 ? 100 : 15000;
+        final double rmsTolerance = bs == 0 ? 10 : 200;
         final double epsS = bs == 0 ? 0 : Math.scalb(1.0, bs);
         final double epsT = Math.scalb(1.0, bt);
         for (int n = ln; n <= un; n++) {
@@ -3016,12 +3030,12 @@ class HurwitzZetaTest {
             final DoublePrecisionTestCase test = new DoublePrecisionTestCase() {
                 @Override
                 public double getTolerance() {
-                    return 100;
+                    return maxTolerance;
                 }
 
                 @Override
                 public double getRmsTolerance() {
-                    return 10;
+                    return rmsTolerance;
                 }
 
                 @Override
