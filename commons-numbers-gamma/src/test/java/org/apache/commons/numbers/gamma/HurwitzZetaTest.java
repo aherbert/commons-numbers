@@ -32,6 +32,7 @@ import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -3031,6 +3032,7 @@ class HurwitzZetaTest {
         // of the regular power function is only 2 ULP worse than using double-double
         // summation of an extended precision power function.
         // A speed test using JMH has not been performed to assess runtime cost.
+        // A simple speed test shows a 5% runtime cost for extended precision.
         final double maxTolerance = bs == 0 ? 5 : 15000;
         final double rmsTolerance = bs == 0 ? 1 : 200;
         final double epsS = bs == 0 ? 0 : Math.scalb(1.0, bs);
@@ -4164,6 +4166,88 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Test the speed of the double implementation.
+     * This is an approximate test. Benchmarking should ideally use JMH.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // Extended precision power
+        "1.00001, 4, 0.00001, 16",
+        // Standard power
+        "1.00001, 4, 16, 20000",
+    })
+    @Disabled("Used to test double precision implementations")
+    // Negligible speed difference
+//    JDK Temurin 25.472-b08
+//    1.00001    4.0    1.0E-5     16.0 : 100000   679.608 : 642.454  (1.05783x) : 625.972  (1.08568x : 1.02633x)
+//    1.00001    4.0      16.0  20000.0 : 100000   603.632 : 593.246  (1.01751x) : 561.858  (1.07435x : 1.05586x)
+    void testDoubleSpeed(double ls, double us, double la, double ua) {
+        Assertions.assertTrue(ls > 1);
+        Assertions.assertTrue(us > ls);
+        Assertions.assertTrue(la > 0);
+        Assertions.assertTrue(ua > la);
+        // Create data using odd or even s
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final DoubleSupplier s = createSampler(rng, ls, us, true);
+        final DoubleSupplier a = createSampler(rng, la, ua, true);
+        final int n = 100000;
+        final double[] x = DoubleStream.generate(s).limit(n).toArray();
+        final double[] y = DoubleStream.generate(a).limit(n).toArray();
+
+        // Optimised context
+        Context c = Context.DOUBLE;
+
+        final double[] r1 = new double[n];
+        long t1 = System.nanoTime();
+        for (int i = 0; i < n; i++) {
+            r1[i] = HurwitzZetaTest.zeta(x[i], y[i], Double.NaN, c);
+        }
+        t1 = System.nanoTime() - t1;
+
+        // Without extended precision but keep the cheap tail scaling for sub-normal support
+        c = c.withOptions(Context.TAIL_SCALING);
+
+        final double[] r2 = new double[n];
+        long t2 = System.nanoTime();
+        for (int i = 0; i < n; i++) {
+            r2[i] = HurwitzZetaTest.zeta(x[i], y[i], Double.NaN, c);
+        }
+        t2 = System.nanoTime() - t2;
+
+        // Final version for reference
+
+        final double[] r3 = new double[n];
+        long t3 = System.nanoTime();
+        for (int i = 0; i < n; i++) {
+            r3[i] = HurwitzZeta.value(x[i], y[i]);
+        }
+        t3 = System.nanoTime() - t3;
+
+        Assertions.assertTrue(t2 < t1, "Standard precision is faster");
+        Assertions.assertTrue(t3 < t1, "Final implementation is faster");
+
+        final int sign = doReporting() ? -1 : 1;
+        for (int i = 0; i < n; i++) {
+            final int ii = i;
+            final Supplier<String> msg = () -> String.format("%s %s", x[ii], y[ii]);
+            TestUtils.assertEquals(r1[i], r2[i], sign * 10, null, msg);
+            // This can print differences as the final implementation has different
+            // logic to use the extended precision power function (it uses it whenever
+            // there is round-off from (a+N). In observed cases of differences the final
+            // implementation is correct.
+            TestUtils.assertEquals(r1[i], r3[i], sign * 1, null, msg);
+        }
+
+        if (doReporting()) {
+            // CHECKSTYLE: stop regexp
+            System.out.printf("%6s %6s  %8s %8s : %d   %.6g : %.6g  (%.6gx) : %.6g  (%.6gx : %.6gx)%n",
+                ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6,
+                (double) t1 / t2, t3 * 1e-6, (double) t1 / t3, (double) t2 / t3);
+            // CHECKSTYLE: resume regexp
+        }
+    }
+
+    /**
      * Test the speed of the BigDecimal and DD implementations for negative a.
      * This is an approximate test. Benchmarking should ideally use JMH.
      *
@@ -4225,10 +4309,12 @@ class HurwitzZetaTest {
         Assertions.assertTrue(t2 < t1);
         Assertions.assertTrue(t3 < t1);
 
+        final int sign = doReporting() ? -1 : 1;
         for (int i = 0; i < n; i++) {
             final int ii = i;
-            TestUtils.assertEquals(r1[i], r2[i], -10, null, () -> String.format("%d %s", x[ii], -y[ii]));
-            Assertions.assertEquals(r1[i], r3[i], Math.abs(r1[i]) * 1e-9, () -> String.format("%d %s", x[ii], -y[ii]));
+            final Supplier<String> msg = () -> String.format("%d %s", x[ii], y[ii]);
+            TestUtils.assertEquals(r1[i], r2[i], sign * 10, null, msg);
+            Assertions.assertEquals(r1[i], r3[i], Math.abs(r1[i]) * 1e-9, msg);
         }
 
         if (doReporting()) {
