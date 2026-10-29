@@ -1745,7 +1745,7 @@ class HurwitzZetaTest {
                     p = p * pScale * p;
                 }
             } else {
-              p *= pScale;
+                p *= pScale;
             }
         } else {
             // powerTermOption == 0 or 3
@@ -2773,7 +2773,9 @@ class HurwitzZetaTest {
         final MathContext mc = new MathContext(70);
         // Check factors
         for (int k = 1; k < NUM.length; k++) {
-            factorial = factorial.multiply(BigInteger.valueOf(2 * k - 1)).multiply(BigInteger.valueOf(2 * k));
+            // 2k!
+            factorial = factorial.multiply(BigInteger.valueOf((2L * k - 1) * (2L * k)));
+            // Parse the raw Bernoulli numerator and denominators from OEIS
             final BigInteger num = new BigInteger(NUM[k].substring(NUM[k].indexOf(' ') + 1));
             final BigInteger denom = new BigInteger(DENOM[k].substring(DENOM[k].indexOf(' ') + 1));
 
@@ -2821,9 +2823,9 @@ class HurwitzZetaTest {
     @Test
     void testFractionalAddAssumptions() {
         // Adding double-double numbers.
-        // With a fixed mantissa of 106 bits numbers a+b cannot be added if they do not
+        // With a fixed mantissa of 106 bits, numbers a+b cannot be added if they do not
         // overlap by 0.5 ulp. This is 2^-106 when the first term is in [1, 2) and b is smaller.
-        // However a double-double has a floating mantissa of at least 106 bits.
+        // However a double-double has a floating mantissa of *at least* 106 bits.
         // When using normalised numbers such as a fractional representation the low part
         // exponent changes if the round-off from the high part has leading zeros. This expands
         // the effective mantissa:
@@ -2831,7 +2833,7 @@ class HurwitzZetaTest {
         // x1         10000000
         // x1         01-------
         // x1         001-------
-        // A low part with a no leading zeros must have all trailing zeros
+        // A low part x1 with no leading zeros must have all trailing zeros
         // otherwise it will be larger than 0.5 ulp(x0).
         // So the practical working mantissa of a DD is 107+ bits in all but a single case.
         // With random low parts we expect the probability we can add the numbers
@@ -2845,10 +2847,11 @@ class HurwitzZetaTest {
         // -112         0.031250
         // -107+b       2^-b
 
-        // Special case of a 106-bit mantissa.
-        // The low part is equal to 0.5 ulp(high part).
+        // Special case of a 106-bit mantissa with a non-zero low part.
+        // The low part is equal to 0.5 ulp(high part) and a number smaller
+        // by a scale factor of 2^106 cannot be added
         final DD a = DD.ofSum(1.0, Math.scalb(1.0, -53));
-        Assertions.assertEquals(a, a.add(DD.ONE.scalb(-106)));
+        Assertions.assertEquals(a, a.add(DD.ONE.scalb(-106)), "Cannot add 1 to 1e-106");
 
         // Now test random mantissas.
         // Fixed seed for stability
@@ -2863,7 +2866,7 @@ class HurwitzZetaTest {
             for (int i = 0; i < n; i++) {
                 // Create a number with all random bits.
                 // The random numbers must have a leading 1 bit.
-                // Create numbers in [1, 2) + (0, 1] scaled to be smaller that 0.5 ulp(1.0) = 2^-53.
+                // Create numbers +/- [1, 2) +/- (0, 1] scaled to be smaller that 0.5 ulp(1.0) = 2^-53.
                 final double x0 = sign.getAsInt() * (1 + rng.nextDouble());
                 final double x1 = sign.getAsInt() * Math.scalb(1 - rng.nextDouble(), -53);
                 final double y0 = sign.getAsInt() * (1 + rng.nextDouble());
@@ -2884,6 +2887,7 @@ class HurwitzZetaTest {
             // Here we just check the observed additions is approximately as expected.
             // This will fail if the additions are out by 2 which would occur if
             // the scaling base of 107 was incorrect.
+            // p(added) = 2^-b
             final double expected = Math.scalb(1, -b);
             final double actual = (double) added / n;
             Assertions.assertEquals(expected, actual, expected * 0.25);
@@ -2894,28 +2898,28 @@ class HurwitzZetaTest {
     void testAddZero() {
         // Zero has an exponent of zero in the DD fractional representation.
         final int[] exp = {-42};
-        final DD z = DD.ZERO.frexp(exp);
-        final int ez = exp[0];
-        Assertions.assertEquals(0, ez);
+        final DD zero = DD.ZERO.frexp(exp);
+        final int ezero = exp[0];
+        Assertions.assertEquals(0, ezero);
         // Add any number to zero in fractional representation and it
         // should always be returned appropriately scaled
         final DD x = DD.ofSum(3.45, 5.67).frexp(exp);
         final int ex = exp[0];
         DD y;
         for (final int b : new int[] {0, 1, -13, -263784, 26378468, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
-            // Test implementation
-            y = HurwitzZetaTest.add(z, ez, x, ex + b, exp, DD::add);
+            // Testing implementation (in this class)
+            y = HurwitzZetaTest.add(zero, ezero, x, ex + b, exp, DD::add);
             Assertions.assertEquals(x, y, () -> Integer.toString(b));
             Assertions.assertEquals(ex + b, exp[0]);
-            y = HurwitzZetaTest.add(x, ex + b, z, ez, exp, DD::add);
+            y = HurwitzZetaTest.add(x, ex + b, zero, ezero, exp, DD::add);
             Assertions.assertEquals(x, y, () -> Integer.toString(b));
             Assertions.assertEquals(ex + b, exp[0]);
 
             // Final version
-            y = HurwitzZeta.add(z, ez, x, ex + b, exp);
+            y = HurwitzZeta.add(zero, ezero, x, ex + b, exp);
             Assertions.assertEquals(x, y, () -> Integer.toString(b));
             Assertions.assertEquals(ex + b, exp[0]);
-            y = HurwitzZeta.add(x, ex + b, z, ez, exp);
+            y = HurwitzZeta.add(x, ex + b, zero, ezero, exp);
             Assertions.assertEquals(x, y, () -> Integer.toString(b));
             Assertions.assertEquals(ex + b, exp[0]);
         }
@@ -2923,12 +2927,12 @@ class HurwitzZetaTest {
         // Zero added to zero.
         // Do not test scaled zero. DD.frexp will not return a scale for zero
         // so it will never be passed to the add utility function.
-        y = HurwitzZetaTest.add(z, ez, z, ez, exp, DD::add);
-        Assertions.assertEquals(z, y);
-        Assertions.assertEquals(ez, exp[0]);
-        y = HurwitzZeta.add(z, ez, z, ez, exp);
-        Assertions.assertEquals(z, y);
-        Assertions.assertEquals(ez, exp[0]);
+        y = HurwitzZetaTest.add(zero, ezero, zero, ezero, exp, DD::add);
+        Assertions.assertEquals(zero, y);
+        Assertions.assertEquals(ezero, exp[0]);
+        y = HurwitzZeta.add(zero, ezero, zero, ezero, exp);
+        Assertions.assertEquals(zero, y);
+        Assertions.assertEquals(ezero, exp[0]);
     }
 
     /**
@@ -2944,15 +2948,14 @@ class HurwitzZetaTest {
         // - N >= 7 has similar error. A lower N uses more M in the tail series.
         // - Using a high precision pow(n + x, y) lowers max error and rms.
         //   The power function computes (a+n)^-s using -s * round-off of (a+n).
-        //   so the difference is greater when s is large
+        //   so the difference is greater when s is large and a is small
         //   (verified using test resources with s above 4).
         //   It does not impact a in [0, 1] where (a+n) is inexact as a^-s is magnitudes
         //   larger than all other terms.
         //   It could be applied when: a>1; s>2; and (a+n) is inexact. Here the round-off
         //   multiplied by s will be above 2^-53 and exp(-s * round-off) != 1.
-        // - Using divide makes negligible difference from using multiply in the tail.
-        // - Using the power function to compute (a+n)^-(2k-1+s) makes no difference
-        //   and will be expensive.
+        // - Using the power function to compute (a+n)^-(2k-1+s) in the tail makes no
+        //   difference and will be expensive.
         // - Extended precision sum makes a small difference. Max error is similar and RMS drops.
         //   Terms are added in ascending magnitude which reduces cumulative error in double
         //   precision unless the largest terms have error. Can be helped using high precision pow.
@@ -2964,7 +2967,8 @@ class HurwitzZetaTest {
         //   using the higher precision power **and** sum, e.g. N=8 vs N=10. Using one or
         //   the other N=8 is OK.
         // - The tail power term can be be very small and underflow. This can be mitigated by
-        //   scaling up the power term, and scaling down another factor by an equivalent amount.
+        //   scaling up the power term, and scaling down another factor by an equivalent amount
+        //   to extend the number of terms before underflow, or convergence.
 
         // Extended precision power function (improvement if used for all terms)
         "7, 15, 0, -53, 0, false",
@@ -3022,8 +3026,13 @@ class HurwitzZetaTest {
         throws IOException {
         // Default to not use variable convergence on series sum S.
         // Early convergence can be very bad and requires adjusting the tolerance.
-        final double maxTolerance = bs == 0 ? 100 : 15000;
-        final double rmsTolerance = bs == 0 ? 10 : 200;
+        //
+        // Note: Many implementations have been tested. A standard double summation
+        // of the regular power function is only 2 ULP worse than using double-double
+        // summation of an extended precision power function.
+        // A speed test using JMH has not been performed to assess runtime cost.
+        final double maxTolerance = bs == 0 ? 5 : 15000;
+        final double rmsTolerance = bs == 0 ? 1 : 200;
         final double epsS = bs == 0 ? 0 : Math.scalb(1.0, bs);
         final double epsT = Math.scalb(1.0, bt);
         for (int n = ln; n <= un; n++) {
