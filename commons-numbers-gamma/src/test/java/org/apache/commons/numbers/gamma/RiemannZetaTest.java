@@ -50,8 +50,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 class RiemannZetaTest {
     /** Seed for data generation. */
     private static final long SEED = 6516587940839803692L;
-    /** Flag set when the JVM version is printed. Used for testing. */
-    private static boolean jvm = false;
+    /**
+     * Flag set when reporting to the console. Used for testing.
+     * If negative no output is printed.
+     */
+    private static int reporting = -1;
 
     /**
      * Pre-computed table of Borwein coefficients (-1)^k * (d_n - d_k) / d_n for n = 24.
@@ -1057,17 +1060,34 @@ class RiemannZetaTest {
      * @param size Number of measurements
      */
     private static void debugRms(String name, double maxAbsUlp, double rmsUlp, double meanUlp, int size) {
+        if (doReporting()) {
+            // CHECKSTYLE: stop regexp
+            System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d%n",
+                name, maxAbsUlp, rmsUlp, meanUlp, size);
+            // CHECKSTYLE: resume regexp
+        }
+    }
+
+    /**
+     * Check if reporting to stdout. Prints the JDK version on first return of true.
+     *
+     * @return true if reporting
+     * @see #reporting
+     */
+    private static boolean doReporting() {
+        if (reporting < 0) {
+            return false;
+        }
         // CHECKSTYLE: stop regexp
-        if (!jvm) {
-            jvm = true;
+        if (reporting == 0) {
+            reporting = 1;
             System.out.printf("JDK %s %s%n",
                 System.getProperty("java.vm.vendor"),
                 System.getProperty("java.vm.version")
             );
         }
-        System.out.printf("%-35s   max %10.6g   RMS %10.6g   mean %14.6g  n %4d%n",
-            name, maxAbsUlp, rmsUlp, meanUlp, size);
-        // CHECKSTYLE: resume regexp
+        // CHECKSTYLE: resume regex
+        return true;
     }
 
     /**
