@@ -111,17 +111,6 @@ class RiemannZetaTest {
      * Define the test cases for each resource file.
      * This encapsulates the function to test, the expected maximum and RMS error, and
      * the resource file containing the data.
-     *
-     * <p>The Boost functions use the default policy of internal promotion
-     * of double to long double if it offers more precision. Code comments
-     * in the implementations for the maximum error are using the defaults with
-     * promotion enabled where the error is 'effectively zero'. Java does not
-     * support long double computation. Tolerances have been set to allow tests to
-     * pass. Spot checks on larger errors have been verified against the reference
-     * implementation compiled with promotion of double <strong>disabled</strong>.
-     *
-     * @see <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/relative_error.html">Relative error</a>
-     * @see <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/pol_tutorial/policy_tut_defaults.html">Policy defaults</a>
      */
     private enum TestCase implements TestError {
         // Hurwitz zeta is accurate for all s > 1 including s -> 1.
