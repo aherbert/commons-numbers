@@ -93,7 +93,6 @@ class RiemannZetaTest {
     /** ln(2). */
     private static final double LN2 = Math.log(2);
 
-
     /** Define the expected error for a test. */
     private interface TestError {
         /**
