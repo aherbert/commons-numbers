@@ -27,7 +27,9 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.SplittableRandom;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
+import java.util.function.BooleanSupplier;
 import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
@@ -166,9 +168,15 @@ class HurwitzZetaTest {
         "hzeta_s32_1024_ap1_subnormal1053.csv",
         "hzeta_s32_1024_ap0.1_subnormal1073.csv",
     };
-    /** Flag set when reporting to the console. Used for testing.
-     * If negative no output is printed. */
-    private static int reporting = 0;
+    /**
+     * Flag set when reporting to the console. Used for testing.
+     * If negative no output is printed.
+     *
+     * <p>Some test fixtures will exercise the testing code. When no reporting
+     * is configured then the test will still run but with a subset of the
+     * cases. This ensures test code is asserted but without excessive runtimes.
+     */
+    private static int reporting = -1;
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -1291,10 +1299,11 @@ class HurwitzZetaTest {
         T_DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
         T_DD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
 
+        // Note: Testing code may skip tests so here the RMS is configured to the same as the max
         // Double arithmetic is max error ~24-bits when cancellation is expected
-        T_DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p24, 0x1p20),
+        T_DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p24, 0x1p24),
         // Computing the largest terms in extended precision error improves 6 bits
-        T_DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p17, 0x1p13),
+        T_DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p17, 0x1p17),
 
         // Extended precision implementations
         T_BD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
@@ -3022,7 +3031,6 @@ class HurwitzZetaTest {
         // RMS error 5-10% lower.
         "7, 12, 0, -53, 775, true", // 7 + 256 + 512
     })
-    @Disabled("Used to parameterize the zeta function")
     void testPrecisionDouble(int ln, int un, int bs, int bt, int options, boolean subNormal)
         throws IOException {
         // Default to not use variable convergence on series sum S.
@@ -3078,7 +3086,11 @@ class HurwitzZetaTest {
                         bt, options);
                 }
             };
-            assertFunction(test);
+            assertFunction(test, true);
+            // When not reporting cut the test short
+            if (!doReporting()) {
+                break;
+            }
         }
     }
 
@@ -3109,7 +3121,6 @@ class HurwitzZetaTest {
         // Not enough
         "35, 40, 65, 0, 211",
     })
-    @Disabled("Used to parameterize the zeta function")
     void testPrecisionBigDecimal(int ln, int un, int digits, int options, int scale)
         throws IOException {
         for (int n = ln; n <= un; n++) {
@@ -3129,7 +3140,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public double getRmsTolerance() {
-                    // Within 15 bits of the target precision
+                    // Within 10 bits of the target precision
                     return Math.scalb(1.0, 10);
                 }
 
@@ -3156,6 +3167,10 @@ class HurwitzZetaTest {
                 }
             };
             assertFunction(test, 0);
+            // When not reporting cut the test short
+            if (!doReporting()) {
+                break;
+            }
         }
     }
 
@@ -3235,7 +3250,6 @@ class HurwitzZetaTest {
         // Not enough
         "7, 15, -48, 0, 52, -1074",
     })
-    @Disabled("Used to parameterize the zeta function")
     void testPrecisonDD(int ln, int un, int b, int options, int scale, int ignoreB)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
@@ -3287,6 +3301,10 @@ class HurwitzZetaTest {
                 }
             };
             assertFunction(test, ignoreB);
+            // When not reporting cut the test short
+            if (!doReporting()) {
+                break;
+            }
         }
     }
 
@@ -3807,7 +3825,9 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @EnumSource(value = ZetaTestCase.class)
     void testZeta(ZetaTestCase tc) {
-        assertFunction(tc);
+        // Cases starting with T_ are for testing code.
+        // This can be configured to skip most cases to reduce runtime.
+        assertFunction(tc, tc.name().startsWith("T_"));
     }
 
     /**
@@ -3829,12 +3849,17 @@ class HurwitzZetaTest {
      *
      * @param tc Test case
      */
-    private static void assertFunction(DoublePrecisionTestCase tc) {
+    private static void assertFunction(DoublePrecisionTestCase tc, boolean allowSkips) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
+        final boolean noSkips = !allowSkips || doReporting();
+        final BooleanSupplier skip = createSkipSupplier(noSkips, 7);
         final long start = System.nanoTime();
         for (final String filename : tc.getFilenames()) {
             try (DataReader in = new DataReader(filename)) {
                 while (in.next()) {
+                    if (skip.getAsBoolean()) {
+                        continue;
+                    }
                     try {
                         final double s = in.getDouble(0);
                         final double a = in.getDouble(1);
@@ -3869,10 +3894,14 @@ class HurwitzZetaTest {
         if (ignoreB < 0) {
             ignore = BigDecimal.valueOf(2).pow(ignoreB, MathContext.DECIMAL64);
         }
+        final BooleanSupplier skip = createSkipSupplier(doReporting(), 7);
         final long start = System.nanoTime();
         for (final String filename : tc.getFilenames()) {
             try (DataReader in = new DataReader(filename)) {
                 while (in.next()) {
+                    if (skip.getAsBoolean()) {
+                        continue;
+                    }
                     try {
                         final double x = in.getDouble(0);
                         final int s = (int) x;
@@ -3957,6 +3986,71 @@ class HurwitzZetaTest {
         return true;
     }
 
+    @Test
+    void testSkipSupplier() {
+        for (int b = 0; b < 5; b++) {
+            // No skips when reporting
+            final BooleanSupplier skip = createSkipSupplier(true, b);
+            final int interval = 1 << b;
+            int count = 0;
+            final int total = 10 * interval;
+            for (int i = total; i-- >= 0;) {
+                if (skip.getAsBoolean()) {
+                    count++;
+                }
+            }
+            Assertions.assertEquals(0, count);
+        }
+        for (int b = 0; b < 5; b++) {
+            // Skips
+            final BooleanSupplier skip = createSkipSupplier(false, b);
+            final int interval = 1 << b;
+            int count = 0;
+            final int total = 10 * interval;
+            for (int i = total; i-- >= 0;) {
+                if (skip.getAsBoolean()) {
+                    count++;
+                }
+            }
+            // p(not skip) = 1/interval
+            final double expected = Math.scalb(1, -b);
+            // observed (not skip)
+            final double actual = (total - count) / (double) total;
+            final int c = count;
+            // This may not be exact as the skips are pseudo-random
+            Assertions.assertEquals(expected, actual, expected * 0.1,
+                () -> String.format("%d : %d/%d", interval, c, total));
+        }
+    }
+
+    /**
+     * Create a supplier that will return {@code false} at regular intervals
+     * to signal that a processing a series should not skip the item.
+     *
+     * <p>If {@code noSkips} is {@code true} this always returns {@code false}.
+     *
+     * <p>If {@code noSkips} is {@code false} this returns {@code false} at intervals
+     * of {@code 2^b}.
+     *
+     * <p>This allows the class to exercise a subset of test cases for tests
+     * that target testing code. The testing code will be run but the time cost
+     * is reduced to maintain reasonable build times.
+     *
+     * @param noSkips the no skips flag
+     * @param b the exponent of the interval
+     * @return the supplier
+     */
+    private static BooleanSupplier createSkipSupplier(boolean noSkips, int b) {
+        if (noSkips) {
+            // Do not skip
+            return () -> false;
+        }
+        // A test that is not reporting. Run at intervals of 2^b
+        final int[] counter = {ThreadLocalRandom.current().nextInt()};
+        final int mask = (1 << b) - 1;
+        return () -> (++counter[0] & mask) != 0;
+    }
+
     /**
      * Test to explore the size of the terms: S, I, T with different (s, a) and N.
      * For a given (s, a), test if convergence is possible in the tail
@@ -3990,8 +4084,6 @@ class HurwitzZetaTest {
         "1128, 12, 106, 32", // 13s
         "1128, 15, 106, 22", // 14s
     })
-    // This could be enabled. Each case takes approximately 10-30s (see above).
-    @Disabled("Used to test convergence of the series S when the power term s > a")
     void testTailConvergence(int maxS, int n, int eb, int expectedMaxM) {
         Assertions.assertTrue(maxS > 1);
         Assertions.assertTrue(n > 1);
@@ -4001,6 +4093,9 @@ class HurwitzZetaTest {
         final int[] exp = {0};
         // Limit iterations to a realistic table size
         final int maxM = Math.min(eb, FDD.length);
+        // Use skips otherwise each case takes approximately 10-30s (see above)
+        final boolean noSkips = doReporting() || expectedMaxM == maxM;
+        final BooleanSupplier skip = createSkipSupplier(noSkips, 10);
         int observedMaxM = 0;
         // List of cases with the max M
         final ArrayList<double[]> cases = new ArrayList<>();
@@ -4014,6 +4109,10 @@ class HurwitzZetaTest {
             final double upperA = Math.max(20, 2 * s);
             int obsM = 0;
             for (double a = 1; a <= upperA; a += 1.0) {
+                if (skip.getAsBoolean()) {
+                    continue;
+                }
+
                 // Compute the terms of the zeta function: S + I + T.
                 // Determine if the tail converges to the specified precision.
                 // When s > a+n the pochammer term (s)_2k-1 grows faster than the
@@ -4101,8 +4200,9 @@ class HurwitzZetaTest {
                     // This was expected so stop the test
                     return;
                 }
-                // Record the maximum M for this s
-                if (i >= obsM) {
+                // Record the maximum M for this s.
+                // This is not applicable when skipping cases.
+                if (i >= obsM && noSkips) {
                     final int m = i;
                     Assertions.assertNotEquals(upperA, a,
                         () -> "Invalid test range (increase upperA): Upper limit of a for max M=" + m);
@@ -4636,7 +4736,7 @@ class HurwitzZetaTest {
         // Occurs when a > 2N with N the number of power terms in a zeta evaluation.
         "2, 11, 40, 41, true",
     })
-//    @Disabled("Used to generate test data")
+    @Disabled("Used to generate test data")
     void testDataSampleIntegerS(int ls, int us,
                                 double la, double ua, boolean uniforma) throws IOException {
         final SplittableRandom rng = new SplittableRandom(SEED);
