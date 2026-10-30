@@ -1275,8 +1275,12 @@ class HurwitzZetaTest {
      * the resource file(s) containing the data.
      */
     private enum ZetaTestCase implements DoublePrecisionTestCase {
+        // Prefix T_ for test code in this class.
+        // Note: Testing code may skip tests so here the RMS tolerance is configured
+        // to be more lenient. It may approach the max depending on the included cases.
+
         // Testing implementations for negative a.
-        // Requires accurate evaluation with integer s.
+        // Requires accurate evaluation with integer s (IS).
 
         // The double implementation is accurate until zeta values are sub-normal
         T_DOUBLE_ZETA_IS((s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, Context.DOUBLE), INT_TEST_RESOURCES, 1.5, 0.5),
@@ -1294,13 +1298,13 @@ class HurwitzZetaTest {
         T_DOUBLE_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 1.5, 0.5),
         T_DOUBLE_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 2.0, 0.5),
         // These use a context to evaluate to double precision
-        T_BD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
-        T_BD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
-        T_DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.1),
-        T_DD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.1),
+        T_BD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.2),
+        T_BD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.2),
+        T_DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.2),
+        T_DD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.2),
 
-        // Note: Testing code may skip tests so here the RMS is configured to the same as the max
         // Double arithmetic is max error ~24-bits when cancellation is expected
+        // Note: Testing code may skip tests so here the RMS is configured to the same as the max
         T_DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p24, 0x1p24),
         // Computing the largest terms in extended precision error improves 6 bits
         T_DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p17, 0x1p17),
