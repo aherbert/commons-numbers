@@ -239,6 +239,28 @@ public final class BoostZeta {
         -5.1754977470366797965163888379e+303,
         8.76015634462292151490407301349e+306,
     };
+    /** Look-up table for 3^-n. Used to improve rounding for s in [36, 54]. */
+    private static final double[] POW3 = {
+        6.66246330537566685583846730449e-18,
+        2.22082110179188895194615576816e-18,
+        7.40273700597296317315385256055e-19,
+        2.46757900199098772438461752018e-19,
+        8.22526333996995908128205840061e-20,
+        2.74175444665665302709401946687e-20,
+        9.1391814888555100903133982229e-21,
+        3.04639382961850336343779940763e-21,
+        1.01546460987283445447926646921e-21,
+        3.38488203290944818159755489737e-22,
+        1.12829401096981606053251829912e-22,
+        3.76098003656605353510839433041e-23,
+        1.25366001218868451170279811014e-23,
+        4.17886670729561503900932703379e-24,
+        1.3929555690985383463364423446e-24,
+        4.64318523032846115445480781532e-25,
+        1.54772841010948705148493593844e-25,
+        5.1590947003649568382831197948e-26,
+        1.7196982334549856127610399316e-26,
+    };
 
     /** No instances. */
     private BoostZeta() {}
@@ -526,8 +548,19 @@ public final class BoostZeta {
             // [1.00000000001455192189104198424, 1.0]
             // Change from: 1 + Math.pow(2, -s);
             // Adding 3^-s increases ULP accuracy as the result approaches 1.0.
-            // In particular this fixes a 1 ulp error for integer s=53.
-            result = Math.pow(3, -s) + Math.pow(2, -s) + 1;
+            //
+            // Instead of 3^-s we can compute an approximation as 3^-n
+            // where n in [36, 53] using a lookup table.
+            // This is enough for ULP rounding in most cases for 1 + 2^-s + 3^-s + ...
+            //
+            // For integer s this table is exact. Integer s is not expected as
+            // that case uses a look-up table.
+            // For non-integer s we round-up to avoid adding too large a magnitude.
+            // n = ceil(s - 36)
+            // The result may not be as exact as using Math.pow(3, -s) but
+            // is much faster.
+            final int n = (int) s - 35;
+            result = POW3[n] + Math.pow(2, -s) + 1;
         }
         return result;
     }
