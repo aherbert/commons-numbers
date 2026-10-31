@@ -34,9 +34,6 @@ import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
-import java.util.function.Supplier;
-import java.util.stream.DoubleStream;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.core.DDMath;
@@ -3762,48 +3759,48 @@ class HurwitzZetaTest {
 
             // Worst case of extreme cancellation. When a -> half-integer
             // and the low series is the full range possible given 0.5+/-2^-b
-            Arguments.of(3, -0.5 + 0x1p-54, 0.41439832211715462961751618626938, 1),
-            Arguments.of(3, -0.5 + 0x1p-53, 0.41439832211714926143686524195861, 1),
-            Arguments.of(3, -0.5 - 0x1p-53, 0.41439832211717073415946901920171, 3),
-            Arguments.of(3, -1.5 + 0x1p-52, 0.11810202582084209719727895331851, 2),
-            Arguments.of(3, -1.5 - 0x1p-52, 0.11810202582088530580646271524921, 2),
-            Arguments.of(3, -3.5 + 0x1p-51, 0.0307784106604705956811455131349, 4),
-            Arguments.of(3, -3.5 - 0x1p-51, 0.030778410660557098867785659805987, 2),
-            Arguments.of(3, -7.5 + 0x1p-50, 0.0077822558978654467309133842121074, 2),
-            Arguments.of(3, -7.5 - 0x1p-50, 0.0077822558980384765932871763254915, 3),
-            Arguments.of(3, -15.5 + 0x1p-49, 0.0019512219787038490075394821332913, 4),
-            Arguments.of(3, -15.5 - 0x1p-49, 0.0019512219790499147520220765569762, 4),
-            Arguments.of(3, -31.5 + 0x1p-48, 0.00048816210820002952659777173497611, 2),
-            Arguments.of(3, -31.5 - 0x1p-48, 0.00048816210889216253017517339304625, 3),
-            Arguments.of(3, -63.5 + 0x1p-47, 0.00012206286228806035641514115942213, 10),
-            Arguments.of(3, -63.5 - 0x1p-47, 0.00012206286367232674283574332594035, 10),
-            Arguments.of(3, -127.5 + 0x1p-46, 0.000030517111096024468697569156501944, 10),
-            Arguments.of(3, -127.5 - 0x1p-46, 0.000030517113864557336393645086698446, 10),
-            Arguments.of(3, -255.5 + 0x1p-45, 0.0000076293626591457113750252501943586, 10),
-            Arguments.of(3, -255.5 - 0x1p-45, 0.0000076293681962114704832983463164781, 10),
-            Arguments.of(3, -511.5 + 0x1p-44, 0.0000019073412767613820522958206941628, 10),
-            Arguments.of(3, -511.5 - 0x1p-44, 0.0000019073523508929061980225612021874, 10),
-            Arguments.of(3, -1023.5 + 0x1p-43, 0.00000047682597038482563656491683673066, 10),
-            Arguments.of(3, -1023.5 - 0x1p-43, 0.00000047684811864787541032292535846052, 10),
-            Arguments.of(3, -2047.5 + 0x1p-42, 0.00000011918713418230492155747450649894, 10),
-            Arguments.of(3, -2047.5 - 0x1p-42, 0.00000011923143070840483965021033635372, 10),
-            Arguments.of(3, -4095.5 + 0x1p-41, 0.000000029758025417506153675797113283396, 10),
-            Arguments.of(3, -4095.5 - 0x1p-41, 0.000000029846618469706082505485151864752, 10),
+            Arguments.of(3, -0.5 + 0x1p-54, 0.41439832211715462961751618626938, 0),
+            Arguments.of(3, -0.5 + 0x1p-53, 0.41439832211714926143686524195861, 0),
+            Arguments.of(3, -0.5 - 0x1p-53, 0.41439832211717073415946901920171, 0),
+            Arguments.of(3, -1.5 + 0x1p-52, 0.11810202582084209719727895331851, 0),
+            Arguments.of(3, -1.5 - 0x1p-52, 0.11810202582088530580646271524921, 0),
+            Arguments.of(3, -3.5 + 0x1p-51, 0.0307784106604705956811455131349, 0),
+            Arguments.of(3, -3.5 - 0x1p-51, 0.030778410660557098867785659805987, 0),
+            Arguments.of(3, -7.5 + 0x1p-50, 0.0077822558978654467309133842121074, 0),
+            Arguments.of(3, -7.5 - 0x1p-50, 0.0077822558980384765932871763254915, 0),
+            Arguments.of(3, -15.5 + 0x1p-49, 0.0019512219787038490075394821332913, 0),
+            Arguments.of(3, -15.5 - 0x1p-49, 0.0019512219790499147520220765569762, 0),
+            Arguments.of(3, -31.5 + 0x1p-48, 0.00048816210820002952659777173497611, 0),
+            Arguments.of(3, -31.5 - 0x1p-48, 0.00048816210889216253017517339304625, 0),
+            Arguments.of(3, -63.5 + 0x1p-47, 0.00012206286228806035641514115942213, 0),
+            Arguments.of(3, -63.5 - 0x1p-47, 0.00012206286367232674283574332594035, 0),
+            Arguments.of(3, -127.5 + 0x1p-46, 0.000030517111096024468697569156501944, 0),
+            Arguments.of(3, -127.5 - 0x1p-46, 0.000030517113864557336393645086698446, 0),
+            Arguments.of(3, -255.5 + 0x1p-45, 0.0000076293626591457113750252501943586, 0),
+            Arguments.of(3, -255.5 - 0x1p-45, 0.0000076293681962114704832983463164781, 0),
+            Arguments.of(3, -511.5 + 0x1p-44, 0.0000019073412767613820522958206941628, 0),
+            Arguments.of(3, -511.5 - 0x1p-44, 0.0000019073523508929061980225612021874, 0),
+            Arguments.of(3, -1023.5 + 0x1p-43, 0.00000047682597038482563656491683673066, 0),
+            Arguments.of(3, -1023.5 - 0x1p-43, 0.00000047684811864787541032292535846052, 0),
+            Arguments.of(3, -2047.5 + 0x1p-42, 0.00000011918713418230492155747450649894, 0),
+            Arguments.of(3, -2047.5 - 0x1p-42, 0.00000011923143070840483965021033635372, 0),
+            Arguments.of(3, -4095.5 + 0x1p-41, 0.000000029758025417506153675797113283396, 0),
+            Arguments.of(3, -4095.5 - 0x1p-41, 0.000000029846618469706082505485151864752, 0),
             // Limit of a double-double summation of opposing terms from 0.5 +/- 2^-40
-            Arguments.of(3, -8191.5 + 0x1p-40, 0.0000000073619875169683123404158617742165, 10),
-            Arguments.of(3, -8191.5 - 0x1p-40, 0.0000000075391736213681931608483274726682, 10),
-            Arguments.of(3, -16383.5 + 0x1p-39, 0.0000000016854590430963498434783046783686, 10),
-            Arguments.of(3, -16383.5 - 0x1p-39, 0.0000000020398312518961172746074881289298, 10),
+            Arguments.of(3, -8191.5 + 0x1p-40, 0.0000000073619875169683123404158617742165, 0),
+            Arguments.of(3, -8191.5 - 0x1p-40, 0.0000000075391736213681931608483274726682, 0),
+            Arguments.of(3, -16383.5 + 0x1p-39, 0.0000000016854590430963498434783046783686, 0),
+            Arguments.of(3, -16383.5 - 0x1p-39, 0.0000000020398312518961172746074881289298, 0),
             // 50 ulp = Loss of ~ 6-bits of precision
-            Arguments.of(3, -65535.5 + 0x1p-37, -0.00000000059232909577937793989464549320949, 50),
-            Arguments.of(3, -65535.5 - 0x1p-37, 0.00000000082515973941969504164666837084463, 50),
-            Arguments.of(3, -1048575.5 + 0x1p-33, -0.000000011339455934241697907112956454121, 10),
-            Arguments.of(3, -1048575.5 - 0x1p-33, 0.000000011340365428943470628555741917531, 10),
+            Arguments.of(3, -65535.5 + 0x1p-37, -0.00000000059232909577937793989464549320949, 0),
+            Arguments.of(3, -65535.5 - 0x1p-37, 0.00000000082515973941969504164666837084463, 0),
+            Arguments.of(3, -1048575.5 + 0x1p-33, -0.000000011339455934241697907112956454121, 0),
+            Arguments.of(3, -1048575.5 - 0x1p-33, 0.000000011340365428943470628555741917531, 0),
 
             // Check some larger powers
-            Arguments.of(7, -31.5 + 0x1p-48, 0.00000000014222080058151244961535769914742, 5),
+            Arguments.of(7, -31.5 + 0x1p-48, 0.00000000014222080058151244961535769914742, 0),
             Arguments.of(9, -127.5 - 0x1p-46, 0.00000000026193893956547650755982737479515, 0),
-            Arguments.of(5, -1023.5 - 0x1p-43, 0.00000000007309223831961703808738193264568, 1),
+            Arguments.of(5, -1023.5 - 0x1p-43, 0.00000000007309223831961703808738193264568, 0),
 
             Arguments.of(1.5, 4789, 0.0289021565574206125831622859402, 1),
             Arguments.of(2.345, 12.789, 0.0254390524135780630410689989495, 1),
@@ -4267,167 +4264,6 @@ class HurwitzZetaTest {
             }
         }
         Assertions.assertTrue(maxCancellation > 53);
-    }
-
-    /**
-     * Test the speed of the double implementation.
-     * This is an approximate test. Benchmarking should ideally use JMH.
-     */
-    @ParameterizedTest
-    @CsvSource({
-        // Extended precision power
-        "1.00001, 4, 0.00001, 16",
-        // Standard power
-        "1.00001, 4, 16, 20000",
-    })
-    @Disabled("Used to test double precision implementations")
-    // Negligible speed difference
-//    JDK Temurin 25.472-b08
-//    1.00001    4.0    1.0E-5     16.0 : 100000   679.608 : 642.454  (1.05783x) : 625.972  (1.08568x : 1.02633x)
-//    1.00001    4.0      16.0  20000.0 : 100000   603.632 : 593.246  (1.01751x) : 561.858  (1.07435x : 1.05586x)
-    void testDoubleSpeed(double ls, double us, double la, double ua) {
-        Assertions.assertTrue(ls > 1);
-        Assertions.assertTrue(us > ls);
-        Assertions.assertTrue(la > 0);
-        Assertions.assertTrue(ua > la);
-        // Create data using odd or even s
-        final SplittableRandom rng = new SplittableRandom(SEED);
-        final DoubleSupplier s = createSampler(rng, ls, us, true);
-        final DoubleSupplier a = createSampler(rng, la, ua, true);
-        final int n = 100000;
-        final double[] x = DoubleStream.generate(s).limit(n).toArray();
-        final double[] y = DoubleStream.generate(a).limit(n).toArray();
-
-        // Optimised context
-        Context c = Context.DOUBLE;
-
-        final double[] r1 = new double[n];
-        long t1 = System.nanoTime();
-        for (int i = 0; i < n; i++) {
-            r1[i] = HurwitzZetaTest.zeta(x[i], y[i], Double.NaN, c);
-        }
-        t1 = System.nanoTime() - t1;
-
-        // Without extended precision but keep the cheap tail scaling for sub-normal support
-        c = c.withOptions(Context.TAIL_SCALING);
-
-        final double[] r2 = new double[n];
-        long t2 = System.nanoTime();
-        for (int i = 0; i < n; i++) {
-            r2[i] = HurwitzZetaTest.zeta(x[i], y[i], Double.NaN, c);
-        }
-        t2 = System.nanoTime() - t2;
-
-        // Final version for reference
-
-        final double[] r3 = new double[n];
-        long t3 = System.nanoTime();
-        for (int i = 0; i < n; i++) {
-            r3[i] = HurwitzZeta.value(x[i], y[i]);
-        }
-        t3 = System.nanoTime() - t3;
-
-        Assertions.assertTrue(t2 < t1, "Standard precision is faster");
-        Assertions.assertTrue(t3 < t1, "Final implementation is faster");
-
-        final int sign = doReporting() ? -1 : 1;
-        for (int i = 0; i < n; i++) {
-            final int ii = i;
-            final Supplier<String> msg = () -> String.format("%s %s", x[ii], y[ii]);
-            TestUtils.assertEquals(r1[i], r2[i], sign * 10, null, msg);
-            // This can print differences as the final implementation has different
-            // logic to use the extended precision power function (it uses it whenever
-            // there is round-off from (a+N). In observed cases of differences the final
-            // implementation is correct.
-            TestUtils.assertEquals(r1[i], r3[i], sign * 1, null, msg);
-        }
-
-        if (doReporting()) {
-            // CHECKSTYLE: stop regexp
-            System.out.printf("%6s %6s  %8s %8s : %d   %.6g : %.6g  (%.6gx) : %.6g  (%.6gx : %.6gx)%n",
-                ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6,
-                (double) t1 / t2, t3 * 1e-6, (double) t1 / t3, (double) t2 / t3);
-            // CHECKSTYLE: resume regexp
-        }
-    }
-
-    /**
-     * Test the speed of the BigDecimal and DD implementations for negative a.
-     * This is an approximate test. Benchmarking should ideally use JMH.
-     *
-     * <p>This uses positive a parameters for convenience.
-     */
-    @ParameterizedTest
-    @CsvSource({
-        // negative series
-        "2, 8, 0, 20",
-        "3, 9, 0, 20",
-        // difference of zetas
-        "2, 8, 50, 100",
-        "3, 9, 50, 100",
-    })
-    @Disabled("Used to test extended precision implementations")
-    // 3-4x slower on odd negatives than double precision. 17x faster than BigDecimal
-//    JDK Eclipse Adoptium 21.0.11+10-LTS
-//    2  8     0.0   20.0 : 30000   1056.02 : 107.489  (9.82445x) : 65.4798  (16.1274x : 1.64156x)
-//    3  9     0.0   20.0 : 30000   2020.92 : 117.619  (17.1820x) : 45.5130  (44.4033x : 2.58430x)
-//    2  8    50.0  100.0 : 30000   1703.24 : 170.068  (10.0150x) : 70.8486  (24.0405x : 2.40044x)
-//    3  9    50.0  100.0 : 30000   4201.25 : 242.494  (17.3252x) : 64.9078  (64.7264x : 3.73597x)
-    void testNegativeSpeed(int ls, int us, double la, double ua) {
-        Assertions.assertTrue(ls >= 2);
-        Assertions.assertTrue(us >= ls);
-        Assertions.assertTrue(la >= 0);
-        Assertions.assertTrue(ua >= la);
-        // Create data using odd or even s
-        final SplittableRandom rng = new SplittableRandom(SEED);
-        final int range = (us - ls) / 2;
-        final IntSupplier s = range > 1 ? () -> ls + 2 * rng.nextInt(range) : () -> ls;
-        final DoubleSupplier a = createSampler(rng, la, ua, true);
-        final int n = 30000;
-        final int[] x = IntStream.generate(s).limit(n).toArray();
-        final double[] y = DoubleStream.generate(a).limit(n).toArray();
-
-        final double[] r1 = new double[n];
-        long t1 = System.nanoTime();
-        for (int i = 0; i < n; i++) {
-            r1[i] = HurwitzZetaTest.zetaNegativeBD(x[i], -y[i]);
-        }
-        t1 = System.nanoTime() - t1;
-
-        final double[] r2 = new double[n];
-        long t2 = System.nanoTime();
-        for (int i = 0; i < n; i++) {
-            r2[i] = HurwitzZetaTest.zetaNegativeDD(x[i], -y[i]);
-        }
-        t2 = System.nanoTime() - t2;
-
-        final double[] r3 = new double[n];
-        long t3 = System.nanoTime();
-        for (int i = 0; i < n; i++) {
-            // Use the mode which will have a few bits correct.
-            // The standard double method can have complete cancellation.
-            r3[i] = HurwitzZetaTest.zetaNegative(x[i], -y[i], true);
-        }
-        t3 = System.nanoTime() - t3;
-
-        Assertions.assertTrue(t2 < t1);
-        Assertions.assertTrue(t3 < t1);
-
-        final int sign = doReporting() ? -1 : 1;
-        for (int i = 0; i < n; i++) {
-            final int ii = i;
-            final Supplier<String> msg = () -> String.format("%d %s", x[ii], y[ii]);
-            TestUtils.assertEquals(r1[i], r2[i], sign * 10, null, msg);
-            Assertions.assertEquals(r1[i], r3[i], Math.abs(r1[i]) * 1e-9, msg);
-        }
-
-        if (doReporting()) {
-            // CHECKSTYLE: stop regexp
-            System.out.printf("%2d %2d  %6s %6s : %d   %.6g : %.6g  (%.6gx) : %.6g  (%.6gx : %.6gx)%n",
-                ls, us, la, ua, n, t1 * 1e-6, t2 * 1e-6,
-                (double) t1 / t2, t3 * 1e-6, (double) t1 / t3, (double) t2 / t3);
-            // CHECKSTYLE: resume regexp
-        }
     }
 
     /**
