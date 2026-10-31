@@ -986,8 +986,26 @@ public class ZetaPerformance {
         apply(data.getS(), s -> ZetaPerformance.zeta(s, 1), bh);
     }
 
-    // TODO:
-    //
-    // Add a unit test class that compares this imp vs the final
-    // and checks they are close.
+    /**
+     * Benchmark a Math.pow(2, -s) for the Riemann zeta function.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void pow(RiemannZetaData data, Blackhole bh) {
+        apply(data.getS(), s -> Math.pow(2, -s), bh);
+    }
+
+    /**
+     * Benchmark a Math.exp(log(2) * -s) for the Riemann zeta function.
+     * This function is not ULP accurate but may be faster than Math.pow(2, -s).
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void powExp(RiemannZetaData data, Blackhole bh) {
+        apply(data.getS(), s -> Math.exp(0.6931471805599453 * -s), bh);
+    }
 }
