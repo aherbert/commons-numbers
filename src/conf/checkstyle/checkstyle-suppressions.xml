@@ -65,6 +65,7 @@
   <suppress checks="MethodLength" files=".*[/\\]jmh[/\\]arrays[/\\]Partition.java" />
   <suppress checks="MethodLength" files=".*[/\\]jmh[/\\]arrays[/\\]SelectionPerformance.java" />
   <suppress checks="MethodLength" files=".*[/\\]jmh[/\\]arrays[/\\]Sorting.java" />
+  <suppress checks="MethodLength" files=".*[/\\]jmh[/\\]gamma[/\\]ZetaPerformanceTest.java" />
 
   <!-- Be more lenient on tests. -->
   <suppress checks="Javadoc" files=".*[/\\]test[/\\].*" />
