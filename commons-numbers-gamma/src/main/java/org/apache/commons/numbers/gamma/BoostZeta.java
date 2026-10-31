@@ -37,7 +37,11 @@ package org.apache.commons.numbers.gamma;
  */
 public final class BoostZeta {
     /** ln(2pi). Computed to 30-digits precision. */
-    private static final double LOG_2PI = 1.83787706640934548356065947281;
+    private static final double LN_2PI = 1.83787706640934548356065947281;
+    /** ln(2). Computed to 30-digits precision. */
+    private static final double LN_2 = 0.693147180559945309417232121458;
+    /** ln(3). Computed to 30-digits precision. */
+    private static final double LN_3 = 1.09861228866810969139524523692;
     /** Value for {@code s < 0} where zeta(s) is +/- infinity for all
      * {@code s != -2n}. Note the zeta function for negative arguments oscillates
      * above and below zero with roots at even {@code s}. The value is increasingly
@@ -239,28 +243,6 @@ public final class BoostZeta {
         -5.1754977470366797965163888379e+303,
         8.76015634462292151490407301349e+306,
     };
-    /** Look-up table for 3^-n. Used to improve rounding for s in [36, 54]. */
-    private static final double[] POW3 = {
-        6.66246330537566685583846730449e-18,
-        2.22082110179188895194615576816e-18,
-        7.40273700597296317315385256055e-19,
-        2.46757900199098772438461752018e-19,
-        8.22526333996995908128205840061e-20,
-        2.74175444665665302709401946687e-20,
-        9.1391814888555100903133982229e-21,
-        3.04639382961850336343779940763e-21,
-        1.01546460987283445447926646921e-21,
-        3.38488203290944818159755489737e-22,
-        1.12829401096981606053251829912e-22,
-        3.76098003656605353510839433041e-23,
-        1.25366001218868451170279811014e-23,
-        4.17886670729561503900932703379e-24,
-        1.3929555690985383463364423446e-24,
-        4.64318523032846115445480781532e-25,
-        1.54772841010948705148493593844e-25,
-        5.1590947003649568382831197948e-26,
-        1.7196982334549856127610399316e-26,
-    };
 
     /** No instances. */
     private BoostZeta() {}
@@ -367,7 +349,7 @@ public final class BoostZeta {
                 // zeta(s > 170) == 1.0 so can be ignored.
                 final double mult = BoostGamma.sinp(0.5 * sc) * 2; // * zeta(s)
                 result = LogGamma.value(s);
-                result -= s * LOG_2PI;
+                result -= s * LN_2PI;
                 // Possible overflow if result > 709
                 // Use exp(2x) = exp(x) * exp(x) knowing |mult| in (0, 2]
                 if (result > BoostGamma.LOG_MAX_VALUE) {
@@ -547,21 +529,21 @@ public final class BoostZeta {
             result = 1 + Math.exp(result);
         } else {
             // [1.00000000001455192189104198424, 1.0]
-            // Change from: 1 + Math.pow(2, -s);
-            // Adding 3^-s increases ULP accuracy as the result approaches 1.0.
+            // Updated from 1.0 + pow(2, -s)
             //
-            // Instead of 3^-s we can compute an approximation as 3^-n
-            // where n in [36, 53] using a lookup table.
-            // This is enough for ULP rounding in most cases for 1 + 2^-s + 3^-s + ...
+            // Here 3^-s is < ulp(1) and so 1 + 2^-s is correct to 1 ULP.
+            // Rounding errors exist at integer s in particular as result approaches 1.0.
+            // The correct result requires 1 + 2^-s + hurwitzZeta(s, 3)
+            // and this is well approximated by adding 3^-s.
             //
-            // For integer s this table is exact. Integer s is not expected as
-            // that case uses a look-up table.
-            // For non-integer s we round-up to avoid adding too large a magnitude.
-            // n = ceil(s - 36)
-            // The result may not be as exact as using Math.pow(3, -s) but
-            // is much faster.
-            final int n = (int) s - 35;
-            result = POW3[n] + Math.pow(2, -s) + 1;
+            // Note that 2^-36 = 1.46e-11; 3^-36 / 2^-36 = 4.58e-7.
+            // Neither power term is required to high accuracy (lower bits are lost when adding).
+            // Use pow(x, -s) = exp(log(x) * -s)
+            // The exponential approximation to 3^-s + 2^-s + 1 has enough precision
+            // to achieve a 0 ULP result in most cases and is faster than pow.
+            //
+            // The function is monotonic at integer s (which use exact results).
+            result = Math.exp(-s * LN_3) + Math.exp(-s * LN_2) + 1;
         }
         return result;
     }
