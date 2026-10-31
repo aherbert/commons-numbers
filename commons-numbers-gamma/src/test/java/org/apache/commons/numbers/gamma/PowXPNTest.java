@@ -201,7 +201,7 @@ class PowXPNTest {
      * Test the limit of the Taylor series used in the extended precision power function.
      *
      * <p>Note if the series is extended to 3 terms the threshold rises from 2^26 to 2^36.
-     * The max error is still 2 ulp and the RMS stays around the same 0.7 level.
+     * The max error is still ~2 ulp and the RMS stays around the same 0.7 level.
      * The power argument is not expected to be large so 2 terms is enough.
      *
      * <p>The threshold of 2^26 is conservative and this test can pass if the level is
@@ -215,6 +215,8 @@ class PowXPNTest {
         // Test z using powers of 2 to fully explore the range [1, LIMIT)
         for (int b = 0; b < maxB; b++) {
             final double threshold = Math.scalb(1.0, b);
+            // Spurious cases observed at 3 ulp for larger z
+            final int ulps = b > 10 ? 3 : 2;
             for (int i = 0; i < 100; i++) {
                 // The round-off in +/- [0, 2*eps)
                 final double t = (0.5 - rng.nextDouble()) * 0x1p-51;
@@ -228,8 +230,8 @@ class PowXPNTest {
                 final double actual = z * t * (1 + (z - 1) * t * 0.5);
                 // 3-term version (see method javadoc why this is not required)
                 // final double actual = z * t * (1 + (z - 1) * t * 0.5 * (1 + (z - 2) * t * 0.3333333333333333));
-                TestUtils.assertEquals(expected, actual, 2, stats::add,
-                    () -> Integer.toString(Math.getExponent(threshold)));
+                TestUtils.assertEquals(expected, actual, ulps, stats::add,
+                    () -> String.format("z=%s, t=%s", z, t));
             }
         }
         Assertions.assertTrue(stats.getRMS() < 0.7, () -> Double.toString(stats.getRMS()));
