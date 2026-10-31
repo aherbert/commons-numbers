@@ -274,8 +274,12 @@ public class ZetaPerformance {
         private String rangeS;
         /** The range for a. */
         @Param({
+            // When |a| is small the terms (a+k)^-s for negative (a+k) can be computed
+            // as a series sum
             "0,10",
-            "10,1000",
+            // When |a| is large the series sum is expensive and can be computed
+            // using a difference of zeta functions
+            "100,10000",
         })
         private String rangeA;
 
