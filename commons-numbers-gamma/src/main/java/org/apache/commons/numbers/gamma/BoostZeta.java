@@ -38,10 +38,16 @@ package org.apache.commons.numbers.gamma;
 public final class BoostZeta {
     /** ln(2pi). Computed to 30-digits precision. */
     private static final double LN_2PI = 1.83787706640934548356065947281;
-    /** ln(2). Computed to 30-digits precision. */
+    /** ln(2). */
     private static final double LN_2 = 0.693147180559945309417232121458;
-    /** ln(3). Computed to 30-digits precision. */
-    private static final double LN_3 = 1.09861228866810969139524523692;
+    /** low part of the double-double representation of ln(2).
+     * float(mp.log(2) - float(mp.log(2))). */
+    private static final double LN_2L = 2.3190468138462996e-17;
+    /** ln(3). */
+    private static final double LN_3 = 1.0986122886681098;
+    /** low part of the double-double representation of ln(3).
+     * float(mp.log(3) - float(mp.log(3))). */
+    private static final double LN_3L = -9.07129723500153e-17;
     /** Value for {@code s < 0} where zeta(s) is +/- infinity for all
      * {@code s != -2n}. Note the zeta function for negative arguments oscillates
      * above and below zero with roots at even {@code s}. The value is increasingly
@@ -542,9 +548,33 @@ public final class BoostZeta {
             // The exponential approximation to 3^-s + 2^-s + 1 has enough precision
             // to achieve a 0 ULP result in most cases and is faster than pow.
             //
+            // Increase accuracy of exp using a double-double representation of log(x):
+            // exp(a + b) = exp(a) * exp(b)
+            // exp(-s * (x, xx)) = exp(-s * x) * exp(-s * xx)
+            // xx = round-off from log(3) ~ -9.071297235e-17
+            //
             // The function is monotonic at integer s (which use exact results).
-            result = Math.exp(-s * LN_3) + Math.exp(-s * LN_2) + 1;
+            result = exp(-s, LN_3, LN_3L) + exp(-s, LN_2, LN_2L) + 1;
         }
         return result;
+    }
+
+    /**
+     * Compute the term exp(y * (x, xx)) where (x, xx) is a double-double number.
+     *
+     * @param y Number.
+     * @param x High part of x.
+     * @param xx Low part of x.
+     * @return the result
+     */
+    static double exp(double y, double x, double xx) {
+        // exp(a + b) = exp(a) * exp(b)
+        // exp(y * (x + xx)) = exp(y * x) * exp(y * xx)
+        //
+        // Compute the second part using the Taylor series:
+        // exp(t) = 1 + t + t^2/2! + t^3/3! + ...
+        //        ~ 1 + t + t^2/2
+        final double t = y * xx;
+        return Math.exp(y * x) * (1 + t * (1 + t * 0.5 * (1 + t * 0.33333333333333333)));
     }
 }
