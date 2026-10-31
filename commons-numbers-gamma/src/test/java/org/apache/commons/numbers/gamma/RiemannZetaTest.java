@@ -116,16 +116,20 @@ class RiemannZetaTest {
         // Requires by passing public API which can call the zeta function when a==1.
         // Similar precision to RiemannZeta.
         HURWITZ_ZETA_1_32(s -> HurwitzZeta.zetaImp(s, 1), "zeta_1_32.csv", 1.5, 0.13),
+        HURWITZ_ZETA_36_53(s -> HurwitzZeta.zetaImp(s, 1), "zeta_36_53.csv", 0, 0),
         HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_above1.csv", 1.45, 0.42),
         // Borwein zeta has no support for negative s using reflection.
-        // It is worse than BoostZeta
+        // It is worse than BoostZeta.
         BORWEIN_ZETA_1_32(RiemannZetaTest::borweinZeta, "zeta_1_32.csv", 2.7, 0.4),
+        // This implementation uses 1 + 2^-s for s > 36 which can have ulp rounding errors.
+        BORWEIN_ZETA_36_53(RiemannZetaTest::borweinZeta, "zeta_36_53.csv", 0.55, 0.03),
         BORWEIN_ZETA_ABOVE_1(RiemannZetaTest::borweinZeta, "zeta_above1.csv", 2.7, 0.71),
         BORWEIN_ZETA_BELOW_1(RiemannZetaTest::borweinZeta, "zeta_below1.csv", 3.35, 0.72),
         BORWEIN_ZETA_0_1(RiemannZetaTest::borweinZeta, "zeta_0_1.csv", 6, 1.3),
         // BoostZeta is better than Hurwitz zeta for the domain s in (1, 32).
         // The method has increasing error with larger negative s.
         ZETA_1_32(RiemannZeta::value, "zeta_1_32.csv", 1.5, 0.27),
+        ZETA_36_53(RiemannZeta::value, "zeta_36_53.csv", 0, 0),
         ZETA_ABOVE_1(RiemannZeta::value, "zeta_above1.csv", 1.0, 0.34),
         ZETA_BELOW_1(RiemannZeta::value, "zeta_below1.csv", 1.48, 0.46),
         ZETA_0_1(RiemannZeta::value, "zeta_0_1.csv", 2.32, 0.69),
@@ -135,29 +139,34 @@ class RiemannZetaTest {
         ZETA_N_16_64(RiemannZeta::value, "zeta_N_16_64.csv", 170, 15.5),
         // Test FMA support
         ZETA_FMA_1_32(RiemannZetaTest::zetaImp53fma, "zeta_1_32.csv", 1.5, 0.27),
+        ZETA_FMA_36_53(RiemannZetaTest::zetaImp53fma, "zeta_36_53.csv", 0, 0),
         ZETA_FMA_ABOVE_1(RiemannZetaTest::zetaImp53fma, "zeta_above1.csv", 1.0, 0.34),
         ZETA_FMA_BELOW_1(RiemannZetaTest::zetaImp53fma, "zeta_below1.csv", 1.48, 0.46),
         ZETA_FMA_0_1(RiemannZetaTest::zetaImp53fma, "zeta_0_1.csv", 2.32, 0.69);
 
-//        JDK Eclipse Adoptium 21.0.11+10-LTS
-//        HURWITZ_ZETA_1_32                     max    1.57616   RMS   0.416606   mean     0.00667803  n 3000
-//        HURWITZ_ZETA_ABOVE_1                  max    1.65995   RMS   0.491651   mean     -0.0154402  n 2606
-//        BORWEIN_ZETA_1_32                     max    2.17496   RMS   0.366368   mean      0.0836487  n 3000
-//        BORWEIN_ZETA_ABOVE_1                  max    2.62981   RMS   0.680718   mean       0.330681  n 2606
-//        BORWEIN_ZETA_BELOW_1                  max    3.31413   RMS   0.715775   mean      -0.337512  n 2535
-//        BORWEIN_ZETA_0_1                      max    5.67060   RMS    1.26656   mean      -0.488054  n 2000
+//        JDK Temurin 25.492-b09
+//        HURWITZ_ZETA_1_32                     max   0.931322   RMS   0.111116   mean   -0.000558228  n 3000
+//        HURWITZ_ZETA_36_53                    max    0.00000   RMS    0.00000   mean        0.00000  n 2000
+//        HURWITZ_ZETA_ABOVE_1                  max    1.40991   RMS   0.396789   mean    -0.00548495  n 2606
+//        BORWEIN_ZETA_1_32                     max    2.56933   RMS   0.363840   mean      0.0850378  n 3000
+//        BORWEIN_ZETA_36_53                    max   0.511685   RMS  0.0196806   mean   -0.000762201  n 2000
+//        BORWEIN_ZETA_ABOVE_1                  max    2.62981   RMS   0.686734   mean       0.354976  n 2606
+//        BORWEIN_ZETA_BELOW_1                  max    3.31413   RMS   0.698234   mean      -0.334494  n 2535
+//        BORWEIN_ZETA_0_1                      max    5.18607   RMS    1.16183   mean      -0.429437  n 2000
 //        ZETA_1_32                             max    1.44796   RMS   0.258206   mean     0.00387724  n 3000
+//        ZETA_36_53                            max    0.00000   RMS    0.00000   mean        0.00000  n 2000
 //        ZETA_ABOVE_1                          max   0.978747   RMS   0.329409   mean     0.00618317  n 2606
 //        ZETA_BELOW_1                          max    1.46877   RMS   0.449973   mean    -0.00828687  n 2535
 //        ZETA_0_1                              max    2.24354   RMS   0.676258   mean      0.0551843  n 2000
-//        ZETA_N_0_1                            max    5.66801   RMS    1.45468   mean      -0.230430  n 2000
-//        ZETA_N_1_4                            max    6.75694   RMS    1.53613   mean       0.163429  n 3000
-//        ZETA_N_4_16                           max    21.1853   RMS    3.49096   mean       0.304031  n 3000
-//        ZETA_N_16_64                          max    165.252   RMS    14.9575   mean       0.307539  n 3000
-//        ZETA_FMA_1_32                         max    1.41465   RMS   0.256847   mean     0.00226097  n 3000
+//        ZETA_N_0_1                            max    5.66801   RMS    1.43564   mean      -0.249907  n 2000
+//        ZETA_N_1_4                            max    6.75694   RMS    1.52330   mean       0.154205  n 3000
+//        ZETA_N_4_16                           max    22.1416   RMS    3.47762   mean       0.301526  n 3000
+//        ZETA_N_16_64                          max    165.252   RMS    14.9244   mean       0.301025  n 3000
+//        ZETA_FMA_1_32                         max    1.44796   RMS   0.258206   mean     0.00387724  n 3000
+//        ZETA_FMA_36_53                        max   0.511685   RMS  0.0196806   mean   -0.000762201  n 2000
 //        ZETA_FMA_ABOVE_1                      max   0.978747   RMS   0.329409   mean     0.00618317  n 2606
 //        ZETA_FMA_BELOW_1                      max    1.46877   RMS   0.449973   mean    -0.00828687  n 2535
-//        ZETA_FMA_0_1                          max    2.05789   RMS   0.653190   mean      0.0561882  n 2000
+//        ZETA_FMA_0_1                          max    2.24354   RMS   0.676258   mean      0.0551843  n 2000
 
         /** The function. */
         private final DoubleUnaryOperator fun;
@@ -1177,6 +1186,24 @@ class RiemannZetaTest {
         try (PrintStream out = getPrintStream("zeta_below1.txt")) {
             for (int j = 0; j < nodes.length - 1; j++) {
                 sample(rng, size, nodes[j], nodes[j + 1], out);
+            }
+        }
+    }
+
+    /**
+     * Create test data for {@code s in [36, 53)}.
+     * This range has been modified from the Boost implementation.
+     */
+    @Test
+    @Disabled("Used to generate test data")
+    void testDataSample36to53() throws IOException {
+        final double[] sample = new SplittableRandom(SEED).doubles(2000, 36, 53).toArray();
+        Arrays.sort(sample);
+        try (PrintStream out = getPrintStream("zeta_36_53.txt")) {
+            out.printf("# Doubles in [36, 53) : [%s, %s] n=%d%n",
+                sample[0], sample[sample.length - 1], sample.length);
+            for (final double s : sample) {
+                out.println(s);
             }
         }
     }
