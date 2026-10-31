@@ -380,6 +380,7 @@ public final class BoostZeta {
                 result = BoostGamma.sinp(0.5 * sc) *
                     2 * Math.pow(2 * Math.PI, -s) *
                     Gamma.value(s) *
+                    // Call zetaImp not zetaImp53 to handle special cases
                     zetaImp(s, sc);
             }
         } else {
