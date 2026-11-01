@@ -311,9 +311,10 @@ public final class BoostZeta {
                 // Positive odd integer case uses tabulated values.
                 //
                 // Change to simple tabulation of the exact result for even and odd.
-                // Note: zetaImp53 is exact for integer s except s=2. However the zeta function
-                // has important use in series evaluations and direct look-up will benefit any
-                // downstream use case.
+                // Note: zetaImp53 has been modified to be exact for integer s. However the
+                // zeta function has important use in series evaluations and direct look-up
+                // will benefit any downstream use case. Without this look-up the case
+                // for infinity at s=1 must be re-instated.
                 return Z[(int) s];
             }
         }
@@ -408,7 +409,9 @@ public final class BoostZeta {
             result -= 1.2433929443359375F;
             result += sc;
             result /= sc;
-        } else if (s <= 2) {
+        // The next function is not exact at s == 2 but the function after is.
+        // Changed to use s < 2
+        } else if (s < 2) {
             // [4503599627370496.57721566490153, 1.64493406684822643647241516665]
             // Maximum Deviation Found:                     9.007e-20
             // Expected Error Term:                         9.007e-20

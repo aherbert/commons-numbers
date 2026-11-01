@@ -702,6 +702,40 @@ class RiemannZetaTest {
     }
 
     @ParameterizedTest
+    @CsvSource({
+        // Created using mpmath (1.14.1) zeta
+        // from mpmath import zeta, mp
+        // mp.pretty = True
+        // for i in [1, 2, 4, 7, 15, 36]:
+        //   print(f'"{i}, {float(zeta(i*(1-2**-53)))}, {"Infinity" if i == 1 else float(zeta(i))}, {float(zeta(i*(1+2**-52)))}",')
+        "1, -9007199254740991.0, Infinity, 4503599627370497.0",
+        "2, 1.6449340668482266, 1.6449340668482264, 1.644934066848226",
+        "4, 1.0823232337111381, 1.0823232337111381, 1.0823232337111381",
+        "7, 1.008349277381923, 1.008349277381923, 1.008349277381923",
+        "15, 1.000030588236307, 1.000030588236307, 1.000030588236307",
+        "36, 1.000000000014552, 1.000000000014552, 1.000000000014552",
+    })
+    void testZetaBoundaries(int s, double zl, double z, double zh) {
+        final double xl = RiemannZeta.value(Math.nextDown((double) s));
+        if (xl != zl) {
+            // Special case for s == 1.
+            // We could check the result is within 1 ULP.
+            // Here we know that the rational approximation is exact
+            Assertions.assertNotEquals(1, s, "Function should be exact around s=1");
+            // Must be monotonic.
+            // Occurs for s=4
+            Assertions.assertEquals(Math.nextUp(zl), xl, "lo");
+        }
+        assertClose(RiemannZeta::value, s, z, 0);
+        final double xh = RiemannZeta.value(Math.nextUp((double) s));
+        if (xh != zh) {
+            // Must be monotonic
+            // Occurs for s=7
+            Assertions.assertEquals(Math.nextDown(zh), xh, "hi");
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(doubles = {-2, -4, -6, -235648, Integer.MIN_VALUE, Integer.MIN_VALUE - 2L,
         // Anything below -(2^53) is even except -infinity
         -0x1p53, -0x1p53 - 1, -0x1p53 - 2,
