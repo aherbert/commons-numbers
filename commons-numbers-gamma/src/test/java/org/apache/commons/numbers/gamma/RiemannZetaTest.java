@@ -1142,6 +1142,19 @@ class RiemannZetaTest {
             final double p3 = Math.pow(3, s);
             final double e2 = Math.exp(ln2 * s);
             final double e3 = Math.exp(ln3 * s);
+            // Note:
+            // zeta(s) = 1 + 2^-s + 3^-s + ...
+            // for s in [36, 53] each term is above the ulp of the previous larger term
+            // and thus can be added in ascending magnitude order. The exception is
+            // 2^-53 which is exactly equal to ulp(1.0) and cannot be added. This is why
+            // the original implementation sets zeta(s>=53) to 1.0.
+            // If terms are added in ascending order the change in rounding of the final
+            // result has diminishing returns for each additional term computed.
+            // Note:
+            // zeta(36, 4) [2.12e-22] / (2^-36 + 3^-36) = 2.33e-10
+            // zeta(53, 4) [1.23e-32] / (2^-53 + 3^-53) = 1.11e-16
+            // The entire remaining series is far below ulp(1.0) and rounding errors
+            // cannot be practically measured.
             final double e = p3 + p2 + 1;
             if (e != p2 + 1) {
                 mismatchPow2++;
