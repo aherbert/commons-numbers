@@ -532,9 +532,9 @@ public final class BoostZeta {
             // Updated from 1.0 + pow(2, -s)
             //
             // Here 3^-s is < ulp(1) and so 1 + 2^-s is correct to 1 ULP.
-            // Rounding errors exist at integer s in particular as result approaches 1.0.
             // The correct result requires 1 + 2^-s + hurwitzZeta(s, 3)
             // and this is well approximated by adding 3^-s.
+            // Differences between the two occur with frequency ~ 0.0016.
             //
             // Note that 2^-36 = 1.46e-11; 3^-36 / 2^-36 = 4.58e-7.
             // Neither power term is required to high accuracy (lower bits are lost when adding).

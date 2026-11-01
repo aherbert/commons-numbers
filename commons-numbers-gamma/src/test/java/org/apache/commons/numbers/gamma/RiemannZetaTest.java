@@ -1124,6 +1124,40 @@ class RiemannZetaTest {
     }
 
     /**
+     * Test the result in the tail region for {@code s in [36, 53)}.
+     */
+    @Test
+    void testTail() {
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final double ln2 = Math.log(2);
+        final double ln3 = Math.log(3);
+        int mismatchPow2 = 0;
+        int mismatchExp = 0;
+        long lo = Double.doubleToRawLongBits(36);
+        long range = Double.doubleToRawLongBits(53.0000000001) - lo;
+        final int n = 10_000;
+        for (int i = 0; i < n; i++) {
+            final double s = -Double.longBitsToDouble(lo + rng.nextLong(range));
+            final double p2 = Math.pow(2, s);
+            final double p3 = Math.pow(3, s);
+            final double e2 = Math.exp(ln2 * s);
+            final double e3 = Math.exp(ln3 * s);
+            final double e = p3 + p2 + 1;
+            if (e != p2 + 1) {
+                mismatchPow2++;
+            }
+            if (e != e3 + e2 + 1) {
+                mismatchExp++;
+            }
+        }
+        // With very large N the mismatch is approximately 0.0016 and varies with RNG seed.
+        // This uses a fixed seed so we know the mismatch exists.
+        Assertions.assertEquals(16, 10000.0 * mismatchPow2 / n, 1);
+        // This passed using n=1_000_000_000
+        Assertions.assertEquals(0, mismatchExp);
+    }
+
+    /**
      * Create test data for {@code s in [0, 1)}. Note that the zeta function is easily
      * computed for {@code s -> 0} so using dyadic rationals in [0, 1) is sufficient.
      */
