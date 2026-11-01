@@ -534,16 +534,21 @@ public final class BoostZeta {
             // [1.00000000001455192189104198424, 1.0]
             // Updated from 1.0 + pow(2, -s)
             //
-            // Here 3^-s is < ulp(1) and so 1 + 2^-s is correct to 1 ULP.
-            // The correct result requires 1 + 2^-s + hurwitzZeta(s, 3)
-            // and this is well approximated by adding 3^-s.
-            // Differences between the two occur with frequency ~ 0.0016.
+            // The correct result requires 1 + 2^-s + hurwitzZeta(s, 3).
+            // Here zeta(s, 3) < ulp(1) and so 1 + 2^-s is correct to 1 ULP.
+            // The observed rounding error is approximately:
+            // zeta(s, 3) / 2^-52
+            // This ranges from 0.03 to 2.3e-10 for s in [36, 53].
+            // We can approximate zeta(s, 3) using 3^-s.
+            // When adding this term rounding differences to (1 + 2^-s) occur with
+            // observed frequency ~ 0.0016 across random s in [36, 53].
             //
             // Note that 2^-36 = 1.46e-11; 3^-36 / 2^-36 = 4.58e-7.
             // Neither power term is required to high accuracy (lower bits are lost when adding).
             // Use pow(x, -s) = exp(log(x) * -s)
             // The exponential approximation to 3^-s + 2^-s + 1 has enough precision
-            // to achieve a 0 ULP result in most cases and is faster than pow.
+            // to achieve a 0 ULP result in most cases and is faster than a single
+            // call to pow.
             //
             // The function is monotonic at integer s (which use exact results).
             result = Math.exp(-s * LN_3) + Math.exp(-s * LN_2) + 1;

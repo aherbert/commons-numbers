@@ -1184,11 +1184,28 @@ class RiemannZetaTest {
             // the original implementation sets zeta(s>=53) to 1.0.
             // If terms are added in ascending order the change in rounding of the final
             // result has diminishing returns for each additional term computed.
-            // Note:
-            // zeta(36, 4) [2.12e-22] / (2^-36 + 3^-36) = 2.33e-10
-            // zeta(53, 4) [1.23e-32] / (2^-53 + 3^-53) = 1.11e-16
-            // The entire remaining series is far below ulp(1.0) and rounding errors
-            // cannot be practically measured.
+            // The true rounding error frequency is approximately:
+            // zeta(s, 3) / 2^-52
+            // These frequencies do not change significantly using 3^-s instead
+            // of zeta(s, 3) [column 2 vs 3]:
+            // 36 0.030006 0.030005
+            // 37 0.010002 0.010002
+            // 38 0.003334 0.0033339
+            // 39 0.0011113 0.0011113
+            // 40 0.00037044 0.00037043
+            // 41 0.00012348 0.00012348
+            // 42 4.1159e-05 4.1159e-05
+            // 43 1.372e-05 1.372e-05
+            // 44 4.5733e-06 4.5732e-06
+            // 45 1.5244e-06 1.5244e-06
+            // 46 5.0814e-07 5.0814e-07
+            // 47 1.6938e-07 1.6938e-07
+            // 48 5.646e-08 5.646e-08
+            // 49 1.882e-08 1.882e-08
+            // 50 6.2733e-09 6.2733e-09
+            // 51 2.0911e-09 2.0911e-09
+            // 52 6.9704e-10 6.9703e-10
+            // 53 2.3235e-10 2.3234e-10
             final double e = p3 + p2 + 1;
             if (e != p2 + 1) {
                 mismatchPow2++;
