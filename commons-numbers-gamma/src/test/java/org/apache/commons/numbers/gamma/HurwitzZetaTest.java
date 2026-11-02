@@ -1332,19 +1332,20 @@ class HurwitzZetaTest {
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.5, 0.35),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.3, 0.4),
+        ZETA_S1_19_A2147483648_1E16(HurwitzZeta::value, "hzeta_s1_19_a2147483648_10000000000000000.csv", 1.7, 0.5),
         // Data that tests the convergence of the tail series with large s and s ~ (a+N).
         // Most of the results are sub-normal. The final implementation should compute zero
         // and not create +/-infinity from overflow of the tail series Pochammer term.
-        ZETA_CONVERGENCE(HurwitzZeta::value, EXT_INT_TEST_RESOURCES, 4, 0.25),
+        ZETA_CONVERGENCE(HurwitzZeta::value, EXT_INT_TEST_RESOURCES, 3, 0.25),
         // Terms of the series (a+k)^-s are sub-normal
         // 1.67% of results are sub-normal
-        ZETA_S32_1024_AP9_SUB_NORMAL_1023(HurwitzZeta::value, "hzeta_s32_1024_ap9_subnormal1023.csv", 4, 0.35),
+        ZETA_S32_1024_AP9_SUB_NORMAL_1023(HurwitzZeta::value, "hzeta_s32_1024_ap9_subnormal1023.csv", 3, 0.3),
         // 39.2% of results are sub-normal
-        ZETA_S32_1024_AP1_SUB_NORMAL_1040(HurwitzZeta::value, "hzeta_s32_1024_ap1_subnormal1040.csv", 4, 0.6),
+        ZETA_S32_1024_AP1_SUB_NORMAL_1040(HurwitzZeta::value, "hzeta_s32_1024_ap1_subnormal1040.csv", 2, 0.3),
         // 48.6% of results are sub-normal
-        ZETA_S32_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s32_1024_ap1_subnormal1053.csv", 4, 0.6),
+        ZETA_S32_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s32_1024_ap1_subnormal1053.csv", 1.5, 0.2),
         // 100% of results are sub-normal
-        ZETA_S32_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s32_1024_ap0.1_subnormal1073.csv", 2.6, 0.35),
+        ZETA_S32_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s32_1024_ap0.1_subnormal1073.csv", 0.6, 0.1),
 //        // Negative a
 //        ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
 //        ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -4663,6 +4664,10 @@ class HurwitzZetaTest {
         "1.0000000000000002, 4, false, 1, 8, false",
         "1.0000000000000002, 4, false, 8, 32, false",
         "1.0000000000000002, 4, false, 32, 2.147483648E9, true",
+        // Up to the asymptotic approximation.
+        // (2^-53)^-19 is ~ 7.3e-304 so cannot generate sub-normal terms.
+        // A separate method creates data with sub-normal terms and results.
+        "1.0000000000000002, 19, true, 2.147483648E9, 1e16, true",
         "1.0000000000000002, 4, false, 0, 1, true",
         "1.0000000000000002, 4, false, 1e-16, 1e-14, false",
         "4, 32, true, 1, 8, false",
