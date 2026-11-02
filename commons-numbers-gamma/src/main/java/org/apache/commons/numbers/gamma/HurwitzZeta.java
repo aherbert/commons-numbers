@@ -541,7 +541,7 @@ public final class HurwitzZeta {
         // This term is not required to high accuracy so compute as
         // (a+n)^-s / (a+n).
         if (scaledSum) {
-            p /= (a + N);
+            p /= a + N;
         } else {
             // Power term was not scaled.
             // Note if p < MIN_NORMAL this is inexact. The smallest s for this to occur
