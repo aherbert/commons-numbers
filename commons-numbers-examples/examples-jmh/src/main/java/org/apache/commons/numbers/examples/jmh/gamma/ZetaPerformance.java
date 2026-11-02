@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleUnaryOperator;
 import java.util.stream.DoubleStream;
+import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.gamma.HurwitzZeta;
 import org.apache.commons.numbers.gamma.RiemannZeta;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -440,7 +441,8 @@ public class ZetaPerformance {
      * Computes the value of \( \zeta(s, a) \) over the domain \( s \gt 1 \) and
      * \( a \ne 0, -1, -2, \ldots, -n \).
      *
-     * <p>Negative \( a \) is not supported apart from special cases.
+     * <p>Negative \( a \) is supported when \( s \) is an integer due to the support
+     * for powers of negative real numbers.
      *
      * <p>Special cases:
      * <ul>
@@ -454,6 +456,19 @@ public class ZetaPerformance {
      * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
      * <li>If either argument is nan, then the result is nan.</li>
      * </ul>
+     *
+     * <p>This method matches the implementation in {@link HurwitzZeta} and is modified for
+     * the positive and negative {@code a} cases:
+     *
+     * <ul>
+     * <li>{@code a > 0}: remove the extended precision power function
+     * <li>{@code a > 0}: remove summation in double-double precision
+     * <li>{@code a > 0}: remove summation of sub-normal terms in the series S
+     * <li>{@code a < 0}: use BigDecimal in the evaluation instead of double-double
+     * </ul>
+     *
+     * <p>The function has a max ULP error of twice the HurwitzZeta function at approximately
+     * 4 versus 2 when {@code a} is positive, and an increased accuracy when {@code a} is negative.
      *
      * @param s Argument.
      * @param a Argument.
@@ -497,13 +512,12 @@ public class ZetaPerformance {
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
      *
-     * <p>This method matches the implementation in {@link HurwitzZeta} and is modified for
-     * the positive and negative {@code a} cases:
+     * <p>This method matches the implementation in {@link HurwitzZeta} and is modified to:
      *
      * <ul>
-     * <li>{@code a > 0}: remove the extended precision power function
-     * <li>{@code a > 0}: remove summation in double-double precision
-     * <li>{@code a < 0}: use BigDecimal in the evaluation instead of double-double
+     * <li>remove the extended precision power function
+     * <li>remove summation in double-double precision
+     * <li>remove summation of sub-normal terms in the series S
      * </ul>
      *
      * <p>The function has a max ULP error of twice the HurwitzZeta function at approximately
@@ -594,16 +608,19 @@ public class ZetaPerformance {
         double k2 = 1;
 
         // Use to divide by (a+n)^2
-        final double apn = Math.pow(a + N, -2);
+        final double apn = DD.ofSum(a, N).square().hi();
 
         // The tail requires the most accurate start-point for (a+n)^-(1+s).
-        // Compute using the power function not (a+n)^-s / (a+N).
-        // Sub-normal p reduces accuracy:
-        // p is currently (a+n)^-s. Test if the desired term is sub-normal.
-        if (p > (a + N) * Double.MIN_NORMAL) {
-            p = UPSCALE * Math.pow(a + N, -s - 1);
+        // The tail is expected to be a small contribution to the result.
+        // This term is not required to high accuracy so compute as
+        // (a+n)^-s / (a+n).
+        // Sub-normal p reduces accuracy
+        if (p > Double.MIN_NORMAL) {
+            p = UPSCALE * p / (a + N);
         } else {
-            // Compute in parts with scaling: x^y = x^(y/2) * x^(y/2)
+            // Compute in parts with scaling: x^y = x^(y/2) * x^(y/2).
+            // This is unlikely to be hit in benchmarks as it requires
+            // s > 19 when a = 2^53
             p = Math.pow(a + N, (-s - 1) * 0.5);
             p = p * UPSCALE * p;
         }
@@ -621,7 +638,7 @@ public class ZetaPerformance {
                 break;
             }
             // Update (a+n)^-(2k-1+s)
-            p *= apn;
+            p /= apn;
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
             f *= s + k2;
             k2 += 1.0;
