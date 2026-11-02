@@ -20,7 +20,7 @@
 function hzeta(filename)
   lines = readlines(filename,'WhitespaceRule','trim');
   [dir, name] = fileparts(filename);
-  fileID = fopen(fullfile(dir, [name, '.csv']), 'w');  
+  fileID = fopen(fullfile(dir, [name, '.csv']), 'w');
   for i=1:size(lines,1)
     l = lines(i,1);
     if strlength(l) == 0 || contains(l, '#')
@@ -33,6 +33,9 @@ function hzeta(filename)
     end
     s = str2double(extractBefore(l,','));
     a = str2double(extractAfter(l,','));
+    % Matlab can have out-of-memory errors for large symbolic expansions
+    % Use this to show the arguments
+    % disp([s, a])
     z = vpa(hurwitzZeta(sym(s, 'f'), sym(a, 'f')));
     fprintf(fileID, "%.17g, %.17g, %s\n", s, a, z);
   end

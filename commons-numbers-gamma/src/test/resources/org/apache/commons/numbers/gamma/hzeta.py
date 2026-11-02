@@ -24,6 +24,7 @@ mp.dps = args.dps
 mp.pretty = True
 
 for filename in args.data:
+  sn, n = 0, 0
   with open(filename) as f:
     with open(f'{os.path.splitext(filename)[0]}.csv', 'w') as f2:
       for line in f:
@@ -36,4 +37,10 @@ for filename in args.data:
           continue
         i = line.index(',') # raise error if not found
         s, a = float(line[0:i]), float(line[i+1:])
-        print(f'{s}, {a}, {zeta(s, a)}', file=f2)
+        z = zeta(s, a)
+        n += 1
+        if float(z) < 2.2250738585072014e-308:
+          sn += 1
+        print(f'{s}, {a}, {z}', file=f2)
+  if sn:
+    print(f'{filename} sub-normal results {sn} / {n} ({100 * sn / n:.3}%)')
