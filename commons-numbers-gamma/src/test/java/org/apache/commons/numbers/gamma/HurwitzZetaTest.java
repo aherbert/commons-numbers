@@ -1525,69 +1525,42 @@ class HurwitzZetaTest {
         // ----------
         // Note on sub-normals
         //
-        // If (a+n)^-s is sub-normal the terms are imprecise.
-        // If a is very large then the asymptote is used.
-        // If a < 1 then the overflow on t0 is used since sub-normal (a+n)^-s indicates large s.
-        // Only matters if a > 1.
-        // The critical point is: (a+n)^-s = 2^-1022
-        // s = 1022 / log2(a+n)
-        // a+n     s
-        // 10      307.6526555685887
-        // 11      295.42425249688137
-        // 13      276.1833938247208
-        // 17      250.03285404482696
-        // 25      220.07572117550387
-        // 41      190.75876428620012
-        // 73      165.1096877267423
-        // 137     143.98357010155027
-        // 265     126.95891031015186
-        // 521     113.23924610224901
-        // 1033    102.07113989274231
-        // 2057    92.85568978317679
-        // 4105    85.1441991938127
-        // 8201    78.60580606204464
-        // 16393   72.99586906747066
-        // 32777   68.13153378139438
-        // 65545   63.874209115886465
-        // 131081  60.117296756728535
-        // 262153  56.77762154420588
-        // 524297  53.78940357315088
+        // If (a+n)^-s is sub-normal some of the terms for S and all the tail terms are imprecise.
+        // If a^-s term is sub-normal then the summation S is of sub-normal terms.
+        // When s is large the series is convergent and the result is sub-normal and inaccurate.
+        // When s is small then the I term can be larger than a^-s and the result is dominated
+        // by I and sub-normal S does not impact the result.
+        // ---
+        // This method has options for tail scaling. If done with exact power-of-2
+        // terms it is effective at extending support for sub-normals in the tail.
         //
-        // Power-of2 exact scaling and (inexact) final down-scaling.
-        // Note down-scaling is inexact when s is non-integer.
-        // Scaling all power terms: (a+n)^-s = (2^-b*(a+n))^-s * (2^b)^-s
-        // (2^-b*(a+n))^-s >= 2^-1022
-        // -b <= 1022/s - log2(a+n) : b >= log2(a+n) + 1022/s
-        // Scale all terms by 2^-b; rescale final result by 2^-sb
-        // When 2^-sb is very small (-sb < -2046) then any finite computed result will be zero.
-        // But there is no way to determine if rescaling at the end will create a finite result
-        // and computation may be wasted to generate a zero.
-        // E.g.
-        // zeta(80, 8000) = 5.6e-311
-        // zeta(86, 8000) = 2.04e-334
-        // zeta(100, 8000) = 3.99e-389
-        // zeta(499, 8000) = 3.78e-1947
-        // b = 1022.0/-80  + log2(8000) = 0.19  : b=1  : Math.pow(2, -80)     = 8.27e-25 *** possible ***
-        //   = 1022.0/-86  + log2(8000) = 1.08  : b=2  : Math.pow(2, -86*2)   = 1.67e-52 *** unknown ***
-        //   = 1022.0/-100 + log2(8000) = 2.75  : b=3  : Math.pow(2, -100*3)  = 4.9e-91  *** unknown ***
-        //   = 1022.0/-499 + log2(8000) = 10.91 : b=11 : Math.pow(2, -499*11) = 0        *** n/a ***
-        // 8000 * 2^-1  = 4000
-        //      * 2^-2  = 2000
-        //      * 2^-3  = 1000
-        //      * 2^-11 = 3.91
-        // No test implementation has been tried for power-of-two scaling.
-        // ----------
-        // An alternative is to use a scaled power with application of log-sum-exp.
+        // A test implementation is available for log-sum-exp.
         // The entire summation is made of power terms. These can all be scaled by the major
         // term:
         // pow(a + k, -s) = exp(-s * log(a + k))
         //                = exp(-s * log(a)) * exp(-s * log(a + k) + s * log(a))  [scaled]
         // All power operations compute a scaled power as exp(-s * log(a + k) + s * log(a)).
-        // The final result is scaled down using exp(-s * log(a)).
+        // The final result is scaled down using exp(-s * log(a)). This assumes a^-s is the
+        // major term so is only applicable to a part of the function's domain.
         //
-        // A test implementation is available for log-sum-exp. The result marginally
-        // improves RMS error compared to implementations that sum directly sub-normal terms.
-        // It will be twice the runtime cost due to use of log+exp vs pow.
+        // The result can control error but does not outperform an implementation that scales
+        // sub-normal terms. It may have higher runtime cost due to use of log+exp vs pow.
+        // Also note that exp(log(x) * y) is not as accurate as pow(x, y).
+        //
+        // The following method is implemented in the final version:
+        //
+        // If t0 is sub-normal change the power function to compute
+        // using pow(a+k, -0.5*s) * scale * pow(a+k, -0.5*s).
+        // Recompute t0 and compute the scaled summation for term S.
+        // Term I can also be scaled and added.
+        // The main sub-normal terms are then all summed using normal numbers.
+        // The tail can be scaled appropriately to add T to (S + I) avoiding
+        // sub-normals where the final result is sub-normal or zero.
+        //
+        // No test implementation is available for power-of-two scaling on the main series S.
+        // Comparison of the final implementation versus scaling options in this function shows
+        // it controls error in evaluations involving sub-normals better than any test
+        // implementation.
         // ----------
 
         PowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? Context::extPow : Context::stdPow;
@@ -1621,16 +1594,6 @@ class HurwitzZetaTest {
             final double la = -s * Math.log(a);
             pow = powS = (x, n, y) -> Math.exp(y * Math.log(x + n) - la);
         }
-
-        // TODO
-        // If t0 is sub-normal change the power function to compute
-        // using pow(a+k, -0.5*s) * scale * pow(a+k, -0.5*s).
-        // Recompute t0 and compute the scaled summation.
-        // Term I can also be scaled.
-        // Tail scaling then does not require scaling the power term.
-        // Pochammer term can still be downscaled to allow more terms
-        // to be computed. The convergence is on (sum / scale) * eps.
-        // This may be sub-normal.
 
         // We always use a DD sum. If not using extended precision
         // we add in double precision and create a new DD.
@@ -3072,6 +3035,8 @@ class HurwitzZetaTest {
         // very strongly converging.
         "8, 15, -58, -53, 7, false",
         "8, 15, -63, -53, 7, false",
+
+        // TODO: repeat with new resources. Can these pass or does tolerance require updating?
 
         // Sub-normal zeta result and/or terms.
         // Requires scaling of the tail series terms (option 256).
