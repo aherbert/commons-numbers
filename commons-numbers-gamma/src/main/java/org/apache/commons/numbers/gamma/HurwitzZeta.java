@@ -143,17 +143,17 @@ public final class HurwitzZeta {
     private static final int MAX_EXP_DELTA = 107;
     /** Downscale to use on the initial rising factorial tail term (always above 1).
      * Equal to 2^-1022 * 2^106 = 2^-916. */
-    private static final double DOWNSCALE1 = 0x1.0p-916;
+    private static final double DOWNSCALE_916 = 0x1.0p-916;
     /** Downscale to use on the final sum.
      * Equal to 2^-106 */
-    private static final double DOWNSCALE2 = 0x1.0p-106;
+    private static final double DOWNSCALE_106 = 0x1.0p-106;
     /** Upscale to use on the initial probability tail term (always below 1).
      * Multiplicative inverse of Double.MIN_NORMAL: 2^1022. */
-    private static final double UPSCALE = 0x1.0p1022;
+    private static final double UPSCALE_1022 = 0x1.0p1022;
     /** Upscale to use on the sum before scaled tail computation. Allows convergence
      * on a normal number using a sum of normal terms.
      * Multiplicative inverse of DOWNSCALE2: 2^106. */
-    private static final double UPSCALE2 = 0x1.0p106;
+    private static final double UPSCALE_106 = 0x1.0p106;
     /** Threshold for z in the Taylor series approximation of (1 + t)^z.
      * Set where |z * t| < 2^-26  =>  z < 2^-26 / 2^-52 = 2^26. */
     private static final double Z_LIMIT = 0x1p26;
@@ -466,7 +466,7 @@ public final class HurwitzZeta {
         if (scaledSum) {
             powS = (x, n, z) -> {
                 final double p = pow.apply(x, n, z * 0.5);
-                return p * UPSCALE * p;
+                return p * UPSCALE_1022 * p;
             };
             // Re-compute t0 using scaling
             t0 = powS.apply(a, 0, -s);
@@ -500,16 +500,16 @@ public final class HurwitzZeta {
             if (p * (a + N) < 1) {
                 ti = powS.apply(a, N, 1 - s) / (s - 1);
             } else {
-                ti = UPSCALE * pow.apply(a, N, 1 - s) / (s - 1);
+                ti = UPSCALE_1022 * pow.apply(a, N, 1 - s) / (s - 1);
             }
             sum = sum.add(ti);
             // Partial downscale of the sum. The tail can use normal numbers.
-            sum = DD.ofSum(sum.hi() * DOWNSCALE1, sum.lo() * DOWNSCALE1);
+            sum = DD.ofSum(sum.hi() * DOWNSCALE_916, sum.lo() * DOWNSCALE_916);
         } else {
             ti = pow.apply(a, N, 1 - s) / (s - 1);
             sum = sum.add(ti);
             // Upscale the sum so the tail can use normal numbers.
-            sum = DD.ofSum(sum.hi() * UPSCALE2, sum.lo() * UPSCALE2);
+            sum = DD.ofSum(sum.hi() * UPSCALE_106, sum.lo() * UPSCALE_106);
         }
 
         // T
@@ -539,7 +539,12 @@ public final class HurwitzZeta {
         // The rising factorial will not overflow for k <= 53 before (a+n)^-(1+s) is
         // zero. This is within the length of table F.
         // For larger s where p=0 the loop exits immediately.
-        double f = s * DOWNSCALE1;
+        //
+        // Note that downscaling of f does not match upscaling of p. The mismatch of 2^106
+        // allows the tail to sum normal terms and converge on a normal number.
+        // Due to a prior check on large a^-s the zeta result cannot be above 2^106 and
+        // overflow cannot occur.
+        double f = s * DOWNSCALE_916;
         // 2k - 1
         double k2 = 1;
 
@@ -557,7 +562,7 @@ public final class HurwitzZeta {
             // Note if p < MIN_NORMAL this is inexact. The smallest s for this to occur
             // is (2^-53)^-s < 2^-1022 : s = 1022/53 ~ 19.28. In this case the tail
             // is not required to high accuracy.
-            p = UPSCALE * p / (a + N);
+            p = UPSCALE_1022 * p / (a + N);
         }
 
         // Sum of an alternating series as each F changes sign.
@@ -582,7 +587,7 @@ public final class HurwitzZeta {
             f *= s + k2;
             k2 += 1.0;
         }
-        return sum.add(tsum).hi() * DOWNSCALE2;
+        return sum.add(tsum).hi() * DOWNSCALE_106;
     }
 
     /**
