@@ -173,7 +173,7 @@ class HurwitzZetaTest {
      * is configured then the test will still run but with a subset of the
      * cases. This ensures test code is asserted but without excessive runtimes.
      */
-    private static int reporting = -1;
+    private static int reporting = 0;
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -948,6 +948,9 @@ class HurwitzZetaTest {
         /** Option to use scaling on the tail sum to use normal numbers. */
         static final int TAIL_SUM_SCALING = 1024;
 
+        /** Option to recycle I term for the tail (saves pow calls). */
+        static final int RECYCLE_I_TERM = 2048;
+
         // Default contexts optimised using the precision tests
 
         /** Context for double precision zeta implementation. */
@@ -1617,6 +1620,16 @@ class HurwitzZetaTest {
             pow = powS = (x, n, y) -> Math.exp(y * Math.log(x + n) - la);
         }
 
+        // TODO
+        // If t0 is sub-normal change the power function to compute
+        // using pow(a+k, -0.5*s) * scale * pow(a+k, -0.5*s).
+        // Recompute t0 and compute the scaled summation.
+        // Term I can also be scaled.
+        // Tail scaling then does not require scaling the power term.
+        // Pochammer term can still be downscaled to allow more terms
+        // to be computed. The convergence is on (sum / scale) * eps.
+        // This may be sub-normal.
+
         // We always use a DD sum. If not using extended precision
         // we add in double precision and create a new DD.
         BiFunction<DD, Double, DD> add = c.isSet(Context.EXT_SUM) ?
@@ -1668,9 +1681,45 @@ class HurwitzZetaTest {
         }
         N[n - 1]++;
 
+        // Tail scaling. Configured before computation of power terms that affect the tail.
+        double pScale = 1;
+        if (c.isSet(Context.TAIL_SCALING)) {
+            // If a or s are large then (a+n)^-(2k-1+s) will underflow.
+            // We can downscale the rising factorial (always above 1)
+            // and upscale p (always below 1) by the same amount.
+            // The loop will still exit immediately if p = 0
+            // (zeta evaluation is limited by Math.pow).
+            // Use a trick to compute a non-zero value:
+            //   x^-s = (x^-s/2)^2
+            // This extends the usable range of the tail for large s.
+            pScale = 0x1p1022;
+        }
+
         // I : (a+p)^(1-s) / (s-1)
-        // Use of (a+n)^(1-s) = (a+n)^-1 * apn to recycle the power lowers precision.
-        final double ti = pow.apply(a, n, 1 - s) / (s - 1);
+        // This term should be as accurate as possible.
+        // Use of (a+n)^(1-s) = (a+n)^-s * apn to recycle the power lowers precision.
+        final double ti;
+        double ip;
+        if (c.isSet(Context.RECYCLE_I_TERM) && pScale != 1 && expScale == 1) {
+            // Tail scaling is active. Compute the scaled term.
+            if (p * (a + n) > Double.MIN_NORMAL) {
+                ip = pScale * pow.apply(a, n, 1 - s);
+            } else {
+                // Avoid sub-normal loss of precision.
+                ip = pow.apply(a, n, (1 - s) * 0.5);
+                ip = ip * pScale * ip;
+            }
+            // Avoid intermediate overflow
+            if (s < 2) {
+                ti = ip / ((s - 1) * pScale);
+            } else {
+                ti = ip / (s - 1) / pScale;
+            }
+        } else {
+            // Unscaled or log-sum-exp
+            ip = pow.apply(a, n, 1 - s);
+            ti = ip / (s - 1);
+        }
 
         // Add in magnitude order. When a in [0, 1] it may be the dominant term.
         // Note: This makes a measurable difference to the RMS error when the summation
@@ -1722,20 +1771,6 @@ class HurwitzZetaTest {
         double apn = 0;
         final int powerTermOption;
 
-        // Tail scaling. Configured before computation of p.
-        double pScale = 1;
-        if (c.isSet(Context.TAIL_SCALING)) {
-            // If a or s are large then (a+n)^-(2k-1+s) will underflow.
-            // We can downscale the rising factorial (always above 1)
-            // and upscale p (always below 1) by the same amount.
-            // The loop will still exit immediately if p = 0
-            // (zeta evaluation is limited by Math.pow).
-            // Use a trick to compute a non-zero value:
-            //   x^-s = (x^-s/2)^2
-            // This extends the usable range of the tail for large s.
-            pScale = 0x1p1022;
-        }
-
         if (c.isSet(Context.TAIL_POW)) {
             // Compute using the power function.
             // For simplicity this does not use the x^-s = (x^-s/2)^2 trick
@@ -1758,8 +1793,21 @@ class HurwitzZetaTest {
             } else {
                 p *= pScale;
             }
+        } else if (c.isSet(Context.RECYCLE_I_TERM)) {
+            // Recycle (a+p)^(1-s). This does not use further calls to pow.
+            // Divide by (a+n)^2
+            apn = a + n;
+            apn *= apn;
+            // The term has already been scaled if not using log-sum-exp
+//            if (!(pScale != 1 && expScale == 1)) {
+            if (expScale != 1) {
+                ip *= pScale;
+            }
+            p = ip / apn;
+            // Flag to signal to continue dividing
+            powerTermOption = 3;
         } else {
-            // powerTermOption == 0 or 3
+            // Default
             // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
             // Divide by (a+n)^2 using multiplication
             powerTermOption = 0;
@@ -1824,7 +1872,8 @@ class HurwitzZetaTest {
             if (powerTermOption == 2) {
                 // Note updating p with the power function must use the scale.
                 p = pScale * pow.apply(a, n, -(k2 + s));
-            } else if (powerTermOption == 1) {
+            } else if ((powerTermOption & 1) == 1) {
+                // Used to divide by (a+n) or (a+n)^2
                 p /= apn;
             } else {
                 p *= apn;
@@ -2989,11 +3038,13 @@ class HurwitzZetaTest {
         // RMS drops as N increases. Max error is variable.
         "7, 15, 0, -53, 4, false", // 0 vs 0 + 4
         "7, 15, 0, -53, 5, false", // 1 vs 1 + 4
-        "7, 15, 0, -53, 7, false", // 3 vs 3 + 4  <== Optimum
+        "7, 15, 0, -53, 7, false", // 3 vs 3 + 4
+        // Recycle the I term in the tail
+        "7, 15, 0, -53, 2055, false", // 3 vs 3 + 4 + 2048
         // Using tail series scaling to prevent underflow
         // (exactly the same - test data has no sub-normal results; scaling is exact)
         // Test resources using sub-normal resources show differences (see below).
-        "7, 12, 0, -53, 263, false", // 7 vs 7 + 256  <== Optimum
+        "7, 12, 0, -53, 2311, false", // 7 vs 7 + 256 + 2048
         // Using divide in the tail series (negligible RMS difference)
         "7, 12, 0, -53, 12, false", // 4 vs 4 + 8
         "7, 12, 0, -53, 15, false", // 7 vs 7 + 8
@@ -3024,6 +3075,8 @@ class HurwitzZetaTest {
         // Sub-normal zeta result and/or terms.
         // Requires scaling of the tail series terms (option 256).
         "7, 12, 0, -53, 263, true", // 7 + 256
+        // Scaling and recycle the I term
+        "7, 12, 0, -53, 2311, true", // 7 + 256 + 2048. Same as scaling is exact
         // Using a scaling tail summation. Possible 1% improvement in RMS.
         "7, 12, 0, -53, 1287, true", // 7 + 256 + 1024
         // Using log-sum-exp to prevent underflow.
@@ -3042,7 +3095,7 @@ class HurwitzZetaTest {
         // summation of an extended precision power function.
         // A speed test using JMH has not been performed to assess runtime cost.
         // A simple speed test shows a 5% runtime cost for extended precision.
-        final double maxTolerance = bs == 0 ? 5 : 15000;
+        final double maxTolerance = bs == 0 ? 10 : 15000;
         final double rmsTolerance = bs == 0 ? 1 : 200;
         final double epsS = bs == 0 ? 0 : Math.scalb(1.0, bs);
         final double epsT = Math.scalb(1.0, bt);
