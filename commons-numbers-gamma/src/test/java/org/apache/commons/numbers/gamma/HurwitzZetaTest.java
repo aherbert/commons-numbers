@@ -2963,8 +2963,7 @@ class HurwitzZetaTest {
      * Test the precision of the double implementation of the zeta function.
      *
      * <p>Note that when {@code a >= 1} the function requires {@code n >= 6} to converge
-     * the tail series (see {@link #testTailConvergence(int, int, int, int)}. For all
-     * possible {@code a > 0} this requires {@code n >= 7}.
+     * the tail series (see {@link #testTailConvergence(int, int, int, int)}.
      */
     @ParameterizedTest
     @CsvSource({
@@ -3003,7 +3002,7 @@ class HurwitzZetaTest {
         "7, 15, 0, -53, 4, false", // 0 vs 0 + 4
         "7, 15, 0, -53, 5, false", // 1 vs 1 + 4
         "7, 15, 0, -53, 7, false", // 3 vs 3 + 4
-        // Recycle the I term in the tail
+        // Recycle the I term in the tail. No loss of precision.
         "7, 15, 0, -53, 2055, false", // 3 vs 3 + 4 + 2048
         // Using tail series scaling to prevent underflow
         // (exactly the same - test data has no sub-normal results; scaling is exact)
@@ -3036,13 +3035,11 @@ class HurwitzZetaTest {
         "8, 15, -58, -53, 7, false",
         "8, 15, -63, -53, 7, false",
 
-        // TODO: repeat with new resources. Can these pass or does tolerance require updating?
-
         // Sub-normal zeta result and/or terms.
         // Requires scaling of the tail series terms (option 256).
         "7, 12, 0, -53, 263, true", // 7 + 256
         // Scaling and recycle the I term
-        "7, 12, 0, -53, 2311, true", // 7 + 256 + 2048. Same as scaling is exact
+        "7, 12, 0, -53, 2311, true", // 7 + 256 + 2048
         // Using a scaling tail summation. Possible 1% improvement in RMS.
         "7, 12, 0, -53, 1287, true", // 7 + 256 + 1024
         // Using log-sum-exp to prevent underflow.
