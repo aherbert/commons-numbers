@@ -173,7 +173,7 @@ class HurwitzZetaTest {
      * is configured then the test will still run but with a subset of the
      * cases. This ensures test code is asserted but without excessive runtimes.
      */
-    private static int reporting = 0;
+    private static int reporting = -1;
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -1332,18 +1332,18 @@ class HurwitzZetaTest {
         ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.5, 0.35),
         ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
         ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.3, 0.4),
-        ZETA_S1_19_A2147483648_1E16(HurwitzZeta::value, "hzeta_s1_19_a2147483648_10000000000000000.csv", 1.7, 0.5),
+        ZETA_S1_19_A2147483648_1E16(HurwitzZeta::value, "hzeta_s1_19_a2147483648_10000000000000000.csv", 1.8, 0.5),
         // Data that tests the convergence of the tail series with large s and s ~ (a+N).
         // Most of the results are sub-normal. The final implementation should compute zero
         // and not create +/-infinity from overflow of the tail series Pochammer term.
         ZETA_CONVERGENCE(HurwitzZeta::value, EXT_INT_TEST_RESOURCES, 3, 0.25),
         // Terms of the series (a+k)^-s are sub-normal
         // 1.33% of results are sub-normal
-        ZETA_S20_1024_AP9_SUB_NORMAL_1023(HurwitzZeta::value, "hzeta_s20_1024_ap9_subnormal1023.csv", 1.5, 0.3),
+        ZETA_S20_1024_AP9_SUB_NORMAL_1023(HurwitzZeta::value, "hzeta_s20_1024_ap9_subnormal1023.csv", 1.95, 0.3),
         // 38.4% of results are sub-normal
-        ZETA_S20_1024_AP1_SUB_NORMAL_1040(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1040.csv", 1.3, 0.2),
+        ZETA_S20_1024_AP1_SUB_NORMAL_1040(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1040.csv", 1.55, 0.2),
         // 48.3% of results are sub-normal
-        ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1.2, 0.2),
+        ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1, 0.15),
         // 100% of results are sub-normal
         ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.1, 0.1),
         // Negative a
@@ -3486,7 +3486,7 @@ class HurwitzZetaTest {
             // f(1.001, 1) etc.
             Arguments.of(1.001, 1, 1000.57728847601162684806668989, 0),
             Arguments.of(1.001, 3, 999.077634929516400548962369402, 0),
-            Arguments.of(1.001, 156.78, 994.961087152463264230812967825, 0),
+            Arguments.of(1.001, 156.78, 994.961087152463264230812967825, 1),
             Arguments.of(1.001, 345600, 987.327939500118316838908716646, 1),
             Arguments.of(1.001, 100000000.0, 981.747943025003254769065166246, 1),
             Arguments.of(1.001, 1000000000.0, 979.48998540929872849188230117, 1),

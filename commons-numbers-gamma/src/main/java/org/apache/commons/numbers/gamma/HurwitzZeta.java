@@ -86,8 +86,14 @@ import org.apache.commons.numbers.core.DDMath;
  * @since 1.4
  */
 public final class HurwitzZeta {
-    /** Number of terms of the series summation S. */
-    private static final int N = 9;
+    /**
+     * Number of terms of the series summation S.
+     *
+     * <p>Increasing this will impact runtime performance as each additional call to
+     * Math.pow has a measurable cost. The full function evaluation has a cost of
+     * approximately N+2 calls to Math.pow. If too low the tail series can diverge.
+     */
+    private static final int N = 8;
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. Equal to 2^-53. */
     private static final double EPS = 0x1.0p-53;
@@ -232,7 +238,10 @@ public final class HurwitzZeta {
     private static final double[] F;
 
     static {
-        F = Arrays.stream(FDD).mapToDouble(DD::hi).toArray();
+        // Limit the table size.
+        // If max M is reached the error is in the uncomputed residual term.
+        // This prevents possible divergence of the tail series.
+        F = Arrays.stream(FDD).limit(12).mapToDouble(DD::hi).toArray();
     }
 
     /**

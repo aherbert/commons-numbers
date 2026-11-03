@@ -51,8 +51,9 @@ import org.openjdk.jmh.infra.Blackhole;
 @State(Scope.Benchmark)
 @Fork(value = 1, jvmArgs = {"-server", "-Xms512M", "-Xmx512M"})
 public class ZetaPerformance {
-    /** Number of terms of the series summation S. */
-    private static final int N = 9;
+    /** Number of terms of the series summation S.
+     * Must match the final HurwitzZeta version for benchmarking comparisons. */
+    private static final int N = 8;
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. Equal to 2^-53. */
     private static final double EPS = 0x1.0p-53;
