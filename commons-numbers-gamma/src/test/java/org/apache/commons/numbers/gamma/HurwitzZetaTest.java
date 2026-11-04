@@ -4068,6 +4068,45 @@ class HurwitzZetaTest {
         return () -> (++counter[0] & mask) != 0;
     }
 
+    // TODO:
+    // Test if the tail terms start to diverge before a single term is below the
+    // ulp(zeta(s, a)) for a in [1, 1024] and s in [a/2, 2a].
+    // Stop when tail cannot be computed at the first term.
+    // ~ (a+n)^-662
+
+    /**
+     * Get the scaled tail terms used in the zeta evaluation.
+     * The terms are scaled to be 2^106 larger.
+     *
+     * @param k the maximum number of terms
+     * @param apn the value of (a+n)
+     * @param s the value of s
+     * @return the tail terms
+     */
+    private static double[] getScaledTailTerms(int k, double apn, double s) {
+        // (s)_{2k-1} * (a+n)^-(2k-1+s) * B_2k / 2k!
+        double[] t = new double[k];
+        double apn2 = apn * apn;
+        double f = 0x1p-916 * s;
+        double p = 0x1p1022 * Math.pow(apn, -(1 + s));
+        if (p < Double.MIN_NORMAL) {
+            p = Math.pow(apn, -(1 + s) * 0.5);
+            p = p * 0x1p1022 * p;
+        }
+        double k2 = 1;
+        for (int i = 0; i < k; i++) {
+            t[i] = f * p * FM[i];
+            // Update (a+n)^-(2k-1+s)
+            p /= apn2;
+            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+            f *= s + k2;
+            k2 += 1.0;
+            f *= s + k2;
+            k2 += 1.0;
+        }
+        return t;
+    }
+
     /**
      * Test to explore the size of the terms: S, I, T with different (s, a) and N.
      * For a given (s, a), test if convergence is possible in the tail
