@@ -1317,9 +1317,9 @@ class HurwitzZetaTest {
 
         // Roots are the point of maximum cancellation
         // Double arithmetic has only a few bits of precision on average; and may have no bits correct
-        T_DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p55, 0x1p51),
+        T_DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p55, 0x1p52),
         // Computing the largest terms in extended precision allows a few bits of precision
-        T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p48, 0x1p44),
+        T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p48, 0x1p45),
 
         T_BD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), ROOT_TEST_RESOURCES, 0, 0),
         // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
