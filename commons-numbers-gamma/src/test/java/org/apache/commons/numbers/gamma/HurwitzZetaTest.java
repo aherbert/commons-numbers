@@ -4069,12 +4069,6 @@ class HurwitzZetaTest {
         return () -> (++counter[0] & mask) != 0;
     }
 
-    // TODO:
-    // Test if the tail terms start to diverge before a single term is below the
-    // ulp(zeta(s, a)) for a in [1, 1024] and s in [a/2, 2a].
-    // Stop when tail cannot be computed at the first term.
-    // ~ (a+n)^-662
-
     /**
      * Get the scaled tail terms used in the zeta evaluation.
      * The terms are scaled to be 2^106 larger.
@@ -4106,6 +4100,82 @@ class HurwitzZetaTest {
             k2 += 1.0;
         }
         return t;
+    }
+
+    // TODO - remove this. It doesn't show anything useful
+    // For every s we want to support, find apn where the tail diverges on the k-th term.
+    @ParameterizedTest
+    @CsvSource({
+        "1.0000000000000002, 1075, false, -500, 12",
+    })
+    void testTailDivergence(double minS, double maxS, boolean uniform, int samples, int m) {
+        Assertions.assertTrue(minS > 1);
+        Assertions.assertTrue(maxS > minS);
+        Assertions.assertTrue(m > 0);
+        Assertions.assertNotEquals(0, samples);
+        // Note negative samples will enumerate and this RNG may not be used.
+        SplittableRandom rng = new SplittableRandom();
+        DoubleSupplier nextS;
+        if (samples < 0) {
+            nextS = createRange(samples, minS, maxS, uniform);
+        } else {
+            nextS = createSampler(rng, minS, maxS, uniform);
+        }
+        final int inc = samples < 0 ? 1 : -1;
+        for (int i = samples; i != 0; i += inc) {
+            final double s = nextS.getAsDouble();
+            // Tail term: (a+n)^-s * [ (s)_{2k-1} * (a+n)^-(2k-1) * B_2k/2k! ]
+            // For k<=M find (a+n) where the Pochammer term can cause tail divergence as it
+            // is a larger magnitude than the reduction. To compute magnitudes as the
+            // reciprocal this inverts (a+n)^-(2k-1) as (a+n)^(2k-1) and B_2k/2k! as 2k!/B_2k.
+            //
+            // First term: Check if larger
+            // (s)_1 >= (a+n)^(1+s) * 2k!/B_2k
+            // a+n = exp(log(s * B_2k/2k!) / (1+s))
+            //
+            // Successive terms: Check if the pochammer increase is larger than the decrease
+            // (s+2k-1)*(s+2k) >= (a+n)^2 * 2k!/B_2k / 2(k-1)!/B_2(k-1)
+            // a+n = sqrt((s+2k-1)*(s+2k) * 2(k-1)!/B_2(k-1) * B_2k/2k!)
+
+            double[] apn = new double[m];
+            // First F factor is positive
+            // apn[0] = Math.exp(Math.log(s * FM[0]) / (1 + s));
+            // Without the prefactor (a+n)^-s
+            apn[0] = s * FM[0];
+            for (int k = 1; k < m; k++) {
+                final double p = (s + 2 * k - 1) * (s + 2 * k);
+                // Note F factors alternate signs so 1 negation creates a positive
+                apn[k] = Math.sqrt(p * -F[k - 1] * FM[k]);
+            }
+            // This is the value of (a+n) that prevents tail divergence at t[k].
+            //
+            // For t[0] it is the value where the first term will be (a+n)^-s.
+            // Below t[0] the tail is a more significant part of the result than
+            // the final term in the series sum S.
+            //
+            // For t[k] it is the value of (a+n) where t[k] == t[k-1].
+            final double p = Math.pow(apn[0], -s);
+            if (p > Double.MIN_NORMAL) {
+                final double p2 = Math.pow(apn[0], -(1 + s)) * s * FM[0];
+                Assertions.assertEquals(p, p2, p * 1e-13);
+            }
+            final double[] t = getScaledTailTerms(m, apn[m - 1], s);
+            Assertions.assertEquals(Math.abs(t[m - 2]), Math.abs(t[m - 1]), Math.abs(t[m - 2]) * 1e-15);
+            for (int k = 1; k < m - 1; k++) {
+                Assertions.assertTrue(Math.abs(t[k - 1]) >= Math.abs(t[k]), "Tail not convergent");
+            }
+
+            System.out.printf("%s: %s%n", s, Arrays.toString(apn));
+            // TODO:
+            // The aim is to choose large enough n so that t[k] is not required when
+            // the tail will diverge after t[k].
+            // We know (a+n) where the tail converges at M terms for s.
+            // Below this the tail will not converge. Ensure the M-th term of the tail
+            // is not required. Compute zeta(s, a) for a -> 0 using a reference
+            // in steps. For each a find the M-th tail term for a+n < ulp(zeta(s, a)).
+            // Can use the current n or a fresh n for each a for logging to view the pattern.
+        }
+        // Assert the n that works for all non-convergent tail series.
     }
 
     /**
@@ -4147,11 +4217,11 @@ class HurwitzZetaTest {
 //        "1.0000000000000002, 4, false, -500, 6, 12, true",
 //        "1.0000000000000002, 4, false, -500, 7, 12, false",
 //        "4, 16, false, -500, 7, 12, false",
-//        "16, 64, false, -500, 7, 11, false",
+        "16, 64, false, -500, 7, 11, false",
 //        "64, 256, false, -500, 7, 11, false",
 
         // OK
-        "1.0000000000000002, 4, false, -50000, 7, 12, false",
+//        "1.0000000000000002, 4, false, -500, 7, 12, false",
     })
     void testTailConvergenceDouble(double minS, double maxS, boolean uniform, int samples,
             int n, int m, boolean fail) {
@@ -4216,15 +4286,28 @@ class HurwitzZetaTest {
             // Bound a to 20 for small s.
             upperA = Math.min(upperA, Math.max(20, 2 * s));
 
-//            // If the Pochammer term at k=M is smaller than (a+n)^-(2k-1+s)*B_2k/2k!
-//            // then the tail terms reduce in magnitude for k<=M. Find a where the Pochammer
-//            // term can cause tail divergence as it is larger magnitude than the reduction:
-//            // This inverts (a+n)^-(2k-1+s) * B_2k/2k!
-//            // (s)_{2k-1} >= (a+n)^(2k-1+s) * 2k!/B_2k
-//            // log((s)_{2k-1}) - log(2k!/B_2k) >= (2k-1+s) * log(a+n)
-//            // a = exp((log((s)_{2k-1}) - log(2k!/B_2k)) / (2k-1+s)) - n
-//            double p = pochammer(s, 2 * m - 1);
-//            double uA = Math.exp((Math.log(p) - Math.log(Math.abs(F[m - 1]))) / (2 * m - 1 + s)) - n;
+            // First update:
+            // Pochammer grows at (s+1)*(s+2) and power term reduces at (a+n)^2 * B_2k/2k! / B_2(k-1)/2(k-1)!
+            //
+            // Generally for large s:
+            // s^2 vs (a+n)^2 * 40
+            // s > a*6
+            // Can this be fleshed out more?
+            // Can this explain where tail terms are highest usage?
+
+//            // If the Pochammer term at k=M is smaller than (a+n)^-(2k-1)*B_2k/2k!
+//            // then the tail terms reduce in magnitude for k<=M. Find (a+n) where the Pochammer
+//            // term can cause tail divergence as it is a larger magnitude than the reduction:
+//            // This inverts (a+n)^-(2k-1) * B_2k/2k!
+//            // (s)_{2k-1} >= (a+n)^(2k-1) * 2k!/B_2k
+//            // log((s)_{2k-1}) - log(2k!/B_2k) >= (2k-1) * log(a+n)
+//            // a+n = exp((log((s)_{2k-1}) - log(2k!/B_2k)) / (2k-1))
+//            int kk = 1;
+//            double p = pochammer(s, 2 * kk - 1, 0x1p-1022);
+//            // Scale back pochammer by adding log(1022)
+//            double uA = Math.exp((Math.log(p) + 708.3964185322641 - Math.log(Math.abs(F[m - 1]))) / (2 * kk - 1));
+//            // This is where the tail may diverge at term k=m.
+//            // It may diverge sooner. Can this be used to bound upperA?
 //            System.out.printf("%s %s %s%n", s, upperA, uA);
 //            if (uA < 0) {
 //                //continue;
@@ -4540,7 +4623,21 @@ class HurwitzZetaTest {
      * @return the rising factorial
      */
     private static double pochammer(double s, int n) {
-        double r = 1;
+        return pochammer(s, n, 1);
+    }
+
+    /**
+     * Compute a scaled rising factorial (Pochammer) function.
+     * <pre>
+     * scale * s * (s+1) * (s+2) * ... * (s+n-1)
+     * </pre>
+     *
+     * @param s Argument s.
+     * @param n Argument n.
+     * @return the rising factorial
+     */
+    private static double pochammer(double s, int n, double scale) {
+        double r = scale;
         for (int i = 0; i < n; i++) {
             r *= s + i;
         }
