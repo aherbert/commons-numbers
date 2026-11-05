@@ -53,13 +53,13 @@ import org.openjdk.jmh.infra.Blackhole;
 public class ZetaPerformance {
     /** Number of terms of the series summation S.
      * Must match the final HurwitzZeta version for benchmarking comparisons. */
-    private static final int N = 8;
+    static final int N = 8;
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. Equal to 2^-53. */
     private static final double EPS = 0x1.0p-53;
     /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate.
-     * Equal to 2^53 - N. */
-    private static final double LARGE_A = (1L << 53) - N;
+     * Equal to 2^53 - 10. Allows testing with N in [7, 10]. */
+    private static final double LARGE_A = (1L << 53) - 10;
     /** Threshold used when {@code a < 1} where {@code a^-s} == zeta(s, a) with the smallest supported
      * {@code s = 1 + 2^-52}. Set using zeta(s, 1) * 2^54. No possible evaluation of
      * all remaining terms for any s could be added to {@code a^-s} when {@code a < 1}.
@@ -473,9 +473,10 @@ public class ZetaPerformance {
      *
      * @param s Argument.
      * @param a Argument.
+     * @param n Argument {@code n >= 7} for the series summation.
      * @return \( \zeta(s, a) \)
      */
-    static double zeta(double s, double a) {
+    static double zeta(double s, double a, int n) {
         if (Double.isNaN(s) || Double.isNaN(a) || s < 1 || a == Double.NEGATIVE_INFINITY) {
             return Double.NaN;
         }
@@ -504,7 +505,7 @@ public class ZetaPerformance {
             }
             return zetaNegative(s, a, ca);
         }
-        return zetaImp(s, a);
+        return zetaImp(s, a, n);
     }
 
     /**
@@ -526,9 +527,10 @@ public class ZetaPerformance {
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a > 0}
+     * @param n Argument {@code n >= 7}
      * @return zeta(s, a)
      */
-    private static double zetaImp(double s, double a) {
+    private static double zetaImp(double s, double a, int N) {
         // First term
         final double t0 = Math.pow(a, -s);
 
@@ -945,7 +947,20 @@ public class ZetaPerformance {
      */
     @Benchmark
     public void hurwitzZetaStd(HurwitzZetaData data, Blackhole bh) {
-        apply(data.getS(), data.getA(), ZetaPerformance::zeta, bh);
+        apply(data.getS(), data.getA(), (s, a) -> ZetaPerformance.zeta(s, a, N), bh);
+    }
+
+    /**
+     * Benchmark a standard precision implementation of the Hurwitz zeta function.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void hurwitzZetaStd7(HurwitzZetaData data, Blackhole bh) {
+        // n=7 is lowest possible value before significant error due to tail divergence.
+        // result precision may lost even at n=7 compared to higher n.
+        apply(data.getS(), data.getA(), (s, a) -> ZetaPerformance.zeta(s, a, 7), bh);
     }
 
     /**
@@ -967,7 +982,8 @@ public class ZetaPerformance {
      */
     @Benchmark
     public void negativeHurwitzZetaBD(NegativeHurwitzZetaData data, Blackhole bh) {
-        apply(data.getS(), data.getA(), ZetaPerformance::zeta, bh);
+        // n is ignored
+        apply(data.getS(), data.getA(), (s, a) -> ZetaPerformance.zeta(s, a, N), bh);
     }
 
     /**
@@ -1001,7 +1017,7 @@ public class ZetaPerformance {
      */
     @Benchmark
     public void riemannZetaStd(RiemannZetaData data, Blackhole bh) {
-        apply(data.getS(), s -> ZetaPerformance.zeta(s, 1), bh);
+        apply(data.getS(), s -> ZetaPerformance.zeta(s, 1, N), bh);
     }
 
     /**

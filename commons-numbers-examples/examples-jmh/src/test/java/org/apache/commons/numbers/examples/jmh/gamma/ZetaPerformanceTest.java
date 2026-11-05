@@ -61,7 +61,7 @@ class ZetaPerformanceTest {
         "NaN, NaN, NaN",
     })
     void testZetaSpecial(double s, double a, double z) {
-        Assertions.assertEquals(z, ZetaPerformance.zeta(s, a));
+        Assertions.assertEquals(z, ZetaPerformance.zeta(s, a, ZetaPerformance.N));
     }
 
     /**
@@ -70,7 +70,7 @@ class ZetaPerformanceTest {
     @ParameterizedTest
     @MethodSource(value = "testZetaSpot")
     void testZetaSpot(double s, double a, double z, int ulp) {
-        final double actual = ZetaPerformance.zeta(s, a);
+        final double actual = ZetaPerformance.zeta(s, a, ZetaPerformance.N);
         if (!Double.isFinite(z)) {
             Assertions.assertEquals(z, actual);
         } else {
