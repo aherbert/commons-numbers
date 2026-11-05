@@ -34,7 +34,6 @@ import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.core.DDMath;
@@ -3985,6 +3984,9 @@ class HurwitzZetaTest {
     /**
      * Check if reporting to stdout. Prints the JDK version on first return of true.
      *
+     * <p>Some test fixtures also use the reporting setting to configure random
+     * skipping of tests to reduce build times. 
+     *
      * @return true if reporting
      * @see #reporting
      */
@@ -4073,14 +4075,14 @@ class HurwitzZetaTest {
      * Get the scaled tail terms used in the zeta evaluation.
      * The terms are scaled to be 2^106 larger.
      *
-     * @param k the maximum number of terms
+     * @param m the maximum number of terms
      * @param apn the value of (a+n)
      * @param s the value of s
      * @return the tail terms
      */
-    private static double[] getScaledTailTerms(int k, double apn, double s) {
+    private static double[] getScaledTailTerms(int m, double apn, double s) {
         // (s)_{2k-1} * (a+n)^-(2k-1+s) * B_2k / 2k!
-        final double[] t = new double[k];
+        final double[] t = new double[m];
         final double apn2 = apn * apn;
         double f = 0x1p-916 * s;
         double p = 0x1p1022 * Math.pow(apn, -(1 + s));
@@ -4089,7 +4091,7 @@ class HurwitzZetaTest {
             p = p * 0x1p1022 * p;
         }
         double k2 = 1;
-        for (int i = 0; i < k; i++) {
+        for (int i = 0; i < m; i++) {
             t[i] = f * p * FM[i];
             // Update (a+n)^-(2k-1+s)
             p /= apn2;
@@ -4102,25 +4104,137 @@ class HurwitzZetaTest {
         return t;
     }
 
-    // TODO - remove this. It doesn't show anything useful
-    // For every s we want to support, find apn where the tail diverges on the k-th term.
+    /**
+     * Get the tail terms used in the zeta evaluation.
+     * Uses a DD fractional representation to prevent underflow.
+     *
+     * @param m the maximum number of terms
+     * @param apn the value of (a+n)
+     * @param s the value of s
+     * @param et exponent of t (output)
+     * @return the tail terms
+     */
+    private static DD[] getTailTerms(int m, DD apn, int s, int[] et) {
+        // (s)_{2k-1} * (a+n)^-(2k-1+s) * B_2k / 2k!
+        final DD[] t = new DD[m];
+        final long[] e = {0};
+        final int[] exp = {0};
+        // Rising factorial term : (s)_{2k-1}
+        DD f = DD.of(s).frexp(exp);
+        long ef = exp[0];
+        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+        DD p = DDMath.pow(apn, -(1 + s), e);
+        long ep = e[0];
+        // Divide by (a+n)^2 using multiplication
+        final DD apn2 = DDMath.pow(apn, -2, e);
+        long eapn = e[0];
+        for (int k = 0; k < m; k++) {
+            // FDD is finite. f*p in [0.25, 2).
+            t[k] = f.multiply(p).multiply(FDD[k]).frexp(exp);
+            et[k] = intExponent(ef + ep + exp[0]);
+            // p = (a+n)^-(2k-1+s)
+            p = p.multiply(apn2).frexp(exp);
+            ep += exp[0] + eapn;
+            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+            // compute the multiplicand as a long as it cannot overflow when M is small
+            // This is cast to double is is fine when s < 2^26.
+            f = f.multiply((s + (2L * k) + 1) * (s + (2L * k) + 2)).frexp(exp);
+            ef += exp[0];
+        }
+        return t;
+    }
+
+    /**
+     * For a given (s, a), test if convergence is possible in the tail series T within M
+     * terms to double precision using the configured N for the series sum S.
+     *
+     * <p>This uses real {@code s > 1.0}. Note that the tail series eventually diverges as
+     * the Pochammer term (s)_2k-1 (eventually) grows faster than the power and Bernoulli
+     * factor terms reduce. If the tail does not converge within a set M then the result
+     * is error limited by the omitted residual term R.
+     *
+     * <p>As N increases the magnitude of the tail terms reduce compared to the sum S + I.
+     * At the limit when N is infinite then this is simply the infinite zeta series and no
+     * other terms are used. In practice choosing too small an N can give very inaccurate
+     * results if the tail diverges significantly.
+     *
+     * <p>The terms S using N and T using M evaluate the same number of power terms. So N
+     * ~ M is reasonable. However the tail power term can be computed using iterative
+     * updates and is faster. A performant implementation can use {@code N < M}.
+     *
+     * <p>This test computes the point (a+n) where an update to find the magnitude of the
+     * M-th term of the tail series is 1. Any (a+n) after this threshold will have a
+     * converging tail series in the first M terms. Any (a+n) below this will diverge. The
+     * choice of N then requires that terms in the tail series are below the epsilon of
+     * zeta(s, a) before it diverges. Use of the tail can then be stopped before
+     * it diverges.
+     *
+     * <p>This test will assert that the tail for (a+N) is not used before it diverges.
+     * It does not provide errors for an implementation using N and M and the optimal
+     * choice for N may be higher. It does provide the minimum N that should be used
+     * when testing errors of different implementations.
+     *
+     * <p>Note: The test M is used to find where the M-th and (M-1)-th terms are the same.
+     * If a test passes at M=9, all sampled points converged within (M-1) tail terms. So
+     * the test M is 1 higher than the required table size of pre-computed tail factors
+     * for an implementation. However if the table size is larger it will not affect
+     * the implementation as it never uses the extra table values.
+     */
     @ParameterizedTest
     @CsvSource({
-        "1.0000000000000002, 1075, false, -500, 12",
+        // double precision
+        // Deterministic failure
+        "1.0000000000000002, 1075, false, -500, 12, 53, -6",
+        // Enumerate and random sampling
+        "1.0000000000000002, 1075, false, -350, 12, 53, 7", // ~ 1.7s
+        "1.0000000000000002, 1075, false, 350, 12, 53, 7", // ~ 1.8s
+        // A higher N requires less tail terms
+        "1.0000000000000002, 1075, false, 350, 8, 53, -8",
+        "1.0000000000000002, 1075, false, 350, 7, 53, -9",
+        "1.0000000000000002, 1075, false, -350, 9, 53, 8", // ~ 1.9s
+        "1.0000000000000002, 1075, false, -350, 8, 53, 9", // ~ 2.0s
+        // double-double precision
+        // Note the tail may underflow in this implementation where the DD
+        // implementation would not. The limit is the same as the issue
+        // occurs for s -> 1 and small a.
+        // Deterministic failure
+        "1.0000000000000002, 1075, false, -500, 30, 106, -11",
+        // Enumerate and random sampling
+        "1.0000000000000002, 1075, false, -350, 30, 106, 12", // ~ 2.5s
+        "1.0000000000000002, 1075, false, 350, 30, 106, 12", // ~ 2.5s
     })
-    void testTailDivergence(double minS, double maxS, boolean uniform, int samples, int m) {
+    void testTailConvergence(double minS, double maxS, boolean uniform, int samples, int m,
+            int b, int testN) {
+        // Negative N for tests that should fail
+        final boolean expectedToFail = testN < 0;
+        final int expectedN = Math.abs(testN);
+
         Assertions.assertTrue(minS > 1);
         Assertions.assertTrue(maxS > minS);
         Assertions.assertTrue(m > 0);
         Assertions.assertNotEquals(0, samples);
+        Assertions.assertTrue(b > 40);
+        Assertions.assertTrue(expectedN > 3 && expectedN <= 53);
+
+        // Evaluate zeta with larger N and support for sub-normal terms.
+        // The purpose of this test is to find the smallest n where the tail can converge before m.
+        // Accuracy when using small N is evaluated elsewhere.
+        final double eps = Math.scalb(1.0, -b);
+        // Limit N ~ M ~ P bits of precision
+        final Context context = Context.of(Math.min(53, expectedN * 3), 53).withTailEpsilon(eps);
+
         // Note negative samples will enumerate and this RNG may not be used.
-        SplittableRandom rng = new SplittableRandom();
+        final SplittableRandom rng = new SplittableRandom();
         DoubleSupplier nextS;
         if (samples < 0) {
             nextS = createRange(samples, minS, maxS, uniform);
         } else {
             nextS = createSampler(rng, minS, maxS, uniform);
         }
+
+        // Start below the expected N
+        int n = Math.min(3, expectedN - 1);
+
         final int inc = samples < 0 ? 1 : -1;
         for (int i = samples; i != 0; i += inc) {
             final double s = nextS.getAsDouble();
@@ -4136,242 +4250,270 @@ class HurwitzZetaTest {
             // Successive terms: Check if the pochammer increase is larger than the decrease
             // (s+2k-1)*(s+2k) >= (a+n)^2 * 2k!/B_2k / 2(k-1)!/B_2(k-1)
             // a+n = sqrt((s+2k-1)*(s+2k) * 2(k-1)!/B_2(k-1) * B_2k/2k!)
+            //
+            // This only computes the (a+n) for the last term k=M.
+            // An assertion checks terms are descending magnitude up to this point.
 
-            double[] apn = new double[m];
-            // First F factor is positive
-            // apn[0] = Math.exp(Math.log(s * FM[0]) / (1 + s));
-            // Without the prefactor (a+n)^-s
-            apn[0] = s * FM[0];
-            for (int k = 1; k < m; k++) {
-                final double p = (s + 2 * k - 1) * (s + 2 * k);
-                // Note F factors alternate signs so 1 negation creates a positive
-                apn[k] = Math.sqrt(p * -F[k - 1] * FM[k]);
-            }
-            // This is the value of (a+n) that prevents tail divergence at t[k].
-            //
-            // For t[0] it is the value where the first term will be (a+n)^-s.
-            // Below t[0] the tail is a more significant part of the result than
-            // the final term in the series sum S.
-            //
-            // For t[k] it is the value of (a+n) where t[k] == t[k-1].
-            final double p = Math.pow(apn[0], -s);
-            if (p > Double.MIN_NORMAL) {
-                final double p2 = Math.pow(apn[0], -(1 + s)) * s * FM[0];
-                Assertions.assertEquals(p, p2, p * 1e-13);
-            }
-            final double[] t = getScaledTailTerms(m, apn[m - 1], s);
+            // Cannot overflow for small m
+            final double p = (s + 2 * m - 3) * (s + 2 * m - 2);
+            final double apn = Math.sqrt(p * -F[m - 2] * FM[m - 1]);
+            // This is the value of (a+n) that prevents tail divergence at t[k],
+            // (i.e. where t[k] == t[k-1])
+            double[] t = getScaledTailTerms(m, apn, s);
+            // Test the final terms are equal
             Assertions.assertEquals(Math.abs(t[m - 2]), Math.abs(t[m - 1]), Math.abs(t[m - 2]) * 1e-15);
+            // Test the terms reduce magnitude
             for (int k = 1; k < m - 1; k++) {
                 Assertions.assertTrue(Math.abs(t[k - 1]) >= Math.abs(t[k]), "Tail not convergent");
             }
 
-            System.out.printf("%s: %s%n", s, Arrays.toString(apn));
-            // TODO:
             // The aim is to choose large enough n so that t[k] is not required when
             // the tail will diverge after t[k].
             // We know (a+n) where the tail converges at M terms for s.
+            // Any a > (a+n) has a converging tail.
             // Below this the tail will not converge. Ensure the M-th term of the tail
             // is not required. Compute zeta(s, a) for a -> 0 using a reference
             // in steps. For each a find the M-th tail term for a+n < ulp(zeta(s, a)).
-            // Can use the current n or a fresh n for each a for logging to view the pattern.
+
+            // Tail may be zero.
+            // First lower a until a tail exists.
+            double a = apn;
+            while(t[0] == 0) {
+                a -= 0.5;
+                t = getScaledTailTerms(1, a, s);
+            }
+            // Sample a in [1, a)
+            DoubleSupplier nextA;
+            if (samples < 0) {
+                nextA = createRange(samples, 1, a, uniform);
+            } else {
+                nextA = createSampler(rng, 1, a, uniform);
+            }
+            for (int j = samples; j != 0; j += inc) {
+                a = nextA.getAsDouble();
+                final double z = zeta(s, a, Double.NaN, context);
+                if (z == 0) {
+                    // Scaled tail was non-zero but after scaling the zeta result is zero
+                    continue;
+                }
+                // For comparison to the scaled tail term at the configured epsilon
+                final double stop = z * 0x1p106 * eps;
+                t = getScaledTailTerms(m, a + n, s);
+                while (!(Math.abs(t[m - 1]) <= stop)) {
+                    n++;
+                    if (n > expectedN) {
+                        if (expectedToFail) {
+                            return;
+                        }
+                        Assertions.fail(
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s", expectedN, s, a, z));
+                    }
+                    t = getScaledTailTerms(m, a + n, s);
+                }
+            }
+            // Spot check for a in [0, 1] avoiding 0
+            for (final double aa : new double[] {0.01, 0.25, 0.5, 0.99, 0.99999, 1}) {
+                a = aa;
+                // Zeta cannot be zero
+                final double z = zeta(s, a, Double.NaN, context);
+                // For comparison to the scaled tail term at the configured epsilon
+                final double stop = z * 0x1p106 * eps;
+                t = getScaledTailTerms(m, a + n, s);
+                while (!(Math.abs(t[m - 1]) <= stop)) {
+                    n++;
+                    if (n > expectedN) {
+                        if (expectedToFail) {
+                            return;
+                        }
+                        Assertions.fail(
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s", expectedN, s, a, z));
+                    }
+                    t = getScaledTailTerms(m, a + n, s);
+                }
+            }
         }
-        // Assert the n that works for all non-convergent tail series.
+        System.out.println(n);
     }
 
     /**
      * For a given (s, a), test if convergence is possible in the tail series T within M
-     * terms to the double precision using the configured {@code N}.
+     * terms to double-double precision using the configured N for the series sum S.
      *
-     * <p>This uses real {@code s > 1.0}. Note that the tail series eventually diverges as
-     * the Pochammer term (s)_2k-1 (eventually) grows faster than the power and Bernoulli
-     * factor terms reduce. If the tail does not converge within a set M then the result
-     * is error limited by the uncomputed residual term R.
-     * 
-     * <p>This is prevented by increasing the size of {@code a+n} which reduces the
-     * divergence rate, and also increases the size of the sum S+I thus the tail
-     * convergence threshold is higher and less terms are computed.
-     * 
-     * <p>This function enumerates the domain of zeta(s, a) where s ~ a and the tail
-     * is more likely to diverge. The purpose is to ensure selection of N that minimises
-     * the number of power computations for speed while also ensuring the tail can converge
-     * within M terms.
+     * <p>This id the DD equivalent of
+     * {@link #testTailConvergence(double, double, boolean, int, int, int, int)}.
+     *
+     * <p>The test purpose is to assert that an implementation is possible using N and M.
+     * It does not assess the error of such an implementation. In practice too low an N
+     * can have significant error if the tail diverges.
+     *
+     * <p>This enumerates integer {@code s > 1}.
+     *
+     * <p>This test is slow when enumerating all supported s. Tests that should pass are
+     * configured to skip samples from a when not in reporting mode. Skipping is periodic
+     * with a random start. When run many times this should visit all points since the
+     * samples are deterministic. Tests that fail as N is too low run without skipping.
      */
     @ParameterizedTest
     @CsvSource({
-        // TODO - get ranges for this where convergence is slowest in the tail,
-        // or diverges
-        // ---
-        // Run the benchmark test data and get occurrences that fail at n=6
-        // and that use the highest observed M. Then start at these points and
-        // make s or a larger and smaller and see how it changes n or m.
-        // We have to understand the parameter space to see how to break the function.
-        //
-        // TODO.
-        // Cannot find any cases for a >= 1 where n=7 fails.
-        // Need to map the sub-normal line and plot.
-        // Then plot the tail usage M across the test data.
-        // Then expand the search to where M is highest.
-        // ---
+        // Limit of s.
+        // Set using 2^-s where the full precision of the result of any term (a+k)^-s
+        // is below the min double value:
+        // double 1075
+        // double-double 1075+53 = 1128
+        // Maximum s used in the total cancellation case (only requires double precision)
+        // 1837
 
-        // Note: Negative samples will enumerate the range
-//        "1.0000000000000002, 4, false, -500, 6, 12, true",
-//        "1.0000000000000002, 4, false, -500, 7, 12, false",
-//        "4, 16, false, -500, 7, 12, false",
-        "16, 64, false, -500, 7, 11, false",
-//        "64, 256, false, -500, 7, 11, false",
+        // Enumerate and random sampling when expected to pass.
+        // Timings when no reporting is configured are < 1s per test.
 
-        // OK
-//        "1.0000000000000002, 4, false, -500, 7, 12, false",
+        // For double precision
+        "1837, false, -500, 12, 53, -6",
+        "1837, false, -350, 12, 53, 7", // ~ 11.5s
+        "1837, false, 350, 12, 53, 7", // ~ 11.5s
+        // double-double precision
+        "1128, false, -500, 30, 106, -11",
+        "1128, false, -350, 30, 106, 12", // ~ 10s
+        "1128, false, 350, 30, 106, 12", // ~ 10s
+        // quad-double precision (for the BigDecimal implementation testing)
+        "1128, false, -500, 50, 212, -25",
+        "1128, false, -350, 50, 212, 26", // ~ 21s
+        "1128, false, 350, 50, 212, 26", // ~ 21s
     })
-    void testTailConvergenceDouble(double minS, double maxS, boolean uniform, int samples,
-            int n, int m, boolean fail) {
-        Assertions.assertTrue(minS > 1);
-        Assertions.assertTrue(maxS > minS);
-        // Very low N or M will fail
-        Assertions.assertTrue(n > 3);
-        Assertions.assertTrue(m > 3);
+    void testTailConvergenceDD(int maxS, boolean uniform, int samples, int m,
+            int b, int testN) {
+        // Negative N for tests that should fail (run all cases)
+        final boolean expectedToFail = testN < 0;
+        final boolean noSkips = doReporting() || expectedToFail;
+        final int expectedN = Math.abs(testN);
+
+        Assertions.assertTrue(maxS > 1);
+        Assertions.assertTrue(m > 0);
         Assertions.assertNotEquals(0, samples);
-        final boolean noSkips = doReporting() || fail;
+        Assertions.assertTrue(b > 40);
+        Assertions.assertTrue(expectedN > 3 && expectedN <= 106);
+
+        // Run 1 in 1024 cases
         final BooleanSupplier skip = createSkipSupplier(noSkips, 10);
 
-        // No seed. This test must always pass for any (s, a).
+        // Evaluate zeta with larger N and support for sub-normal terms.
+        // The purpose of this test is to find the smallest n where the tail can converge before m.
+        // Accuracy when using small N is evaluated elsewhere.
+        final double eps = Math.scalb(1.0, -b);
+        // Limit N ~ M ~ P bits of precision
+        final Context context = Context.of(Math.min(106, expectedN * 3), 106).withTailEpsilon(eps);
+
         // Note negative samples will enumerate and this RNG may not be used.
-        SplittableRandom rng = new SplittableRandom();
-        DoubleSupplier nextS;
-        if (samples < 0) {
-            nextS = createRange(samples, minS, maxS, uniform);
-        } else {
-            nextS = createSampler(rng, minS, maxS, uniform);
-        }
+        final SplittableRandom rng = new SplittableRandom();
 
-        // Evaluate zeta with large N and support for sub-normal terms.
-        // The purpose of this test is to examine if the tail can converge with
-        // a much smaller N. Accuracy when using small N is evaluated elsewhere.
-        final Context context = Context.of(20, 50);
+        // Start below the expected N
+        int n = Math.min(3, expectedN - 1);
+        // For fractional representations
+        final int[] et = new int[m];
+        final int[] exp = {0};
 
-        // The rising factorial growth s_{2k+1} / s_{2k-1} increases with s.
-        // s=1 = 6x, 20x, 42x, 72x, ...
-        // s=2 = 12x, 30x, 56x, 90x, ...
-        //
-        // When (s+1)*(s+2) = (a+n)^2 the next rising factorial term will
-        // increase by the same factor as the power term reduces.
-        //
-        // The tail term is also reduced by the Bernoulli factor B_(2k) / 2k!.
-        // The Bernoulli factor [B_(2k+2) / (2k+2)!] / [B_(2k) / 2k!]
-        // growth begins at 60x, 42x, 40x, and asymptotes just below 40x.
-        //
-        // The aim is to find n where the zeta function tail term converges
-        // for all s and a.
-        //
-        // At small s -> 1 the value -> infinity for any a.
-        // As s increases the value -> infinity at a<1.
-        // As s increases the value -> 1 at a=1.
-        // As s increases the value -> 0 at a>1.
-        // As s increases the tail will diverge faster.
         final int inc = samples < 0 ? 1 : -1;
-        for (int i = samples; i != 0; i += inc) {
-            final double s = nextS.getAsDouble();
-            // Enumerate a in the entire range where zeta is non-zero and the asymptotic
-            // approximation is not used: a in [0, 2^53]
-            // - If a < 1 then the result is > zeta(s, 1) as the initial term a^-s increases
-            // as a -> 0. Any convergence for a=1 will work for a < 1. This eliminates
-            // half the representable doubles.
-            // - If s is large then a^-s will be zero
-            // Find upper a using:
-            // a^-s = 2^-1074
-            // a = exp(log(2) * 1074 / s)
-            double upperA = Math.min(0x1p53 - n, Math.exp(744.4400719213812 / s));
-            // a is now bounded so the asymptotic approximation is not used and a^-s is non-zero.
-            // But a may still be very large and if s is small and this is not an issue.
-            // Bound a to 20 for small s.
-            upperA = Math.min(upperA, Math.max(20, 2 * s));
+        for (int s = 2; s <= maxS; s++) {
+            // This follows the logic of the double precision test using DD arithmetic.
+            // The computation of (a+n) that creates equal magnitude updates is limited
+            // to the M-th term.
 
-            // First update:
-            // Pochammer grows at (s+1)*(s+2) and power term reduces at (a+n)^2 * B_2k/2k! / B_2(k-1)/2(k-1)!
-            //
-            // Generally for large s:
-            // s^2 vs (a+n)^2 * 40
-            // s > a*6
-            // Can this be fleshed out more?
-            // Can this explain where tail terms are highest usage?
+            // Cannot overflow for small m
+            final long p = (s + 2L * m - 3) * (s + 2L * m - 2);
+            // Note F factors alternate signs so 1 negation creates a positive.
+            final DD apn = FDD[m - 1].divide(FDD[m - 2].negate()).multiply(DD.of(p)).sqrt();
+            // Check against the simpler double version
+            TestUtils.assertEquals(Math.sqrt(p * -F[m - 2] * FM[m - 1]), apn.hi(), 10);
 
-//            // If the Pochammer term at k=M is smaller than (a+n)^-(2k-1)*B_2k/2k!
-//            // then the tail terms reduce in magnitude for k<=M. Find (a+n) where the Pochammer
-//            // term can cause tail divergence as it is a larger magnitude than the reduction:
-//            // This inverts (a+n)^-(2k-1) * B_2k/2k!
-//            // (s)_{2k-1} >= (a+n)^(2k-1) * 2k!/B_2k
-//            // log((s)_{2k-1}) - log(2k!/B_2k) >= (2k-1) * log(a+n)
-//            // a+n = exp((log((s)_{2k-1}) - log(2k!/B_2k)) / (2k-1))
-//            int kk = 1;
-//            double p = pochammer(s, 2 * kk - 1, 0x1p-1022);
-//            // Scale back pochammer by adding log(1022)
-//            double uA = Math.exp((Math.log(p) + 708.3964185322641 - Math.log(Math.abs(F[m - 1]))) / (2 * kk - 1));
-//            // This is where the tail may diverge at term k=m.
-//            // It may diverge sooner. Can this be used to bound upperA?
-//            System.out.printf("%s %s %s%n", s, upperA, uA);
-//            if (uA < 0) {
-//                //continue;
-//            }
-//            // a is now bounded where the tail term will diverge within M
-//            upperA = uA;
+            // This is the value of (a+n) that prevents tail divergence at t[k]
+            // (the value of (a+n) where t[k] == t[k-1])
+            DD[] t = getTailTerms(m, apn, s, et);
+            // Sanity check against the simpler double version ...
+            if (s < 100) {
+                final int ss = s;
+                final double[] tt = getScaledTailTerms(Math.min(m, 3), apn.hi(), s);
+                for (int k = 0; k < tt.length; k++) {
+                    // The double tail terms are scaled by 2^106
+                    TestUtils.assertEquals(tt[k], Math.scalb(t[k].hi(), 106 + et[k]), 100, null,
+                        () -> String.format("Mismatch with double version: s=%d, a=%s", ss, apn.hi()));
+                }
+            }
 
+            // Test the final terms are equal
+            Assertions.assertEquals(Math.abs(t[m - 2].hi()), Math.abs(t[m - 1].hi()));
+            Assertions.assertEquals(et[m - 2], et[m - 1]);
+            // Test the terms reduce magnitude
+            for (int k = 1; k < m - 1; k++) {
+                Assertions.assertTrue(et[k - 1] > et[k] ||
+                    Math.abs(t[k - 1].hi()) >= Math.abs(t[k].hi()), "Tail not convergent");
+            }
+
+            // A tail will always be non-zero due to use of the fractional representation
+            // Lower a until a 106-bit double-double cannot be added to Double.MIN_VALUE.
+            double a = apn.hi();
+            while(et[0] < -1075 - 106) {
+                a -= 0.5;
+                t = getTailTerms(m, DD.of(a), s, et);
+            }
+            // Sample a in [1, a)
             DoubleSupplier nextA;
-            double minA = 1.0;
-//            System.out.printf("%s %s %s%n", s, minA, upperA);
             if (samples < 0) {
-                nextA = createRange(samples, minA, upperA, uniform);
+                nextA = createRange(samples, 1, apn.hi(), uniform);
             } else {
-                nextA = createSampler(rng, minA, upperA, uniform);
+                nextA = createSampler(rng, 1, apn.hi(), uniform);
             }
             for (int j = samples; j != 0; j += inc) {
                 if (skip.getAsBoolean()) {
                     continue;
                 }
-                final double a = nextA.getAsDouble();
-                // Compute the tail terms for M. Do this first as it is fast.
-                final double[] t = getScaledTailTerms(m, a + n, s);
-                // The tail is not used when terms are zero.
-                // This may occur if a^s -> 2^-1074. Tail scaling cannot save all
-                // (a+n)^-s from being non-zero.
-                if (t[0] == 0) {
-                    continue;
-                }
-                // Reference zeta result using a large N.
-                final double z = zeta(s, a, Double.NaN, context);
-                // Test if a zeta evaluation using (a+n) will converge within M tail terms.
-                // This checks if any tail term is below ulp(zeta(s, a)). It assumes
-                // the reference zeta evaluation is non-zero and finite.
-                Assertions.assertNotEquals(0, z, String.format("Test domain error (%s, %a)", s, a));
-                // Convergence epsilon is 2^-53, tail terms are scaled 2^106.
-                final double stop = z * 0x1p53;
-                boolean converged = false;
-                for (int k = 0; k < t.length; k++) {
-                    // Tail terms alternate sign
-                    if (Math.abs(t[k]) < stop) {
-                        converged = true;
-                        break;
+                a = nextA.getAsDouble();
+                final DD z = zeta(s, DD.of(a), null, exp, context);
+                // For comparison to the scaled tail term at the configured epsilon
+                final int stop = exp[0] - b;
+                t = getTailTerms(m, DD.ofSum(a, n), s, et);
+                // Stop when the exponent is smaller
+                while (et[m - 1] >= stop) {
+                    n++;
+                    if (n > expectedN) {
+                        if (expectedToFail) {
+                            return;
+                        }
+                        Assertions.fail(
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s * 2^%d",
+                                expectedN, s, a, z, exp[0]));
                     }
+                    t = getTailTerms(m, DD.ofSum(a, n), s, et);
                 }
-                if (!converged) {
-                    if (fail) {
-                        // Failure was expected. We could verify by computing zeta using
-                        // the configured N. However the result may be very wrong depending
-                        // on the tail divergence
-                        System.out.printf("Arguments.of(%s, %s, %d, %d),%n", s, a, n, m);
-                        return;
+            }
+            // Spot check for a in [0, 1] avoiding 0
+            for (final double aa : new double[] {0.01, 0.25, 0.5, 0.99, 0.99999, 1}) {
+                a = aa;
+                final DD z = zeta(s, DD.of(a), null, exp, context);
+                // For comparison to the scaled tail term at the configured epsilon
+                final int stop = exp[0] - b;
+                t = getTailTerms(m, DD.ofSum(a, n), s, et);
+                // Stop when the exponent is smaller
+                while (et[m - 1] >= stop) {
+                    n++;
+                    if (n > expectedN) {
+                        if (expectedToFail) {
+                            return;
+                        }
+                        Assertions.fail(
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s * 2^%d",
+                                expectedN, s, a, z, exp[0]));
                     }
-                    Assertions.fail(String.format(
-                        "Tail convergence error: zeta(%s, %s) %s n=%d, m=%d. Tail = 2^-106 * %s",
-                        s, a, z, n, m, Arrays.toString(t)));
+                    t = getTailTerms(m, DD.ofSum(a, n), s, et);
                 }
             }
         }
-        Assertions.assertFalse(fail,
-            String.format("Expected to fail: s=[%s, %s] n=%d, m=%d", minS, maxS, n, m));
+        Assertions.assertFalse(expectedToFail,
+            () -> String.format("Should fail M=%d, maxS=%d, N=%d", m, maxS, testN));
     }
 
     /**
      * Assert that the tail fails to converge. This uses failure cases accrued during testing.
+     * It ensures that cases that failed the test implementation can be reviewed if
+     * the implementation changes.
      */
     @ParameterizedTest
     @MethodSource
@@ -4388,7 +4530,7 @@ class HurwitzZetaTest {
             // Tail terms alternate sign
             if (Math.abs(t[k]) < stop) {
                 Assertions.fail(String.format(
-                    "Tail convergence error: zeta(%s, %s) %s n=%d, m=%d. Tail = 2^-106 * %s",
+                    "Unexpected tail convergence: zeta(%s, %s) %s n=%d, m=%d. Tail = 2^-106 * %s",
                     s, a, z, n, m, Arrays.toString(t)));
             }
         }
@@ -4400,429 +4542,196 @@ class HurwitzZetaTest {
             Arguments.of(4.0, 1.0, 6, 12),
             Arguments.of(16.0, 2.2244488977955688, 7, 7),
             Arguments.of(16.0, 4.777555110220352, 7, 10),
-            Arguments.of(64.0, 18.43687374749453, 7, 10)
+            Arguments.of(64.0, 18.43687374749453, 7, 10),
+            Arguments.of(5.977311652199914, 3.3806723392907463, 7, 9),
+            Arguments.of(2.910160291044077, 1.1639528045623206, 7, 9),
+            Arguments.of(10.784409764595118, 3.442693930852058, 8, 8),
+            Arguments.of(1.4490282054459427, 1.048502805426968, 8, 8),
+            Arguments.of(2.929848286313245, 1.1163961491886014, 9, 7),
+            Arguments.of(2.1123819632831826, 1.2045804557520403, 9, 7)
         );
     }
 
     // TODO - remove
-    @Test
-    void test() {
-//        // Lowest tolerance allowed
-//        int minN = 5;
-//        int maxN = 15;
-//        Context c = Context.of(maxN, 30);
-//        for (double apn = minN + 1; apn < 53; apn++) {
-//            System.out.printf("%s", apn);
-//            // Critical s where the pochammer term immediately grows faster than (a+n)^2
-//            // Solve with quadratic equation:
-//            // (s+1)*(s+2) = (a+n)^2
-//            // s^2 + 3s + 2 - (a+n)^2 = 0
-//            // s = (-3 + sqrt(3^2 - 4*(2 - (a+n)^2))) / 2
-//            double s = (-3 + Math.sqrt(9 - 4 * (2 - apn * apn))) * 0.5;
-//            System.out.printf(" %s", s);
-//            // First tail term
-//            double t = s * Math.pow(apn, -(1 + s)) * FM[0];
-//            for (int n = minN; n < maxN; n++) {
-//                double a = apn - n;
-//                if (a <= 0) {
+//    /**
+//     * Test to explore the size of the terms: S, I, T with different (s, a) and N.
+//     * For a given (s, a), test if convergence is possible in the tail
+//     * series T to the specified precision using the configured {@code N}.
+//     *
+//     * <p>This should use any real {@code s > 1.0}. However only {@code s > a + N} causes an issue
+//     * in the convergence of the tail series so realistically we can use integer s and
+//     * sum in fractional representation to examine convergence on sub-normal power terms.
+//     *
+//     * <p>The issue is caused at {@code s > (a+n)} as the Pochammer term (s)_2k-1 (eventually) grows
+//     * faster than the power term reduces. If many terms are required the Pochammer term
+//     * causes the terms of T to eventually diverge. This is prevented by increasing the size
+//     * of {@code a+n} which reduces the divergence rate, and also increases the size of the sum S
+//     * and term I thus the tail convergence threshold is higher and less terms are computed.
+//     */
+//    @ParameterizedTest
+//    @CsvSource({
+//        // Limit of s.
+//        // Set using 2^-s where the full precision of the result of any term (a+k)^-s is below
+//        // the min double value:
+//        // double 1075
+//        // double-double 1075+53 = 1128
+//        "20, 5, 53, 53", // 0s - Fails to converge even on small s
+//        "1075, 6, 53, 16", // 10s
+//        "1075, 7, 53, 12", // 10s
+//        "1075, 8, 53, 11", // 10s
+//        "1075, 9, 53, 10", // 10s
+//        // Maximum s used in the total cancellation case (only requires double precision)
+//        "1837, 9, 53, 10", // ~30s
+//        "20, 11, 106, 106", // 0s - Fails to converge even on small s
+//        "1128, 12, 106, 32", // 13s
+//        "1128, 15, 106, 22", // 14s
+//    })
+//    void testTailConvergence(int maxS, int n, int eb, int expectedMaxM) {
+//        Assertions.assertTrue(maxS > 1);
+//        Assertions.assertTrue(n > 1);
+//        Assertions.assertTrue(0 < eb && eb <= 106);
+//        // Sum terms in fractional representation
+//        final long[] e = {0};
+//        final int[] exp = {0};
+//        // Limit iterations to a realistic table size
+//        final int maxM = Math.min(eb, FDD.length);
+//        // Use skips otherwise each case takes approximately 10-30s (see above)
+//        final boolean noSkips = doReporting() || expectedMaxM == maxM;
+//        final BooleanSupplier skip = createSkipSupplier(noSkips, 10);
+//        int observedMaxM = 0;
+//        // List of cases with the max M
+//        final ArrayList<double[]> cases = new ArrayList<>();
+//        // Iterate s up to the configured max
+//        for (int s = 2; s <= maxS; s++) {
+//            // Iterate over a ~ s.
+//            // When s is much larger than (a+n) the series is strongly convergent
+//            // Start from a = 1 to verify all a < s work.
+//            // If (a+n) > s the tail initially converges so limit upper a. An assertions will
+//            // fail the test if the highest recorded convergence is at the upper limit.
+//            final double upperA = Math.max(20, 2 * s);
+//            int obsM = 0;
+//            for (double a = 1; a <= upperA; a += 1.0) {
+//                if (skip.getAsBoolean()) {
 //                    continue;
 //                }
-//                Arrays.fill(M, 0);
-//                double z = zeta(s, a, Double.NaN, c);
-//                int m = 0;
-//                while (M[m] == 0) {
-//                    m++;
-//                }
-//                System.out.printf(" %s %d (%.3g)", z, m + 1, t / z);
-//            }
-//            System.out.println();
-//        }
-
-        // The rising factorial growth s_{2k+1} / s_{2k-1} increases with s.
-        // s=1 = 6x, 20x, 42x, 72x, ...
-        // s=2 = 12x, 30x, 56x, 90x, ...
-        //
-        // When (s+1)*(s+2) = (a+n)^2 the next rising factorial term will
-        // increase by the same factor as the power term reduces.
-        //
-        // The tail term is also reduced by the Bernoulli factor B_(2k) / 2k!.
-        // The Bernoulli factor [B_(2k+2) / (2k+2)!] / [B_(2k) / 2k!]
-        // growth begins at 60x, 42x, 40x, and asymptotes just below 40x.
-        //
-        // The aim is to find n where the zeta function tail term converges
-        // for all s and a.
-        //
-        // At small s -> 1 the value -> infinity for any a.
-        // As s increases the value -> infinity at a<1.
-        // As s increases the value -> 1 at a=1.
-        // As s increases the value -> 0 at a>1.
-        //
-        // As s increases the tail will diverge. Find the critical value
-        // of n where the tail converges for a=1 for all s.
-        Context ref = Context.of(20, 50);
-        int minN = 3;
-        int maxN = 15;
-        Context[] c = IntStream.rangeClosed(minN, maxN).mapToObj(n -> Context.of(n, 50)).toArray(Context[]::new);
-        int[] count = new int[c.length];
-
-        // TODO:
-        // change to a parameterised test.
-        // Add minS, maxS, uniform, expected max N parameters and assert
-        // Check why the other test thinks it must be n=7.
-        // What cases fail for n=6 in the optimisation test method?
-        // This can be left active in the class and a fail
-        // message should add details of the failure case
-        SplittableRandom rng = new SplittableRandom();
-        // Sample s in [1, 1024]
-        double minS = Math.nextUp(1.0);
-        double maxS = 4;
-        int n = 500;
-        DoubleSupplier nextS = createSampler(rng, minS, maxS, false);
-        for (int i = 0; i < n; i++) {
-            double s = nextS.getAsDouble();
-            // Sample a in [s/2, a^-s -> 0]
-            // double maxA = Math.exp(Math.log(Double.MIN_NORMAL) / -s);
-            double maxA = s * s;
-            DoubleSupplier nextA = createSampler(rng, s / 2, maxA, false);
-            for (int j = 0; j < n; j++) {
-                double a = nextA.getAsDouble();
-                double z = zeta(s, a, Double.NaN, ref);
-                // Try zeta until the result is the same.
-                // This means the tail did not diverge.
-                // We could set the last used M in the test function.
-                for (int k = 0; k < c.length; k++) {
-                    double z2 = zeta(s, a, Double.NaN, c[k]);
-                    if (Math.abs(z2 - z) / z < 1e-15) {
-                        count[k]++;
-                        // System.out.printf("(%s, %s) %s : %s (%d)%n", s, a, z, z2, k +
-                        // minN);
-                        break;
-                    }
-                }
-            }
-        }
-        for (int k = 0; k < c.length; k++) {
-            System.out.printf("%d %d%n", k + minN, count[k]);
-        }
-
-//        for (int b = -52; b < 53; b++) {
-//            double s = 1 + Math.scalb(1.0, b);
-//            double z = zeta(s, 1, Double.NaN, ref);
-//            // Try zeta until the result is the same.
-//            // This means the tail did not diverge.
-//            // We could set the last used M in the test function.
-//            for (int i = 0; i < c.length; i++) {
-//                double z2 = zeta(s, 1, Double.NaN, c[i]);
-//                if (Math.abs(z2 - z) / z < 1e-14) {
-//                    System.out.printf("(%s, %s) %s : %s  (%d)%n", s, 1, z, z2, i + minN);
-//                    break;
-//                }
-//            }
-////            // First tail term: f * p / F
-////            // s * (a+n)^-(1+s) / 12
-////            // This should be below the ulp(zeta(s, 1))
-////            // ulp(z) = s * (a+n)^-(1+s) / 12
-////            // log(a+n) = log(ulp(z) * 12 / s) / -(1+s)
-////            // n = exp(log(ulp(z) * 12 / s) / -(1+s)) - a
-////            double n = Math.exp(Math.log(z * 0x1p-53 * 12 / s) / -(1 + s)) - 1;
-////            System.out.printf("(%s, %s) %s (%d) : %s%n", s, 1, z, m, n);
-////            M[m] = 0;
-//        }
-
-//        // Lowest tolerance allowed
-//        int minN = 5;
-//        int maxN = 50;
-//        Context c = Context.of(maxN, maxN);
-//        for (double apn = minN + 1; apn < 53; apn++) {
-//            System.out.printf("%s", apn);
-//            // Critical s where the pochammer term immediately grows faster than (a+n)^2
-//            // Solve with quadratic equation:
-//            // (s+1)*(s+2) = (a+n)^2
-//            // s^2 + 3s + 2 - (a+n)^2 = 0
-//            // s = (-3 + sqrt(3^2 - 4*(2 - (a+n)^2))) / 2
-//            double s = (-3 + Math.sqrt(9 - 4 * (2 - apn * apn))) * 0.5;
-//            System.out.printf(" %s", s);
-//            // First tail term
-//            double t = s * Math.pow(apn, -(1 + s)) * FM[0];
-//            for (int n = minN; n < maxN; n++) {
-//                double a = apn - n;
-//                if (a <= 0) {
-//                    continue;
-//                }
-//                Arrays.fill(M, 0);
-//                double z = zeta(s, a, Double.NaN, c);
-//                int m = 0;
-//                while (M[m] == 0) {
-//                    m++;
-//                }
-//                System.out.printf(" %s %d (%.3g)", z, m + 1, t / z);
-//            }
-//            System.out.println();
-//        }
-
-        //
-        // Find the critical value of n where (s+1)*(s+2) = (a+n)^2 and
-        // the first tail term is below the ulp of zeta(s, a) for all a.
-        //
-        // Solve with quadratic equation:
-        // (s+1)*(s+2) = (a+n)^2
-        // s^2 + 3s + 2 - (a+n)^2 = 0
-        // s = (-3 + sqrt(3^2 - 4*(2 - (a+n)^2))) / 2
-        // s = (-3 + sqrt(1 + 4(a+n)^2))) / 2
-        //
-        // Critical point:
-        // a=1, s=1:
-        // 5 = sqrt(1 + 4(1+n)^2) -> n = sqrt(25-1/4) - 1 = 5
-        // when a=1 all values of s>1 will have a divergent tail series unless n>5.
-        // This matters as zeta(s>1, a=1) is finite.
-        // At small s -> 1 the value -> infinity.
-        // As s increases the value -> 1.
-        //
-        // Find a critical value of n where the first tail term is below the ulp(zeta(s, a))
-        // when (s+1)*(s+2) = (a+n)^2
-
-//        double s = (-3 + Math.sqrt(9 - 4 * (2 - apn * apn))) * 0.5;
-
-        // Find the critical value of s where the rising factorial grows faster
-        // than (a+n)^2 * B_2k / 2k! for each k.
-        // When s is large the rising factorial growth reduces. It grows fastest
-        // at small s. Growth at: s=1 = 6/1; s=2 = 24/2; s=3 =
 //
-//        BrentSolver solver = new BrentSolver(0, 0, 0);
-//        DoubleUnaryOperator fun1 = s -> pochammer(s, 1) / pochammer(s, 3) - Math.abs(F[0] / F[1]);
-//        Assertions.assertEquals(6.262087348130012, solver.findRoot(fun1, 1, 1024), 1e-10);
+//                // Compute the terms of the zeta function: S + I + T.
+//                // Determine if the tail converges to the specified precision.
+//                // When s > a+n the pochammer term (s)_2k-1 grows faster than the
+//                // power term (a+n)^-(2k-1-s) reduces and the tail series can fail to converge.
+//                // The following is a simplification of the DD zeta implementation
+//                // without separating the initial term a^-s. Here a >= 1 and the initial
+//                // term is not a significant magnitude to add separately.
 //
-//        DoubleUnaryOperator fun2 = s -> pochammer(s, 3) / pochammer(s, 5) - Math.abs(F[1] / F[2]);
-//        Assertions.assertEquals(3, solver.findRoot(fun2, 1, 1024), 1e-10);
+//                DD apn = DD.ofSum(a, n);
 //
-//        DoubleUnaryOperator fun3 = s -> pochammer(s, 3) / pochammer(s, 5) - Math.abs(F[1] / F[2]);
-//        Assertions.assertThrows(IllegalArgumentException.class, () -> solver.findRoot(fun3, 1, 1024));
-
-//        for (int k = 1; k < 10; k++) {
-//            double t = Math.abs(F[k - 1] / F[k]);
-//            int kk = 2 * k - 1;
-//            DoubleUnaryOperator fun = s -> pochammer(s, kk) / pochammer(s, kk + 2) - t;
-//            double s = solver.findRoot(fun, 1, 1024);
-//            System.out.printf("%d %s %s%n", k, t, s);
+//                // S : sum (a+k)^-s for k in [0, n - 1]
+//
+//                // Initialise with first tail term: 0.5 * (a+n)^-s
+//                DD sum = apn.pow(-s, e);
+//                int es = intExponent(e[0] - 1);
+//                // S : k in [0, n-1]
+//                for (int k = n - 1; k >= 0; k--) {
+//                    // Descending k sums in order of magnitude for increased precision
+//                    final DD r = DD.ofSum(a, k).pow(-s, e);
+//                    sum = add(sum, es, r, intExponent(e[0]), exp, DD::add);
+//                    es = exp[0];
+//                }
+//
+//                // I : (a+p)^(1-s) / (s-1)
+//                DD ti = apn.pow(1 - s, e);
+//                long eti = e[0];
+//                ti = ti.divide(s - 1).frexp(exp);
+//                eti += exp[0];
+//
+//                sum = add(sum, es, ti, intExponent(eti), exp, DD::add);
+//                es = exp[0];
+//
+//                // We could stop here if es < -1075 - b. The result is below the desired
+//                // output precision of a double. Continue to allow examining extended
+//                // precision. This may be required to implement the polygamma function
+//                // using the zeta function.
+//
+//                // Check if tail can converge on current sum
+//
+//                // Rising factorial term : (s)_{2k-1}
+//                DD f = DD.of(s).frexp(exp);
+//                long ef = exp[0];
+//
+//                // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
+//                DD p = apn.pow(-1 - s, e);
+//                long ep = e[0];
+//                // Divide by (a+n)^2 using multiplication
+//                apn = apn.pow(-2, e);
+//                final long eapn = e[0];
+//
+//                // Sum of an alternating series as each F changes sign.
+//                // Sum until terms will not impact the result.
+//                // Use the tail epsilon to obtain a minimum exponent for terms.
+//                final long stop = (long) es - eb;
+//                // Initialise with the first term.
+//                // Avoids addition of fractional representation to zero (which has a zero exponent).
+//                DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
+//                long et = exp[0] + ef + ep;
+//                int ets = intExponent(et);
+//                int i;
+//                // Limit iterations to a realistic table size
+//                for (i = 1; i < maxM; i++) {
+//                    if (et < stop) {
+//                        break;
+//                    }
+//                    // p = (a+n)^-(2k-1+s)
+//                    p = p.multiply(apn).frexp(exp);
+//                    ep += exp[0] + eapn;
+//                    // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+//                    // compute the multiplicand as a long as it cannot overflow when M is small
+//                    f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
+//                    ef += exp[0];
+//                    // f*p in [0.25, 2); FDD*2 is finite.
+//                    final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
+//                    et = exp[0] + ef + ep;
+//                    tsum = add(tsum, ets, t, intExponent(et), exp, DD::add);
+//                    ets = exp[0];
+//                }
+//                // Check if this should have converged
+//                if (i >= expectedMaxM) {
+//                    if (expectedMaxM < maxM) {
+//                        Assertions.fail(String.format("z(%d, %s) n=%d p=%d : %s * 2^%d + %s * 2^%d : %d%n",
+//                            s, a, n, eb, sum.hi(), es, tsum.hi(), ets, i));
+//                    }
+//                    // This was expected so stop the test
+//                    return;
+//                }
+//                // Record the maximum M for this s.
+//                // This is not applicable when skipping cases.
+//                if (i >= obsM && noSkips) {
+//                    final int m = i;
+//                    Assertions.assertNotEquals(upperA, a,
+//                        () -> "Invalid test range (increase upperA): Upper limit of a for max M=" + m);
+//                    obsM = i;
+//                }
+//                // Record the maximum M
+//                if (i >= observedMaxM) {
+//                    if (i > observedMaxM) {
+//                        cases.clear();
+//                    }
+//                    cases.add(new double[] {s, a});
+//                    observedMaxM = i;
+//                }
+//                // Sanity check the zeta result is correct
+//                sum = add(sum, es, tsum, ets, exp, DD::add);
+//                final double actual = Math.scalb(sum.hi(), exp[0]);
+//                final double expected = HurwitzZeta.value(s, a);
+//                TestUtils.assertEquals(expected, actual, 10);
+//            }
 //        }
-        //
-        // For this s we do not want to use the tail.
-        // Find the value of (a+n)^2 = (s+1)(s+2).
-        //
-        // Find the value n where the zeta evaluation ulp is > first tail term.
-    }
-
-    /**
-     * Compute the rising factorial (Pochammer) function.
-     * <pre>
-     * 1 * s * (s+1) * (s+2) * ... * (s+n-1)
-     * </pre>
-     *
-     * @param s Argument s.
-     * @param n Argument n.
-     * @return the rising factorial
-     */
-    private static double pochammer(double s, int n) {
-        return pochammer(s, n, 1);
-    }
-
-    /**
-     * Compute a scaled rising factorial (Pochammer) function.
-     * <pre>
-     * scale * s * (s+1) * (s+2) * ... * (s+n-1)
-     * </pre>
-     *
-     * @param s Argument s.
-     * @param n Argument n.
-     * @return the rising factorial
-     */
-    private static double pochammer(double s, int n, double scale) {
-        double r = scale;
-        for (int i = 0; i < n; i++) {
-            r *= s + i;
-        }
-        return r;
-    }
-
-    /**
-     * Test to explore the size of the terms: S, I, T with different (s, a) and N.
-     * For a given (s, a), test if convergence is possible in the tail
-     * series T to the specified precision using the configured {@code N}.
-     *
-     * <p>This should use any real {@code s > 1.0}. However only {@code s > a + N} causes an issue
-     * in the convergence of the tail series so realistically we can use integer s and
-     * sum in fractional representation to examine convergence on sub-normal power terms.
-     *
-     * <p>The issue is caused at {@code s > (a+n)} as the Pochammer term (s)_2k-1 (eventually) grows
-     * faster than the power term reduces. If many terms are required the Pochammer term
-     * causes the terms of T to eventually diverge. This is prevented by increasing the size
-     * of {@code a+n} which reduces the divergence rate, and also increases the size of the sum S
-     * and term I thus the tail convergence threshold is higher and less terms are computed.
-     */
-    @ParameterizedTest
-    @CsvSource({
-        // Limit of s.
-        // Set using 2^-s where the full precision of the result of any term (a+k)^-s is below
-        // the min double value:
-        // double 1075
-        // double-double 1075+53 = 1128
-        "20, 5, 53, 53", // 0s - Fails to converge even on small s
-        "1075, 6, 53, 16", // 10s
-        "1075, 7, 53, 12", // 10s
-        "1075, 8, 53, 11", // 10s
-        "1075, 9, 53, 10", // 10s
-        // Maximum s used in the total cancellation case (only requires double precision)
-        "1837, 9, 53, 10", // ~30s
-        "20, 11, 106, 106", // 0s - Fails to converge even on small s
-        "1128, 12, 106, 32", // 13s
-        "1128, 15, 106, 22", // 14s
-    })
-    void testTailConvergence(int maxS, int n, int eb, int expectedMaxM) {
-        Assertions.assertTrue(maxS > 1);
-        Assertions.assertTrue(n > 1);
-        Assertions.assertTrue(0 < eb && eb <= 106);
-        // Sum terms in fractional representation
-        final long[] e = {0};
-        final int[] exp = {0};
-        // Limit iterations to a realistic table size
-        final int maxM = Math.min(eb, FDD.length);
-        // Use skips otherwise each case takes approximately 10-30s (see above)
-        final boolean noSkips = doReporting() || expectedMaxM == maxM;
-        final BooleanSupplier skip = createSkipSupplier(noSkips, 10);
-        int observedMaxM = 0;
-        // List of cases with the max M
-        final ArrayList<double[]> cases = new ArrayList<>();
-        // Iterate s up to the configured max
-        for (int s = 2; s <= maxS; s++) {
-            // Iterate over a ~ s.
-            // When s is much larger than (a+n) the series is strongly convergent
-            // Start from a = 1 to verify all a < s work.
-            // If (a+n) > s the tail initially converges so limit upper a. An assertions will
-            // fail the test if the highest recorded convergence is at the upper limit.
-            final double upperA = Math.max(20, 2 * s);
-            int obsM = 0;
-            for (double a = 1; a <= upperA; a += 1.0) {
-                if (skip.getAsBoolean()) {
-                    continue;
-                }
-
-                // Compute the terms of the zeta function: S + I + T.
-                // Determine if the tail converges to the specified precision.
-                // When s > a+n the pochammer term (s)_2k-1 grows faster than the
-                // power term (a+n)^-(2k-1-s) reduces and the tail series can fail to converge.
-                // The following is a simplification of the DD zeta implementation
-                // without separating the initial term a^-s. Here a >= 1 and the initial
-                // term is not a significant magnitude to add separately.
-
-                DD apn = DD.ofSum(a, n);
-
-                // S : sum (a+k)^-s for k in [0, n - 1]
-
-                // Initialise with first tail term: 0.5 * (a+n)^-s
-                DD sum = apn.pow(-s, e);
-                int es = intExponent(e[0] - 1);
-                // S : k in [0, n-1]
-                for (int k = n - 1; k >= 0; k--) {
-                    // Descending k sums in order of magnitude for increased precision
-                    final DD r = DD.ofSum(a, k).pow(-s, e);
-                    sum = add(sum, es, r, intExponent(e[0]), exp, DD::add);
-                    es = exp[0];
-                }
-
-                // I : (a+p)^(1-s) / (s-1)
-                DD ti = apn.pow(1 - s, e);
-                long eti = e[0];
-                ti = ti.divide(s - 1).frexp(exp);
-                eti += exp[0];
-
-                sum = add(sum, es, ti, intExponent(eti), exp, DD::add);
-                es = exp[0];
-
-                // We could stop here if es < -1075 - b. The result is below the desired
-                // output precision of a double. Continue to allow examining extended
-                // precision. This may be required to implement the polygamma function
-                // using the zeta function.
-
-                // Check if tail can converge on current sum
-
-                // Rising factorial term : (s)_{2k-1}
-                DD f = DD.of(s).frexp(exp);
-                long ef = exp[0];
-
-                // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
-                DD p = apn.pow(-1 - s, e);
-                long ep = e[0];
-                // Divide by (a+n)^2 using multiplication
-                apn = apn.pow(-2, e);
-                final long eapn = e[0];
-
-                // Sum of an alternating series as each F changes sign.
-                // Sum until terms will not impact the result.
-                // Use the tail epsilon to obtain a minimum exponent for terms.
-                final long stop = (long) es - eb;
-                // Initialise with the first term.
-                // Avoids addition of fractional representation to zero (which has a zero exponent).
-                DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
-                long et = exp[0] + ef + ep;
-                int ets = intExponent(et);
-                int i;
-                // Limit iterations to a realistic table size
-                for (i = 1; i < maxM; i++) {
-                    if (et < stop) {
-                        break;
-                    }
-                    // p = (a+n)^-(2k-1+s)
-                    p = p.multiply(apn).frexp(exp);
-                    ep += exp[0] + eapn;
-                    // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-                    // compute the multiplicand as a long as it cannot overflow when M is small
-                    f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
-                    ef += exp[0];
-                    // f*p in [0.25, 2); FDD*2 is finite.
-                    final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
-                    et = exp[0] + ef + ep;
-                    tsum = add(tsum, ets, t, intExponent(et), exp, DD::add);
-                    ets = exp[0];
-                }
-                // Check if this should have converged
-                if (i >= expectedMaxM) {
-                    if (expectedMaxM < maxM) {
-                        Assertions.fail(String.format("z(%d, %s) n=%d p=%d : %s * 2^%d + %s * 2^%d : %d%n",
-                            s, a, n, eb, sum.hi(), es, tsum.hi(), ets, i));
-                    }
-                    // This was expected so stop the test
-                    return;
-                }
-                // Record the maximum M for this s.
-                // This is not applicable when skipping cases.
-                if (i >= obsM && noSkips) {
-                    final int m = i;
-                    Assertions.assertNotEquals(upperA, a,
-                        () -> "Invalid test range (increase upperA): Upper limit of a for max M=" + m);
-                    obsM = i;
-                }
-                // Record the maximum M
-                if (i >= observedMaxM) {
-                    if (i > observedMaxM) {
-                        cases.clear();
-                    }
-                    cases.add(new double[] {s, a});
-                    observedMaxM = i;
-                }
-                // Sanity check the zeta result is correct
-                sum = add(sum, es, tsum, ets, exp, DD::add);
-                final double actual = Math.scalb(sum.hi(), exp[0]);
-                final double expected = HurwitzZeta.value(s, a);
-                TestUtils.assertEquals(expected, actual, 10);
-            }
-        }
-        // Check the maximum M was not at the limit
-        if (expectedMaxM == maxM) {
-            Assertions.fail("Converged earlier than expected for all cases. Max M=" + observedMaxM);
-        }
-        // XXX: Debugging
-        //cases.stream().limit(100).map(Arrays::toString).forEach(System.out::println);
-    }
+//        // Check the maximum M was not at the limit
+//        if (expectedMaxM == maxM) {
+//            Assertions.fail("Converged earlier than expected for all cases. Max M=" + observedMaxM);
+//        }
+//        // XXX: Debugging
+//        //cases.stream().limit(100).map(Arrays::toString).forEach(System.out::println);
+//    }
 
     /**
      * Test the cancellation for negative half-integer a using {@code a = 0.5 - 2^b}.
@@ -5455,7 +5364,7 @@ class HurwitzZetaTest {
 
     /**
      * Enumerates the range. The enumeration can be log-uniform in the range or uniform.
-     * 
+     *
      * <p>When log uniform the upper bound may not be reached as the step increment
      * is the range in bits divided by (n-1). If not an exact factor then the upper
      * limit after {@code n} may not be b. The points in bits for i in [0, n-1]:
