@@ -34,8 +34,13 @@ function hzeta(filename)
     s = str2double(extractBefore(l,','));
     a = str2double(extractAfter(l,','));
     % Matlab can have out-of-memory errors for large symbolic expansions
-    % Use this to show the arguments
+    % Use this to show the arguments:
     % disp([s, a])
+    % Skip large a to avoid out-of-memory errors
+    % Skip tiny a where MATLAB generates NaN
+    if a > 1e12 || a < 1.0000000000002
+      continue
+    end
     z = vpa(hurwitzZeta(sym(s, 'f'), sym(a, 'f')));
     fprintf(fileID, "%.17g, %.17g, %s\n", s, a, z);
   end

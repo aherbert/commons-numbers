@@ -49,6 +49,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Test the {@link HurwitzZeta} function.
@@ -1382,6 +1383,8 @@ class HurwitzZetaTest {
         ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1, 0.15),
         // 100% of results are sub-normal
         ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.1, 0.1),
+        // Full domain range that evaluates at 2^-1022 (51.5% sub-normal)
+        ZETA_2_POW_N1022(HurwitzZeta::value, "hzeta_2p-1022.csv", 1.35, 0.35),
         // Negative a
         ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -1428,6 +1431,7 @@ class HurwitzZetaTest {
 //        ZETA_S20_1024_AP1_SUB_NORMAL_1040        max        1.26613   RMS       0.158744   mean     0.00395250  n  3000  (45.7ms)
 //        ZETA_S20_1024_AP1_SUB_NORMAL_1053        max        1.15446   RMS       0.108455   mean    0.000873996  n  3000  (35.2ms)
 //        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073      max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (44.8ms)
+//        ZETA_2_POW_N1022                         max        1.27858   RMS       0.295340   mean      0.0119315  n  1998  (42.0ms)
 //        ZETA_S2_4_N_A1_15                        max       0.518098   RMS      0.0402256   mean    -0.00218941  n  3000  (60.8ms)
 //        ZETA_S2_4_N_A40_99                       max       0.527688   RMS      0.0523742   mean    -0.00135787  n  3000  (77.9ms)
 //        ZETA_S2_4_N_A1_15_B30                    max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (24.1ms)
@@ -5246,14 +5250,34 @@ class HurwitzZetaTest {
         }
     }
 
+
+    // TODO
+    // for curve fitting:
+    // if any a or s are the same then use the record closest to t.
+    // remove spurious points not close to t when at the ends of the range.
+
+    // Try and fit using claude for help.
+    // Generate data within the valid space.
+
+    // Record
+    // Create reference data and add to the tests
+    // Verify the result was the sub-normal target
+    //
+    // Plot the line and all the test cases we have in the domain
+    // Plot the region where n=6 creates failures
+
     /**
      * Create a line in the zeta domain for (s, a) where the result is sub-normal.
      * For any {@code (s',a') < (s,a)} the result will be sub-normal or normal.
      * This is the region where the function should support accurate evaluation.
+     * 
+     * <p>This uses the current test implementation to find (s, a). These are recorded
+     * to file for independent evaluation.
      */
-    @Test
+    @ParameterizedTest
+    @ValueSource(ints = {-1022})
     @Disabled("Used to generate test data")
-    void testDataSubNormalDomain() {
+    void testDataSubNormalDomain(int b) throws IOException {
         // Configure for high accuracy
         final Context context = Context.of(20, 53);
         final DoubleBinaryOperator zeta = (s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, context);
@@ -5261,7 +5285,7 @@ class HurwitzZetaTest {
 
         // Map zeta(a, s) = t using n points
         // This can be changed to a lower value, e.g. 2^-(1022 + 23)
-        final double t = Double.MIN_NORMAL;
+        final double t = Math.scalb(1.0, b);
         final int n = 1000;
         final ArrayList<double[]> points = new ArrayList<>();
 
@@ -5270,28 +5294,25 @@ class HurwitzZetaTest {
         final double maxA = 0x1p53;
         // zeta(2^61, 1+2^-52) = 4.377e-223
         // zeta(2^62, 1+2^-52) = 1.916e-445
-        double maxS = solver.findRoot(s -> zeta.applyAsDouble(s, minA) - t, 0x1p61, 0x1p62);
+        final double maxS = solver.findRoot(s -> zeta.applyAsDouble(s, minA) - t, 0x1p61, 0x1p62);
         // zeta(20, 2^53) = 3.65e-289
         // zeta(21, 2^53) = 4.04e-321
         // zeta(22, 2^53) = 4.28e-337
-        double minS = solver.findRoot(s -> zeta.applyAsDouble(s, maxA) - t, 20, 22);
+        final double minS = solver.findRoot(s -> zeta.applyAsDouble(s, maxA) - t, 20, 22);
 
         // a in (1, 2^53]
         // Expecting s in [20.2, 3.19e18]
         // Interpolate a in uniform steps find s
-        DoubleSupplier nextA = createRange(n, minA, maxA, false);
+        final DoubleSupplier nextA = createRange(n, minA, maxA, false);
         for (int i = 0; i < n; i++) {
             double a = nextA.getAsDouble();
             double s = solver.findRoot(x -> zeta.applyAsDouble(x, a) - t, minS, maxS);
             double z = zeta.applyAsDouble(s, a);
-            System.out.printf("%s, %s, %s%n", s, a, z);
             points.add(new double[] {s, a, z});
         }
 
-        System.out.printf("%n%s, %s%n%n", minS, maxS);
-
         // Map zeta(a, s) = t using s
-        DoubleSupplier nextS = createRange(n, minS, maxS, false);
+        final DoubleSupplier nextS = createRange(n, minS, maxS, false);
         // Skip the ends as the round-trip of the function is not exact.
         // This then enumerates (minS, maxS)
         nextS.getAsDouble();
@@ -5299,37 +5320,37 @@ class HurwitzZetaTest {
             double s = nextS.getAsDouble();
             double a = solver.findRoot(x -> zeta.applyAsDouble(s, x) - t, minA, maxA);
             double z = zeta.applyAsDouble(s, a);
-            System.out.printf("%s, %s, %s%n", s, a, z);
             points.add(new double[] {s, a, z});
         }
-
-        // Sort by s
-        points.sort(Comparator.comparingDouble(k -> k[0]));
 
         // Note:
         // Mapping s to a can create duplicates for a as a -> 1 and may create zeros.
         // This occurs when zeta(s, a) = 0 is closer to t than zeta(s, nextDown(a)):
         // zeta(2.02294791067527501E18, 1.0000000000000004) = 0
         // zeta(2.02294791067527501E18, 1.0000000000000002) = 8.35e-196
-        // Sort by a and check the zeta result is descending for increasing s
 
-        // TODO
-        // Record to file as a test sample.
-        // Evaluate using a reference and add to the test suite.
+        // Sort by a (descending) then s and check the zeta result is descending for increasing s
+        final Comparator<double[]> cs = Comparator.comparingDouble(k -> k[0]);
+        final Comparator<double[]> ca = Comparator.comparingDouble(k -> -k[1]);
+        points.sort(ca.thenComparing(cs));
+        final double a = points.get(0)[1];
+        for (int i = 1; i < points.size(); i++) {
+            if (points.get(i)[1] == a) {
+                Assertions.assertTrue(points.get(i)[2] <= points.get(i - 1)[2]);
+            }
+        }
+        // Sort by s then a (descending) and check the zeta result is ascending for decreasing a
+        points.sort(cs.thenComparing(ca));
+        final double s = points.get(0)[0];
+        for (int i = 1; i < points.size(); i++) {
+            if (points.get(i)[0] == s) {
+                Assertions.assertTrue(points.get(i)[2] >= points.get(i - 1)[2]);
+            }
+        }
 
-        // for curve fitting:
-        // if any a or s are the same then use the record closest to t.
-        // remove spurious points not close to t when at the ends of the range.
-
-        // Try and fit using claude for help.
-        // Generate data within the valid space.
-
-        // Record
-        // Create reference data and add to the tests
-        // Verify the result was the sub-normal target
-        //
-        // Plot the line and all the test cases we have in the domain
-        // Plot the region where n=6 creates failures
+        try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.txt", b))) {
+            points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
+        }
     }
 
     /**
