@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.SplittableRandom;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
@@ -4238,8 +4239,10 @@ class HurwitzZetaTest {
     @ParameterizedTest
     @CsvSource({
         // double precision
-        // Deterministic failure; then enumerate and random sampling when expected to pass
-        // A higher N requires less tail terms. Accuracy of the function before/beyond the
+        // Deterministic failure; then enumerate and random sampling when expected to pass.
+        // Use of a smaller tail M requires higher N (this test finds the smallest N
+        // to avoid using diverging tail terms within size M; if the tail is smaller
+        // then N must be higher). Accuracy of the function before/beyond the
         // point (a+n) where the tail converges within M is not tested.
         "1.0000000000000002, 1075, false, -350, 12, 53, -6",
         "1.0000000000000002, 1075, false, -350, 13, 53, 6", // ~ 1.4s
@@ -5071,7 +5074,7 @@ class HurwitzZetaTest {
 
     /**
      * Create a line in the zeta domain for (s, a) where the result is sub-normal.
-     * For any {@code (s',a') < (s,a)} the result will be sub-normal of normal.
+     * For any {@code (s',a') < (s,a)} the result will be sub-normal or normal.
      * This is the region where the function should support accurate evaluation.
      */
     @Test
@@ -5080,7 +5083,65 @@ class HurwitzZetaTest {
         // TODO
         // For min a find s
         // For max a find s
-        // Interpolate a in uniform steps between and find s
+
+        // Configure for high accuracy
+        final Context context = Context.of(20, 53);
+        final DoubleBinaryOperator zeta = (s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, context);
+        final BrentSolver solver = new BrentSolver(0, 0, 0);
+
+        // Map zeta(a, s) = t using n points
+        // This can be changed to a lower value, e.g. 2^-(1022 + 23)
+        final double t = Double.MIN_NORMAL;
+        final int n = 1000;
+        final ArrayList<double[]> points = new ArrayList<>();
+
+        // Map zeta(a, s) = t using a
+        final double minA = Math.nextUp(1.0);
+        final double maxA = 0x1p53;
+        // zeta(2^61, 1+2^-52) = 4.377e-223
+        // zeta(2^62, 1+2^-52) = 1.916e-445
+        double maxS = solver.findRoot(s -> zeta.applyAsDouble(s, minA) - t, 0x1p61, 0x1p62);
+        // zeta(20, 2^53) = 3.65e-289
+        // zeta(21, 2^53) = 4.04e-321
+        // zeta(22, 2^53) = 4.28e-337
+        double minS = solver.findRoot(s -> zeta.applyAsDouble(s, maxA) - t, 20, 22);
+
+        // a in (1, 2^53]
+        // Expecting s in [20.2, 3.19e18]
+        // Interpolate a in uniform steps find s
+        DoubleSupplier nextA = createRange(n, minA, maxA, false);
+        for (int i = 0; i < n; i++) {
+            double a = nextA.getAsDouble();
+            double s = solver.findRoot(x -> zeta.applyAsDouble(x, a) - t, minS, maxS);
+            double z = zeta.applyAsDouble(s, a);
+            System.out.printf("%s, %s, %s%n", s, a, z);
+            points.add(new double[] {s, a, z});
+        }
+
+        System.out.printf("%n%s, %s%n%n", minS, maxS);
+
+        // Map zeta(a, s) = t using s
+        DoubleSupplier nextS = createRange(n, minS, maxS, false);
+        // Skip the ends as the round-trip of the function is not exact.
+        // This then enumerates (minS, maxS)
+        nextS.getAsDouble();
+        for (int i = 2; i < n; i++) {
+            double s = nextS.getAsDouble();
+            double a = solver.findRoot(x -> zeta.applyAsDouble(s, x) - t, minA, maxA);
+            double z = zeta.applyAsDouble(s, a);
+            System.out.printf("%s, %s, %s%n", s, a, z);
+            points.add(new double[] {s, a, z});
+        }
+
+        // Sort by s
+        points.sort(Comparator.comparingDouble(k -> k[0]));
+
+        // TODO
+        // Record to file as a test sample.
+        // Evaluate using a reference and add to the test suite.
+        // Try and fit using claude for help.
+        // Generate data within the valid space.
+
         // Record
         // Create reference data and add to the tests
         // Verify the result was the sub-normal target
