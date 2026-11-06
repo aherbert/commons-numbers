@@ -5254,10 +5254,6 @@ class HurwitzZetaTest {
     @Test
     @Disabled("Used to generate test data")
     void testDataSubNormalDomain() {
-        // TODO
-        // For min a find s
-        // For max a find s
-
         // Configure for high accuracy
         final Context context = Context.of(20, 53);
         final DoubleBinaryOperator zeta = (s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, context);
@@ -5310,9 +5306,21 @@ class HurwitzZetaTest {
         // Sort by s
         points.sort(Comparator.comparingDouble(k -> k[0]));
 
+        // Note:
+        // Mapping s to a can create duplicates for a as a -> 1 and may create zeros.
+        // This occurs when zeta(s, a) = 0 is closer to t than zeta(s, nextDown(a)):
+        // zeta(2.02294791067527501E18, 1.0000000000000004) = 0
+        // zeta(2.02294791067527501E18, 1.0000000000000002) = 8.35e-196
+        // Sort by a and check the zeta result is descending for increasing s
+
         // TODO
         // Record to file as a test sample.
         // Evaluate using a reference and add to the test suite.
+
+        // for curve fitting:
+        // if any a or s are the same then use the record closest to t.
+        // remove spurious points not close to t when at the ends of the range.
+
         // Try and fit using claude for help.
         // Generate data within the valid space.
 
