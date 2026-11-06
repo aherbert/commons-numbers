@@ -473,17 +473,18 @@ public final class HurwitzZeta {
         final boolean scaledSum = t0 < Double.MIN_NORMAL;
         final PowOperator powS;
         if (scaledSum) {
-            powS = (x, n, z) -> {
-                final double p = pow.apply(x, n, z * 0.5);
-                return p * UPSCALE_1022 * p;
-            };
             // Re-compute t0 using scaling
-            t0 = powS.apply(a, 0, -s);
+            t0 = Math.pow(a, -s * 0.5);
+            t0 = t0 * UPSCALE_1022 * t0;
             if (t0 == 0) {
                 // For any s > 1 the I term is not 2^1022 larger than a^-s.
                 // No need to compute 2^-1022 * powS.apply(a, N, 1 - s) / (s - 1).
                 return 0;
             }
+            powS = (x, n, z) -> {
+                final double p = pow.apply(x, n, z * 0.5);
+                return p * UPSCALE_1022 * p;
+            };
         } else {
             powS = pow;
         }
@@ -586,8 +587,8 @@ public final class HurwitzZeta {
         // normal numbers and converge on a normal result.
         final double stop = sum.hi() * EPS;
         double tsum = 0;
-        int i;
-        for (i = 0; i < F.length; i++) {
+        for (int i = 0; i < F.length; i++) {
+            System.out.printf("|%s %s %s| <= %s%n", f, p, F[i], stop);
             final double t = f * p * F[i];
             tsum += t;
             if (Math.abs(t) <= stop) {
