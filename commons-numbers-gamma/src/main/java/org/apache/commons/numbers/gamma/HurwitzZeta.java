@@ -471,6 +471,7 @@ public final class HurwitzZeta {
         // If t0 is sub-normal the summation S is of sub-normal terms.
         // Avoid by using: scale * x^y = x^(y/2) * scale * x^(y/2).
         final boolean scaledSum = t0 < Double.MIN_NORMAL;
+        // Scaled power for the series sum
         final PowOperator powS;
         if (scaledSum) {
             // Re-compute t0 using scaling
@@ -513,10 +514,11 @@ public final class HurwitzZeta {
         if (scaledSum) {
             // Determine if (a+n)^(1-s) is sub-normal and compute in parts.
             if (p * (a + N) < 1) {
-                ti = powS.apply(a, N, 1 - s) / (s - 1);
+                ti = powS.apply(a, N, 1 - s);
             } else {
-                ti = UPSCALE_1022 * pow.apply(a, N, 1 - s) / (s - 1);
+                ti = UPSCALE_1022 * pow.apply(a, N, 1 - s);
             }
+            ti /= (s - 1);
             sum = sum.add(ti);
             // Partial downscale of the sum. The tail can use normal numbers.
             sum = DD.ofSum(sum.hi() * DOWNSCALE_916, sum.lo() * DOWNSCALE_916);
@@ -588,7 +590,6 @@ public final class HurwitzZeta {
         final double stop = sum.hi() * EPS;
         double tsum = 0;
         for (int i = 0; i < F.length; i++) {
-            System.out.printf("|%s %s %s| <= %s%n", f, p, F[i], stop);
             final double t = f * p * F[i];
             tsum += t;
             if (Math.abs(t) <= stop) {

@@ -1605,17 +1605,19 @@ class HurwitzZetaTest {
 
         PowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? Context::extPow : Context::stdPow;
         // Power function for the series (allows switching to a faster pow)
-        PowOperator powS = c.isSet(Context.EXT_POW_SERIES) ? Context::extPow : Context::stdPow;
+        PowOperator powSeries = c.isSet(Context.EXT_POW_SERIES) ? Context::extPow : Context::stdPow;
 
         // Check the extended precision power can be used.
         // If s is large or there is no round-off from (a+n) use standard precision.
         if (s >= Z_LIMIT || DD.ofSum(a, n).lo() == 0) {
-            pow = powS = Context::stdPow;
+            pow = powSeries = Context::stdPow;
         }
 
         // If t0 is sub-normal the summation S is of sub-normal terms.
         // Avoid by using: scale * x^y = x^(y/2) * scale * x^(y/2).
         final boolean scaledSum = c.isSet(Context.SUB_NORMAL_SUM) && t0 < Double.MIN_NORMAL;
+        // Scaled power for the series sum
+        PowOperator powS;
         if (scaledSum) {
             // Re-compute t0 using scaling
             t0 = Math.pow(a, -s * 0.5);
@@ -1625,16 +1627,14 @@ class HurwitzZetaTest {
                 // No need to compute 2^-1022 * powS.apply(a, N, 1 - s) / (s - 1).
                 return 0;
             }
-            PowOperator originalPow = pow;
-            pow = (x, y, z) -> {
-                final double p = originalPow.apply(x, y, z * 0.5);
-                return p * UPSCALE_1022 * p;
-            };
-            PowOperator originalPowS = powS;
+            // Only the power function for the series is scaled
+            PowOperator originalPowSeries = powSeries;
             powS = (x, y, z) -> {
-                final double p = originalPowS.apply(x, y, z * 0.5);
+                final double p = originalPowSeries.apply(x, y, z * 0.5);
                 return p * UPSCALE_1022 * p;
             };
+        } else {
+            powS = powSeries;
         }
 
         double p = powS.apply(a, n, -s);
@@ -1663,10 +1663,14 @@ class HurwitzZetaTest {
         if (scaledSum) {
             // Determine if (a+n)^(1-s) is sub-normal and compute in parts.
             if (p * (a + n) < 1) {
-                ti = powS.apply(a, n, 1 - s) / (s - 1);
+                // Note: This must use the pow for the main terms and apply scaling
+                // as powS may be standard precision
+                ti = pow.apply(a, n, (1 - s) * 0.5);
+                ti = ti * UPSCALE_1022 * ti;
             } else {
-                ti = UPSCALE_1022 * pow.apply(a, n, 1 - s) / (s - 1);
+                ti = UPSCALE_1022 * pow.apply(a, n, 1 - s);
             }
+            ti /= (s - 1);
             // Add in magnitude order. When a in [0, 1] it may be the dominant term.
             // Note: This makes a measurable difference to the RMS error when the summation
             // is in single precision. When in double-double precision the difference
@@ -3104,8 +3108,18 @@ class HurwitzZetaTest {
     /**
      * Test the precision of the double implementation of the zeta function.
      *
-     * <p>Note that the function requires {@code n >= 7} to converge the tail series
-     * (see {@link #testTailConvergence(double, double, boolean, int, int, int, int)}.
+     * <p>Note convergence requires:
+     * <pre>
+     * M   N
+     * 53  9
+     * 26  6
+     * 13  6
+     * 10  7
+     * </pre>
+     * <p>Smaller M can prevent tail convergence before the last term and error
+     * can increase.
+     *
+     * @see #testTailConvergence(double, double, boolean, int, int, int, int)
      */
     @ParameterizedTest
     @CsvSource({
@@ -3135,82 +3149,60 @@ class HurwitzZetaTest {
         //   scaling up the power term, and scaling down another factor by an equivalent amount
         //   to extend the number of terms before underflow, or convergence.
 
+        // TODO: Test different M and N for the same options. Can a longer tail or shorter
+        // tail change precision?
+
+        // TODO - reanalyse this
+
         // Extended precision power function (improvement if used for all terms)
-        "7, 15, 0, -53, 0, false",
-        "7, 15, 0, -53, 1, false",
-        "7, 15, 0, -53, 3, false",
+        "7, 15, 15, -53, 0, false",
+        "7, 15, 15, -53, 1, false",
+        "7, 15, 15, -53, 3, false",
         // Extended precision sum (small difference with/without the power function)
         // RMS drops as N increases. Max error is variable.
-        "7, 15, 0, -53, 4, false", // 0 vs 0 + 4
-        "7, 15, 0, -53, 5, false", // 1 vs 1 + 4
-        "7, 15, 0, -53, 7, false", // 3 vs 3 + 4
-        // Recycle the I term in the tail. No loss of precision.
-        "7, 15, 0, -53, 2055, false", // 3 vs 3 + 4 + 2048
+        "7, 15, 15, -53, 4, false", // 0 vs 0 + 4
+        "7, 15, 15, -53, 5, false", // 1 vs 1 + 4
+        "7, 15, 15, -53, 7, false", // 3 vs 3 + 4
         // Using tail series scaling to prevent underflow
         // (exactly the same - test data has no sub-normal results; scaling is exact)
         // Test resources using sub-normal resources show differences (see below).
-        "7, 12, 0, -53, 2311, false", // 7 vs 7 + 256 + 2048
-        // Using divide in the tail series (negligible RMS difference)
-        "7, 12, 0, -53, 12, false", // 4 vs 4 + 8
-        "7, 12, 0, -53, 15, false", // 7 vs 7 + 8
-        // Use power in the tail series (no difference)
-        "7, 12, 0, -53, 20, false", // 4 vs 4 + 16
-        "7, 12, 0, -53, 23, false", // 7 vs 7 + 16
-        // Use extended precision sum in the tail series (no difference)
-        "7, 12, 0, -53, 36, false", // 4 vs 4 + 32
-        "7, 12, 0, -53, 39, false", // 7 vs 7 + 32
+        "7, 12, 15, -53, 263, false", // 7 vs 7 + 256
+
+        // All options enabled. Extend the tail M.
+        // Max and RMS error is the same.
+        // Test resources may not target the part of the domain with highest error.
+        "7, 12, 26, -53, 775, false",
+        "9, 12, 53, -53, 775, false",
+
         // M convergence (negligible error change unless too high > -50, does increase required M)
-        "8, 10, 0, -49, 7, false",
-        "8, 10, 0, -50, 7, false",
-        "8, 10, 0, -51, 7, false",
-        "8, 10, 0, -52, 7, false",
-        "8, 10, 0, -53, 7, false",
-        "8, 10, 0, -54, 7, false",
-        "8, 10, 0, -55, 7, false",
-        "8, 10, 0, -56, 7, false",
-        // N convergence. Accuracy is low as convergence on the sum S ignores the I and T terms.
-        // Mean N is close to max N so only a few test cases converge early.
-        "8, 15, -53, -53, 7, false",
-        // Accuracy improves when the sum is extended precision and convergence in extended
-        // precision is required. This effectively skips early convergence unless it is
-        // very strongly converging.
-        "8, 15, -58, -53, 7, false",
-        "8, 15, -63, -53, 7, false",
+        "8, 10, 15, -49, 7, false",
+        "8, 10, 15, -50, 7, false",
+        "8, 10, 15, -51, 7, false",
+        "8, 10, 15, -52, 7, false",
+        "8, 10, 15, -53, 7, false",
+        "8, 10, 15, -54, 7, false",
+        "8, 10, 15, -55, 7, false",
+        "8, 10, 15, -56, 7, false",
 
         // Sub-normal zeta result and/or terms.
         // Requires scaling of the tail series terms (option 256).
-        "7, 12, 0, -53, 263, true", // 7 + 256
-        // Scaling and recycle the I term
-        "7, 12, 0, -53, 2311, true", // 7 + 256 + 2048
-        // Using a scaling tail summation. Possible 1% improvement in RMS.
-        "7, 12, 0, -53, 1287, true", // 7 + 256 + 1024
-        // Using log-sum-exp to prevent underflow.
-        // This implementation does not significantly out-perform a standard implementation
-        // working with sub-normal terms and tail scaling. Max error is similar and
-        // RMS error 5-10% lower.
-        "7, 12, 0, -53, 775, true", // 7 + 256 + 512
+        "7, 12, 15, -53, 263, true", // 7 + 256
+        // Using summation of sub-normal terms to prevent underflow.
+        "7, 12, 15, -53, 775, true", // 7 + 256 + 512
     })
-    void testPrecisionDouble(int ln, int un, int bs, int bt, int options, boolean subNormal)
+    void testPrecisionDouble(int ln, int un, int maxM, int bt, int options, boolean subNormal)
         throws IOException {
         // Default to not use variable convergence on series sum S.
         // Early convergence can be very bad and requires adjusting the tolerance.
-        //
-        // Note: Many implementations have been tested. A standard double summation
-        // of the regular power function is only 2 ULP worse than using double-double
-        // summation of an extended precision power function.
-        // A speed test using JMH has not been performed to assess runtime cost.
-        // A simple speed test shows a 5% runtime cost for extended precision.
-        final double maxTolerance = bs == 0 ? 10 : 15000;
-        final double rmsTolerance = bs == 0 ? 1 : 200;
-        final double epsS = bs == 0 ? 0 : Math.scalb(1.0, bs);
+        final double maxTolerance = 10;
+        final double rmsTolerance = 1;
         final double epsT = Math.scalb(1.0, bt);
         for (int n = ln; n <= un; n++) {
             // Reset
             Arrays.fill(N, 0);
             Arrays.fill(M, 0);
 
-            final Context c = Context.of(n, RF.length)
-                .withSumEpsilon(epsS)
+            final Context c = Context.of(n, maxM)
                 .withTailEpsilon(epsT)
                 .withOptions(options);
             final DoublePrecisionTestCase test = new DoublePrecisionTestCase() {
@@ -3239,10 +3231,8 @@ class HurwitzZetaTest {
 
                 @Override
                 public String toString() {
-                    return String.format("ZETA %s%s  2^%d  %3d",
-                        zetaName(bs == 0 ? c.getN() : 0),
-                        bs == 0 ? "" : "  2^" + bs,
-                        bt, options);
+                    return String.format("ZETA %s  2^%d  %3d",
+                        zetaName(c.getN()), bt, options);
                 }
             };
             assertFunction(test, true);
@@ -3252,6 +3242,14 @@ class HurwitzZetaTest {
             }
         }
     }
+
+    // TODO - remove
+//    @Test
+//    void test() {
+//        double s=63.75045412582045, a=67701.65376056056, expected = 1.2030564932931242494921523076602E-305;
+//        TestUtils.assertEquals(expected,
+//             zeta(s, a, Double.NaN, Context.of(7,  12).withOptions(775)), 0);
+//    }
 
     /**
      * Test the precision of the BigDecimal implementation of the zeta function.
@@ -4260,10 +4258,18 @@ class HurwitzZetaTest {
         if (p < Double.MIN_NORMAL) {
             p = Math.pow(apn, -(1 + s) * 0.5);
             p = p * 0x1p1022 * p;
+            if (p == 0) {
+                return t;
+            }
         }
         double k2 = 1;
         for (int i = 0; i < m; i++) {
             t[i] = f * p * F[i];
+            // If f overflows and p underflow this will create inf*0 = NaN
+            if (Double.isNaN(t[i])) {
+                t[i] = 0;
+                break;
+            }
             // Update (a+n)^-(2k-1+s)
             p /= apn2;
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
@@ -4373,6 +4379,24 @@ class HurwitzZetaTest {
         // to avoid using diverging tail terms within size M; if the tail is smaller
         // then N must be higher). Accuracy of the function before/beyond the
         // point (a+n) where the tail converges within M is not tested.
+
+        // Enumerate and random sampling when expected to pass.
+        // Timings when no reporting is configured are < 1s per test.
+
+        // Note: N ~ M ~ P for P-bits of precision
+        // M=53 requires N >= 9 to converge
+        "1.0000000000000002, 1075, false, -350, 53, 53, -8",
+        "1.0000000000000002, 1075, false, -350, 53, 53, 9", // ~ 1.9s
+        "1.0000000000000002, 1075, false, 350, 53, 53, 9", // ~ 1.9s
+
+        // M=26 requires N >= 6 to converge
+        "1.0000000000000002, 1075, false, -350, 26, 53, -5",
+        "1.0000000000000002, 1075, false, -350, 26, 53, 6", // ~ 1.3s
+        "1.0000000000000002, 1075, false, 350, 26, 53, 6", // ~ 1.3s
+
+        // Smaller M
+        // May require higher N than as the tail terms do not reduce fast
+        // enough to converge.
         "1.0000000000000002, 1075, false, -350, 12, 53, -6",
         "1.0000000000000002, 1075, false, -350, 13, 53, 6", // ~ 1.4s
         "1.0000000000000002, 1075, false, 350, 13, 53, 6", // ~ 1.5s
@@ -4390,11 +4414,15 @@ class HurwitzZetaTest {
         // Note the tail may underflow in this implementation where the DD
         // implementation would not. The limit is the same as the issue
         // occurs for s -> 1 and small a.
-        // Deterministic failure
-        "1.0000000000000002, 1075, false, -350, 30, 106, -11",
-        // Enumerate and random sampling
-        "1.0000000000000002, 1075, false, -350, 30, 106, 12", // ~ 2.5s
-        "1.0000000000000002, 1075, false, 350, 30, 106, 12", // ~ 2.6s
+        // M=106 requires N >= 18 to converge
+        "1.0000000000000002, 1075, false, -350, 106, 106, -17",
+        "1.0000000000000002, 1075, false, -350, 106, 106, 18", // ~ 3.6s
+        "1.0000000000000002, 1075, false, 350, 106, 106, 18", // ~ 3.5s
+
+        // Smaller M
+        "1.0000000000000002, 1075, false, -350, 53, 106, -12",
+        "1.0000000000000002, 1075, false, -350, 53, 106, 13", // ~ 3.4s
+        "1.0000000000000002, 1075, false, 350, 53, 106, 13", // ~ 3.4s
     })
     void testTailConvergence(double minS, double maxS, boolean uniform, int samples, int m,
             int b, int testN) {
@@ -4418,7 +4446,7 @@ class HurwitzZetaTest {
         // Accuracy when using small N is evaluated elsewhere.
         final double eps = Math.scalb(1.0, -b);
         // Limit N ~ M ~ P bits of precision
-        final Context context = Context.of(Math.min(53, expectedN * 3), 53).withTailEpsilon(eps);
+        final Context context = Context.of(53, 53).withTailEpsilon(eps);
 
         // Note negative samples will enumerate and this RNG may not be used.
         final SplittableRandom rng = new SplittableRandom();
@@ -4457,11 +4485,16 @@ class HurwitzZetaTest {
             // This is the value of (a+n) that prevents tail divergence at t[k],
             // (i.e. where t[k] == t[k-1])
             double[] t = getScaledTailTerms(m, apn, s);
-            // Test the final terms are equal
-            Assertions.assertEquals(Math.abs(t[m - 2]), Math.abs(t[m - 1]), Math.abs(t[m - 2]) * 1e-15);
-            // Test the terms reduce magnitude
-            for (int k = 1; k < m - 1; k++) {
-                Assertions.assertTrue(Math.abs(t[k - 1]) >= Math.abs(t[k]), "Tail not convergent");
+            // Sanity check for double precision
+            if (m <= 53) {
+                // Test the final terms are equal
+                if (Math.abs(t[m - 2]) > Double.MIN_NORMAL) {
+                    Assertions.assertEquals(Math.abs(t[m - 2]), Math.abs(t[m - 1]), Math.abs(t[m - 2]) * 1e-15);
+                }
+                // Test the terms reduce magnitude
+                for (int k = 1; k < m - 1; k++) {
+                    Assertions.assertTrue(Math.abs(t[k - 1]) >= Math.abs(t[k]), "Tail not convergent");
+                }
             }
 
             // The aim is to choose large enough n so that t[k] is not required when
@@ -4483,8 +4516,11 @@ class HurwitzZetaTest {
             for (final double aa : new double[] {0.01, 0.25, 0.5, 0.99, 0.99999, 1,
                 1 + 0x1p-52, 1 + 0x1p-50, 1 + 0x1p-46, 1 + 0x1p-38, 1 + 0x1p-22, 1.01, 1.1}) {
                 a = aa;
-                // Zeta cannot be zero
                 final double z = zeta(s, a, Double.NaN, context);
+                if (z > 0x1p106) {
+                    // Zeta cannot be zero with reasonable s and a ~ 1 but it can overflow
+                    continue;
+                }
                 // For comparison to the scaled tail term at the configured epsilon
                 final double stop = z * 0x1p106 * eps;
                 t = getScaledTailTerms(m, a + n, s);
@@ -4495,7 +4531,8 @@ class HurwitzZetaTest {
                             return;
                         }
                         Assertions.fail(
-                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s", expectedN, s, a, z));
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s",
+                                expectedN, s, a, z, Arrays.toString(t)));
                     }
                     t = getScaledTailTerms(m, a + n, s);
                 }
@@ -4527,7 +4564,8 @@ class HurwitzZetaTest {
                             return;
                         }
                         Assertions.fail(
-                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s", expectedN, s, a, z));
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s",
+                                expectedN, s, a, z, Arrays.toString(t)));
                     }
                     t = getScaledTailTerms(m, a + n, s);
                 }
@@ -4565,6 +4603,10 @@ class HurwitzZetaTest {
 
         // Enumerate and random sampling when expected to pass.
         // Timings when no reporting is configured are < 1s per test.
+
+        // Note: N ~ M ~ P for P-bits of precision
+        // M=53 requires N >= 9 to converge
+        // TODO - update these
 
         // For double precision
         "1837, false, -500, 12, 53, -6",
@@ -4632,6 +4674,9 @@ class HurwitzZetaTest {
                 final int ss = s;
                 final double[] tt = getScaledTailTerms(Math.min(m, 3), apn.hi(), s);
                 for (int k = 0; k < tt.length; k++) {
+                    if (Math.abs(tt[k]) < Double.MIN_NORMAL) {
+                        break;
+                    }
                     // The double tail terms are scaled by 2^106
                     TestUtils.assertEquals(tt[k], Math.scalb(t[k].hi(), 106 + et[k]), 100, null,
                         () -> String.format("Mismatch with double version: s=%d, a=%s", ss, apn.hi()));
@@ -4670,8 +4715,8 @@ class HurwitzZetaTest {
                             return;
                         }
                         Assertions.fail(
-                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s * 2^%d",
-                                expectedN, s, a, z, exp[0]));
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s * 2^%d: t=%s",
+                                expectedN, s, a, z, exp[0], Arrays.toString(et)));
                     }
                     t = getTailTerms(m, DD.ofSum(a, n), s, et);
                 }
@@ -4700,8 +4745,8 @@ class HurwitzZetaTest {
                             return;
                         }
                         Assertions.fail(
-                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s * 2^%d",
-                                expectedN, s, a, z, exp[0]));
+                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s * 2^%d: t=%s",
+                                expectedN, s, a, z, exp[0], Arrays.toString(et)));
                     }
                     t = getTailTerms(m, DD.ofSum(a, n), s, et);
                 }
@@ -5166,7 +5211,7 @@ class HurwitzZetaTest {
      * Create test data for {@code s > a + N} where the tail series may eventually diverge
      * as the Pochammer term (s)_2k-1 (eventually) grows faster than the power term reduces.
      *
-     * @see #testTailConvergence(int, int, int, int)
+     * @see #testTailConvergenceDD(int, boolean, int, int, int, int)
      */
     @ParameterizedTest
     @CsvSource({
