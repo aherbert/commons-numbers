@@ -1471,6 +1471,31 @@ class HurwitzZetaTest {
     // Test zeta implementation
     //
     // This class contains a parameterized version of the final implementation.
+    // A context is used to configure the N and M parameters and enable features.
+    // With all features enabled the result should match the final version.
+    //
+    // Other features were tested during development and removed from this version
+    // to simplify the code:
+    //
+    // - Use of the power function to compute the tail terms. This did not improve
+    // precision as the tail term is not required to ULP accuracy. Recycling an
+    // existing power term is faster. Use of power for the tail term is an option in
+    // the DD version where the power function can never underflow.
+    // - Use of an extended precision sum in the tail. The tail term is not
+    // required to high accuracy.
+    // - Different updates to the tail power term. Either divide by (a+n) twice
+    // or multiply by (a+n)^-2.
+    // - Use of log-sum-exp to support sub-normal terms. This identifies the maximum
+    // of a^-s and (a+n)^(1-s)/(s-1). This term dominates the result and all other
+    // power terms are smaller and can be sub-normal. Remap the power function. In
+    // this example a^-s is the major term:
+    // pow(a + k, -s) = exp(-s * log(a + k))
+    //                = exp(-s * log(a)) * exp(-s * log(a + k) + s * log(a))  [scaled]
+    // The result can control error but does not outperform an implementation that scales
+    // sub-normal terms. It may have higher runtime cost due to use of log+exp vs pow.
+    // Also note that exp(log(x) * y) is not as accurate as pow(x, y).
+    // - Computation of I = (a+n)^-(1+s) as (a+n)^-s * (a+n). When this term is the
+    // major term this small modification increases error.
     //
     // Note: The method is sensitive to the initial loop over N to create S.
     // Under certain conditions the N cannot be too high if using an ascending
@@ -1481,12 +1506,14 @@ class HurwitzZetaTest {
     // an early exit if the series is rapidly converging and the term (a+k)^-s
     // drops below machine epsilon of the sum.
     //
-    // The tail series may be divergent depending on whether s > (a+N). This
+    // The tail series may be divergent depending on s and (a+N). This
     // can be mitigated by using a small M for the tail series before it diverges,
     // or increasing N so that the series sum contains most of the result
     // when s is large and the term (a+k)^-s is strongly converging. The tail
     // then contributes a negligible magnitude and is ignored when multiplied
     // by the scaling factor (a+N)^-s.
+
+    // TODO - Simplify this
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
@@ -3569,6 +3596,15 @@ class HurwitzZetaTest {
             Arguments.of(5, 10000000000000.0, 2.5000000000005000000000000416666666666666666666667e-53, 1),
             Arguments.of(5, 100000000000000.0, 2.5000000000000500000000000004166666666666666666667e-57, 1),
             Arguments.of(5, 1000000000000000.0, 2.5000000000000050000000000000041666666666666666667e-61, 0),
+
+            // a^-s underflows
+            // a = 2^-53 - 100 : Below asymptotic threshold
+            Arguments.of(21, 9007199254740892.0, 4.04738577073239488356976513074e-321, 0),
+            Arguments.of(21.1, 9007199254740892.0, 1.02223221121124030233647572377e-322, 0),
+            Arguments.of(21.15, 9007199254740892.0, 1.62457991690996194160345547236e-323, 0),
+            // Zeta ~ Double.MIN_VALUE
+            Arguments.of(108, 1000, 9.85479262642312000966259642922e-324, 0),
+            Arguments.of(107, 1060, 2.0597259802867861753987491314e-323, 0),
 
             // Requires M=12 when N=9.
             // This is largest M noted during development when the RMS error is close to optimal.

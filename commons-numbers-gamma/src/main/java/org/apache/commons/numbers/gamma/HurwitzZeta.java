@@ -479,6 +479,11 @@ public final class HurwitzZeta {
             };
             // Re-compute t0 using scaling
             t0 = powS.apply(a, 0, -s);
+            if (t0 == 0) {
+                // For any s > 1 the I term is not 2^1022 larger than a^-s.
+                // No need to compute 2^-1022 * powS.apply(a, N, 1 - s) / (s - 1).
+                return 0;
+            }
         } else {
             powS = pow;
         }
