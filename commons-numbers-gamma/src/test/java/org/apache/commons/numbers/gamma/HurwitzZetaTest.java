@@ -4193,34 +4193,46 @@ class HurwitzZetaTest {
      * terms reduces compared to the other terms S+I. Thus choosing N requires a value
      * large enough to avoid excess use of the tail when a is close to 0, and moderate
      * use when a is small to medium.
+     *
+     * <p>This test is slow when enumerating all supported s. Tests that should pass are
+     * configured to skip samples from a when not in reporting mode. Skipping is periodic
+     * with a random start. When run many times this should visit all points since the
+     * samples are deterministic. Tests that fail as N is too low run without skipping.
      */
     @ParameterizedTest
     @CsvSource({
         // double precision
-        // Deterministic failure
-        "1.0000000000000002, 1075, false, -500, 12, 53, -6",
-        // Enumerate and random sampling
-        "1.0000000000000002, 1075, false, -350, 12, 53, 7", // ~ 1.7s
-        "1.0000000000000002, 1075, false, 350, 12, 53, 7", // ~ 1.8s
-        // A higher N requires less tail terms
-        "1.0000000000000002, 1075, false, 350, 8, 53, -8",
-        "1.0000000000000002, 1075, false, 350, 7, 53, -9",
-        "1.0000000000000002, 1075, false, -350, 9, 53, 8", // ~ 1.9s
+        // Deterministic failure; then enumerate and random sampling when expected to pass
+        // A higher N requires less tail terms. Accuracy of the function before/beyond the
+        // point (a+n) where the tail converges within M is not tested.
+        "1.0000000000000002, 1075, false, -350, 12, 53, -6",
+        "1.0000000000000002, 1075, false, -350, 13, 53, 6", // ~ 1.4s
+        "1.0000000000000002, 1075, false, 350, 13, 53, 6", // ~ 1.5s
+        "1.0000000000000002, 1075, false, -350, 9, 53, -7",
+        "1.0000000000000002, 1075, false, -350, 10, 53, 7", // ~ 1.6s
+        "1.0000000000000002, 1075, false, 350, 10, 53, 7", // ~ 1.7s
+        "1.0000000000000002, 1075, false, -350, 8, 53, -8",
+        "1.0000000000000002, 1075, false, -350, 9, 53, 8", // ~ 1.8s
+        "1.0000000000000002, 1075, false, 350, 9, 53, 8", // ~ 1.9s
+        "1.0000000000000002, 1075, false, -350, 7, 53, -9",
         "1.0000000000000002, 1075, false, -350, 8, 53, 9", // ~ 2.0s
+        "1.0000000000000002, 1075, false, 350, 8, 53, 9", // ~ 2.0s
+
         // double-double precision
         // Note the tail may underflow in this implementation where the DD
         // implementation would not. The limit is the same as the issue
         // occurs for s -> 1 and small a.
         // Deterministic failure
-        "1.0000000000000002, 1075, false, -500, 30, 106, -11",
+        "1.0000000000000002, 1075, false, -350, 30, 106, -11",
         // Enumerate and random sampling
         "1.0000000000000002, 1075, false, -350, 30, 106, 12", // ~ 2.5s
-        "1.0000000000000002, 1075, false, 350, 30, 106, 12", // ~ 2.5s
+        "1.0000000000000002, 1075, false, 350, 30, 106, 12", // ~ 2.6s
     })
     void testTailConvergence(double minS, double maxS, boolean uniform, int samples, int m,
             int b, int testN) {
         // Negative N for tests that should fail
         final boolean expectedToFail = testN < 0;
+        final boolean noSkips = doReporting() || expectedToFail;
         final int expectedN = Math.abs(testN);
 
         Assertions.assertTrue(minS > 1);
@@ -4229,6 +4241,9 @@ class HurwitzZetaTest {
         Assertions.assertNotEquals(0, samples);
         Assertions.assertTrue(b > 40);
         Assertions.assertTrue(expectedN > 3 && expectedN <= 53);
+
+        // Run 1 in 1024 cases
+        final BooleanSupplier skip = createSkipSupplier(noSkips, 10);
 
         // Evaluate zeta with larger N and support for sub-normal terms.
         // The purpose of this test is to find the smallest n where the tail can converge before m.
@@ -4292,7 +4307,7 @@ class HurwitzZetaTest {
             // Tail may be zero.
             // First lower a until a tail exists.
             double a = apn;
-            while(t[0] == 0) {
+            while (t[0] == 0) {
                 a -= 0.5;
                 t = getScaledTailTerms(1, a, s);
             }
@@ -4325,6 +4340,9 @@ class HurwitzZetaTest {
                 nextA = createSampler(rng, 1, a, uniform);
             }
             for (int j = samples; j != 0; j += inc) {
+                if (skip.getAsBoolean()) {
+                    continue;
+                }
                 a = nextA.getAsDouble();
                 final double z = zeta(s, a, Double.NaN, context);
                 if (z == 0) {
@@ -4347,7 +4365,6 @@ class HurwitzZetaTest {
                 }
             }
         }
-        System.out.println(n);
     }
 
     /**
@@ -4465,7 +4482,7 @@ class HurwitzZetaTest {
             // A tail will always be non-zero due to use of the fractional representation
             // Lower a until a 106-bit double-double cannot be added to Double.MIN_VALUE.
             double a = apn.hi();
-            while(et[0] < -1075 - 106) {
+            while (et[0] < -1075 - 106) {
                 a -= 0.5;
                 t = getTailTerms(m, DD.of(a), s, et);
             }
