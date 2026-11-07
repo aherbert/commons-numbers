@@ -1559,8 +1559,6 @@ class HurwitzZetaTest {
     // then contributes a negligible magnitude and is ignored when multiplied
     // by the scaling factor (a+N)^-s.
 
-    // TODO - Simplify this
-
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
      * See {@link HurwitzZeta} for the formula details.
@@ -4367,7 +4365,6 @@ class HurwitzZetaTest {
      * the implementation may use extra table values for higher (a+n) which can impact
      * precision.
      *
-     * // TODO - remove this ???
      * <p>Note as s increases the series is strongly convergent for small a, and will
      * underflow a double for large a. As (a+n) increases the magnitude of the tail
      * terms reduces compared to the other terms S+I. Thus choosing N requires a value
@@ -5279,19 +5276,17 @@ class HurwitzZetaTest {
 
 
     // TODO
-    // for curve fitting:
+    // for data generation:
     // if any a or s are the same then use the record closest to t.
     // remove spurious points not close to t when at the ends of the range.
+    // Create trapezoids under the curve for all a-axis points.
+    // Compute the area. Sample trapezoids uniformly. Then sample within
+    // the chosen trapezoid uniformly.
 
-    // Try and fit using claude for help.
-    // Generate data within the valid space.
-
-    // Record
-    // Create reference data and add to the tests
-    // Verify the result was the sub-normal target
-    //
-    // Plot the line and all the test cases we have in the domain
-    // Plot the region where n=6 creates failures
+    // Generate data within the valid space: 50,000 points.
+    // Get reference result.
+    // Get M and error for all points and plot a density of the data.
+    // Try using claude for help with the plot
 
     /**
      * Create a line in the zeta domain for (s, a) where the result is sub-normal.
