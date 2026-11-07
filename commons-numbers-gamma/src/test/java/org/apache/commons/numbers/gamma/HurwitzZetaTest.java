@@ -3115,10 +3115,8 @@ class HurwitzZetaTest {
      * <p>Note convergence requires:
      * <pre>
      * M   N
-     * 53  9
-     * 26  6
-     * 13  6
-     * 10  7
+     * 53  6
+     * 13  7
      * </pre>
      * <p>Smaller M can prevent tail convergence before the last term and error
      * can increase.
@@ -3153,11 +3151,6 @@ class HurwitzZetaTest {
         //   scaling up the power term, and scaling down another factor by an equivalent amount
         //   to extend the number of terms before underflow, or convergence.
 
-        // TODO: Test different M and N for the same options. Can a longer tail or shorter
-        // tail change precision?
-
-        // TODO - reanalyse this
-
         // Extended precision power function (improvement if used for all terms)
         "7, 15, 15, -53, 0, false",
         "7, 15, 15, -53, 1, false",
@@ -3176,7 +3169,7 @@ class HurwitzZetaTest {
         // Max and RMS error is the same.
         // Test resources may not target the part of the domain with highest error.
         "7, 12, 26, -53, 775, false",
-        "9, 12, 53, -53, 775, false",
+        "7, 12, 53, -53, 775, false",
 
         // M convergence (negligible error change unless too high > -50, does increase required M)
         "8, 10, 15, -49, 7, false",
@@ -3247,22 +3240,19 @@ class HurwitzZetaTest {
         }
     }
 
-    // TODO - remove
-//    @Test
-//    void test() {
-//        double s=63.75045412582045, a=67701.65376056056, expected = 1.2030564932931242494921523076602E-305;
-//        TestUtils.assertEquals(expected,
-//             zeta(s, a, Double.NaN, Context.of(7,  12).withOptions(775)), 0);
-//    }
-
     /**
      * Test the precision of the BigDecimal implementation of the zeta function.
      *
-     * <p>Note that the function requires {@code n >= 7} to converge
-     * the tail series in double precision, {@code n >= 12} in double-double
-     * precision, and {@code n >= 26} in quad-double precision
-     * (see {@link #testTailConvergenceDD(int, boolean, int, int, int, int)}.
-     * Higher {@code n} may be required to maximise accuracy.
+     * <p>Note convergence requires:
+     * <pre>
+     * M   N
+     * 106 24
+     * 53  25
+     * </pre>
+     * <p>Smaller M can prevent tail convergence before the last term and error
+     * can increase.
+     *
+     * @see #testTailConvergenceDD(int, boolean, int, int, int, int)
      */
     @ParameterizedTest
     @CsvSource({
@@ -3288,6 +3278,7 @@ class HurwitzZetaTest {
         // Not enough
         "35, 40, 65, 0, 211",
     })
+    // TODO - update with a maxM
     void testPrecisionBigDecimal(int ln, int un, int digits, int options, int scale)
         throws IOException {
         for (int n = ln; n <= un; n++) {
@@ -3344,10 +3335,14 @@ class HurwitzZetaTest {
     /**
      * Test the precision of the DD implementation of the zeta function.
      *
-     * <p>Note that the function requires {@code n >= 7} to converge
-     * the tail series in double precision, and {@code n >= 12} in double-double
-     * precision. (see {@link #testTailConvergenceDD(int, boolean, int, int, int, int)}.
-     * Higher {@code n} may be required to maximise accuracy.
+     * <p>Note convergence requires:
+     * <pre>
+     * M   N
+     * 106 12
+     * 26  13
+     * </pre>
+     * <p>Smaller M can prevent tail convergence before the last term and error
+     * can increase.
      *
      * <p>Differences between some options may only be observed when using a sub-set of
      * the {@link #EXT_INT_TEST_RESOURCES}. The current resources include data for zeta(s, a)
@@ -3369,6 +3364,8 @@ class HurwitzZetaTest {
      * until (a+k)^-s has no overlap with a^-s. When using the ascending sum starting at
      * (a+N)^-s the running sum must be compared with the known term a^-s. When it approaches
      * overlap then switch to DDMath pow for remaining terms.
+     *
+     * @see #testTailConvergenceDD(int, boolean, int, int, int, int)
      */
     @ParameterizedTest
     @CsvSource({
@@ -3416,6 +3413,7 @@ class HurwitzZetaTest {
         // Not enough
         "7, 15, -48, 0, 52, -1074",
     })
+    // TODO - update with a maxM
     void testPrecisonDD(int ln, int un, int b, int options, int scale, int ignoreB)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
@@ -4388,45 +4386,37 @@ class HurwitzZetaTest {
         // Timings when no reporting is configured are < 1s per test.
 
         // Note: N ~ M ~ P for P-bits of precision
-        // M=53 requires N >= 9 to converge
-        "1.0000000000000002, 1075, false, -350, 53, 53, -8",
-        "1.0000000000000002, 1075, false, -350, 53, 53, 9", // ~ 1.9s
-        "1.0000000000000002, 1075, false, 350, 53, 53, 9", // ~ 1.9s
+        // M=53 requires N >= 6 to converge
+        "1.0000000000000002, 1075, false, -250, 53, 53, -5",
+        "1.0000000000000002, 1075, false, -250, 53, 53, 6",
+        "1.0000000000000002, 1075, false, 250, 53, 53, 6",
 
-        // M=26 requires N >= 6 to converge
-        "1.0000000000000002, 1075, false, -350, 26, 53, -5",
-        "1.0000000000000002, 1075, false, -350, 26, 53, 6", // ~ 1.3s
-        "1.0000000000000002, 1075, false, 350, 26, 53, 6", // ~ 1.3s
+        // Smaller M will truncate the tail before it diverges.
+        // May require higher N to converge within the M-th term.
+        "1.0000000000000002, 1075, false, -250, 26, 53, -5",
+        "1.0000000000000002, 1075, false, -250, 26, 53, 6",
+        "1.0000000000000002, 1075, false, 250, 26, 53, 6",
 
-        // Smaller M
-        // May require higher N than as the tail terms do not reduce fast
-        // enough to converge.
-        "1.0000000000000002, 1075, false, -350, 12, 53, -6",
-        "1.0000000000000002, 1075, false, -350, 13, 53, 6", // ~ 1.4s
-        "1.0000000000000002, 1075, false, 350, 13, 53, 6", // ~ 1.5s
-        "1.0000000000000002, 1075, false, -350, 9, 53, -7",
-        "1.0000000000000002, 1075, false, -350, 10, 53, 7", // ~ 1.6s
-        "1.0000000000000002, 1075, false, 350, 10, 53, 7", // ~ 1.7s
-        "1.0000000000000002, 1075, false, -350, 8, 53, -8",
-        "1.0000000000000002, 1075, false, -350, 9, 53, 8", // ~ 1.8s
-        "1.0000000000000002, 1075, false, 350, 9, 53, 8", // ~ 1.9s
-        "1.0000000000000002, 1075, false, -350, 7, 53, -9",
-        "1.0000000000000002, 1075, false, -350, 8, 53, 9", // ~ 2.0s
-        "1.0000000000000002, 1075, false, 350, 8, 53, 9", // ~ 2.0s
+        "1.0000000000000002, 1075, false, -250, 13, 53, -6",
+        "1.0000000000000002, 1075, false, -250, 13, 53, 7",
+        "1.0000000000000002, 1075, false, 250, 13, 53, 7",
 
         // double-double precision
         // Note the tail may underflow in this implementation where the DD
         // implementation would not. The limit is the same as the issue
         // occurs for s -> 1 and small a.
         // M=106 requires N >= 18 to converge
-        "1.0000000000000002, 1075, false, -350, 106, 106, -17",
-        "1.0000000000000002, 1075, false, -350, 106, 106, 18", // ~ 3.6s
-        "1.0000000000000002, 1075, false, 350, 106, 106, 18", // ~ 3.5s
+        "1.0000000000000002, 1075, false, -250, 106, 106, -11",
+        "1.0000000000000002, 1075, false, -250, 106, 106, 12",
+        "1.0000000000000002, 1075, false, 250, 106, 106, 12",
 
         // Smaller M
-        "1.0000000000000002, 1075, false, -350, 53, 106, -12",
-        "1.0000000000000002, 1075, false, -350, 53, 106, 13", // ~ 3.4s
-        "1.0000000000000002, 1075, false, 350, 53, 106, 13", // ~ 3.4s
+        "1.0000000000000002, 1075, false, -250, 53, 106, -11",
+        "1.0000000000000002, 1075, false, -250, 53, 106, 12",
+        "1.0000000000000002, 1075, false, 250, 53, 106, 12",
+        "1.0000000000000002, 1075, false, -250, 26, 106, -12",
+        "1.0000000000000002, 1075, false, -250, 26, 106, 13",
+        "1.0000000000000002, 1075, false, 250, 26, 106, 13",
     })
     void testTailConvergence(double minS, double maxS, boolean uniform, int samples, int m,
             int b, int testN) {
@@ -4509,26 +4499,17 @@ class HurwitzZetaTest {
             // is not required. Compute zeta(s, a) for a -> 0 using a reference
             // in steps. For each a find the M-th tail term for a+n < ulp(zeta(s, a)).
 
-            // Tail may be zero.
-            // First lower a until a tail exists.
-            double a = apn;
-            while (t[0] == 0) {
-                a -= 0.5;
-                t = getScaledTailTerms(1, a, s);
-            }
-            // Spot check for a in [0, 1.1] avoiding 0
-            for (final double aa : new double[] {0.01, 0.25, 0.5, 0.99, 0.99999, 1,
-                1 + 0x1p-52, 1 + 0x1p-50, 1 + 0x1p-46, 1 + 0x1p-38, 1 + 0x1p-22, 1.01, 1.1}) {
-                a = aa;
+            // Too many representable values in [0, 0.5): use a spot check
+            for (final double a : new double[] {0x1p-53, 0x1p-43, 0x1p-33, 0.01, 0.25}) {
                 final double z = zeta(s, a, Double.NaN, context);
                 if (z > 0x1p106) {
-                    // Zeta cannot be zero with reasonable s and a ~ 1 but it can overflow
+                    // Zeta cannot be zero with a < 1
                     continue;
                 }
                 // For comparison to the scaled tail term at the configured epsilon
                 final double stop = z * 0x1p106 * eps;
                 t = getScaledTailTerms(m, a + n, s);
-                while (!(Math.abs(t[m - 1]) <= stop)) {
+                while (!canConverge(t, stop)) {
                     n++;
                     if (n > expectedN) {
                         if (expectedToFail) {
@@ -4541,27 +4522,34 @@ class HurwitzZetaTest {
                     t = getScaledTailTerms(m, a + n, s);
                 }
             }
-            // Sample a in [1, a)
+            // Sample a in [0.5, a+n)
+            // Tail may be zero.
+            // First lower a until a tail exists.
+            double ua = apn;
+            while (t[0] == 0) {
+                ua -= 0.5;
+                t = getScaledTailTerms(1, ua, s);
+            }
             DoubleSupplier nextA;
             if (samples < 0) {
-                nextA = createRange(samples, 1, a, uniform);
+                nextA = createRange(samples, 0.5, ua, uniform);
             } else {
-                nextA = createSampler(rng, 1, a, uniform);
+                nextA = createSampler(rng, 0.5, ua, uniform);
             }
             for (int j = samples; j != 0; j += inc) {
                 if (skip.getAsBoolean()) {
                     continue;
                 }
-                a = nextA.getAsDouble();
+                final double a = nextA.getAsDouble();
                 final double z = zeta(s, a, Double.NaN, context);
-                if (z == 0) {
+                if (z > 0x1p106 || z == 0) {
                     // Scaled tail was non-zero but after scaling the zeta result is zero
                     continue;
                 }
                 // For comparison to the scaled tail term at the configured epsilon
                 final double stop = z * 0x1p106 * eps;
                 t = getScaledTailTerms(m, a + n, s);
-                while (!(Math.abs(t[m - 1]) <= stop)) {
+                while (!canConverge(t, stop)) {
                     n++;
                     if (n > expectedN) {
                         if (expectedToFail) {
@@ -4575,6 +4563,25 @@ class HurwitzZetaTest {
                 }
             }
         }
+        Assertions.assertFalse(expectedToFail,
+            () -> String.format("Should fail M=%d, maxS=%s, N=%d", m, maxS, testN));
+    }
+
+    /**
+     * Test if the tail can converge on the provided stop magnitude.
+     * 
+     * @param t Tail terms.
+     * @param stop Stop magnitude
+     * @return true if the tail converges
+     */
+    private static boolean canConverge(double[] t, double stop) {
+        for (int k = 0; k < t.length; k++) {
+            // Tail terms alternate sign
+            if (Math.abs(t[k]) <= stop) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -4609,21 +4616,27 @@ class HurwitzZetaTest {
         // Timings when no reporting is configured are < 1s per test.
 
         // Note: N ~ M ~ P for P-bits of precision
-        // M=53 requires N >= 9 to converge
-        // TODO - update these
-
         // For double precision
-        "1837, false, -500, 12, 53, -6",
-        "1837, false, -350, 12, 53, 7", // ~ 11.5s
-        "1837, false, 350, 12, 53, 7", // ~ 11.5s
+        "1837, false, -250, 53, 53, -5",
+        "1837, false, -250, 53, 53, 6",
+        "1837, false, 250, 53, 53, 6",
+        "1837, false, -250, 13, 53, -6",
+        "1837, false, -250, 13, 53, 7",
+        "1837, false, 250, 13, 53, 7",
         // double-double precision
-        "1128, false, -500, 30, 106, -11",
-        "1128, false, -350, 30, 106, 12", // ~ 10s
-        "1128, false, 350, 30, 106, 12", // ~ 10s
+        "1128, false, -250, 106, 106, -11",
+        "1128, false, -250, 106, 106, 12",
+        "1128, false, 250, 106, 106, 12",
+        "1128, false, -250, 26, 106, -12",
+        "1128, false, -250, 26, 106, 13",
+        "1128, false, 250, 26, 106, 13",
         // quad-double precision (for the BigDecimal implementation testing)
-        "1128, false, -500, 50, 212, -25",
-        "1128, false, -350, 50, 212, 26", // ~ 21s
-        "1128, false, 350, 50, 212, 26", // ~ 21s
+        "1128, false, -250, 106, 212, -23",
+        "1128, false, -250, 106, 212, 24",
+        "1128, false, 250, 106, 212, 24",
+        "1128, false, -250, 53, 212, -24",
+        "1128, false, -250, 53, 212, 25",
+        "1128, false, 250, 53, 212, 25",
     })
     void testTailConvergenceDD(int maxS, boolean uniform, int samples, int m,
             int b, int testN) {
@@ -4696,23 +4709,13 @@ class HurwitzZetaTest {
                     Math.abs(t[k - 1].hi()) >= Math.abs(t[k].hi()), "Tail not convergent");
             }
 
-            // A tail will always be non-zero due to use of the fractional representation
-            // Lower a until a 106-bit double-double cannot be added to Double.MIN_VALUE.
-            double a = apn.hi();
-            while (et[0] < -1075 - 106) {
-                a -= 0.5;
-                t = getTailTerms(m, DD.of(a), s, et);
-            }
-            // Spot check for a in [0, 1.1] avoiding 0
-            for (final double aa : new double[] {0.01, 0.25, 0.5, 0.99, 0.99999, 1,
-                1 + 0x1p-52, 1 + 0x1p-50, 1 + 0x1p-46, 1 + 0x1p-38, 1 + 0x1p-22, 1.01, 1.1}) {
-                a = aa;
+            // Too many representable values in [0, 0.5): use a spot check
+            for (final double a : new double[] {0x1p-53, 0x1p-43, 0x1p-33, 0.01, 0.25}) {
                 final DD z = zeta(s, DD.of(a), null, exp, context);
                 // For comparison to the scaled tail term at the configured epsilon
                 final int stop = exp[0] - b;
                 t = getTailTerms(m, DD.ofSum(a, n), s, et);
-                // Stop when the exponent is smaller
-                while (et[m - 1] >= stop) {
+                while (!canConverge(et, stop)) {
                     n++;
                     if (n > expectedN) {
                         if (expectedToFail) {
@@ -4725,24 +4728,30 @@ class HurwitzZetaTest {
                     t = getTailTerms(m, DD.ofSum(a, n), s, et);
                 }
             }
-            // Sample a in [1, a)
+            // Sample a in [0.5, a+n)
+            // A tail will always be non-zero due to use of the fractional representation
+            // Lower a until a 106-bit double-double cannot be added to Double.MIN_VALUE.
+            double ua = apn.hi();
+            while (et[0] < -1075 - 106) {
+                ua -= 0.5;
+                t = getTailTerms(m, DD.of(ua), s, et);
+            }
             DoubleSupplier nextA;
             if (samples < 0) {
-                nextA = createRange(samples, 1, apn.hi(), uniform);
+                nextA = createRange(samples, 0.5, ua, uniform);
             } else {
-                nextA = createSampler(rng, 1, apn.hi(), uniform);
+                nextA = createSampler(rng, 0.5, ua, uniform);
             }
             for (int j = samples; j != 0; j += inc) {
                 if (skip.getAsBoolean()) {
                     continue;
                 }
-                a = nextA.getAsDouble();
+                final double a = nextA.getAsDouble();
                 final DD z = zeta(s, DD.of(a), null, exp, context);
                 // For comparison to the scaled tail term at the configured epsilon
                 final int stop = exp[0] - b;
                 t = getTailTerms(m, DD.ofSum(a, n), s, et);
-                // Stop when the exponent is smaller
-                while (et[m - 1] >= stop) {
+                while (!canConverge(et, stop)) {
                     n++;
                     if (n > expectedN) {
                         if (expectedToFail) {
@@ -4757,7 +4766,23 @@ class HurwitzZetaTest {
             }
         }
         Assertions.assertFalse(expectedToFail,
-            () -> String.format("Should fail M=%d, maxS=%d, N=%d", m, maxS, testN));
+            () -> String.format("Should fail M=%d, maxS=%s, N=%d", m, maxS, testN));
+    }
+
+    /**
+     * Test if the tail can converge on the provided stop magnitude.
+     * 
+     * @param t Exponent of the tail terms.
+     * @param stop Exponent of the stop magnitude
+     * @return true if the tail converges
+     */
+    private static boolean canConverge(int[] t, int stop) {
+        for (int k = 0; k < t.length; k++) {
+            if (t[k] < stop) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -4771,23 +4796,19 @@ class HurwitzZetaTest {
         // Evaluate zeta with large N and support for sub-normal terms.
         // The purpose of this test is to examine if the tail can converge with
         // a much smaller N. Accuracy when using small N is evaluated elsewhere.
-        final Context context = Context.of(20, 50);
+        final Context context = Context.of(53, 53);
         final double z = zeta(s, a, Double.NaN, context);
         final double[] t = getScaledTailTerms(m, a + n, s);
         // Convergence epsilon is 2^-53, tail terms are scaled 2^106.
         final double stop = z * 0x1p53;
-        for (int k = 0; k < t.length; k++) {
-            // Tail terms alternate sign
-            if (Math.abs(t[k]) < stop) {
-                Assertions.fail(String.format(
-                    "Unexpected tail convergence: zeta(%s, %s) %s n=%d, m=%d. Tail = 2^-106 * %s",
-                    s, a, z, n, m, Arrays.toString(t)));
-            }
-        }
+        Assertions.assertFalse(canConverge(t, stop), () -> String.format(
+            "Unexpected tail convergence: zeta(%s, %s) %s n=%d, m=%d. Tail = 2^-106 * %s",
+                s, a, z, n, m, Arrays.toString(t)));
     }
 
     static Stream<Arguments> testFailedTailConvergence() {
         return Stream.of(
+            Arguments.of(30.784011044176562, 7.205411373936762, 6, 13),
             Arguments.of(3.326653306613046, 1.0, 6, 12),
             Arguments.of(4.0, 1.0, 6, 12),
             Arguments.of(16.0, 2.2244488977955688, 7, 7),
