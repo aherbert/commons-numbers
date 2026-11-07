@@ -960,14 +960,10 @@ class HurwitzZetaTest {
         /** Use extended precision summation. */
         static final int EXT_SUM = 4;
 
-        // TODO - remove unused options
+        // Flag 8 was used for an option no longer support and is available
 
-//        /** Use divide to recycle and update the power term (a+n)^-s in the tail series. */
-//        static final int TAIL_DIVIDE = 8;
         /** Use the power function to compute the power term in the tail series. */
         static final int TAIL_POW = 16;
-//        /** Use extended precision summation in the tail series. */
-//        static final int TAIL_EXT_SUM = 32;
 
         /** Use accurate add for the main terms in the DD implementation. */
         static final int AA_TERMS = 64;
@@ -979,12 +975,6 @@ class HurwitzZetaTest {
 
         /** Option to support summation of sub-normal terms. */
         static final int SUB_NORMAL_SUM = 512;
-
-//        /** Option to use scaling on the tail sum to use normal numbers. */
-//        static final int TAIL_SUM_SCALING = 1024;
-//
-//        /** Option to recycle I term for the tail (saves pow calls). */
-//        static final int RECYCLE_I_TERM = 2048;
 
         // Default contexts optimised using the precision tests
 
@@ -1005,6 +995,8 @@ class HurwitzZetaTest {
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with precision +1 digit than the expected 17 per double.
 
+        // TODO - re-optimise. Requires better test data
+
         /** Context for double precision using the BigDecimal zeta implementation. */
         static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(18));
         /** Context for double-double precision using the BigDecimal zeta implementation. */
@@ -1012,11 +1004,6 @@ class HurwitzZetaTest {
         /** Context for quad-double precision using the BigDecimal zeta implementation. */
         static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70));
 
-        // TODO - remove this
-//        /** Default epsilon for the sum series. Typically the series will terminate at the
-//         * configured N unless the power exponent s is very large. This is not generally
-//         * useful and disabled by setting to zero. */
-//        private static final double EPS_S = 0;
         /** Default epsilon for the tail series. */
         private static final double EPS_T = 0x1p-53;
         /** Default math context for extended precision BigDecimal implementation. */
@@ -1030,8 +1017,6 @@ class HurwitzZetaTest {
         private final int n;
         /** M. */
         private final int m;
-//        /** Epsilon for convergence of the sum series. */
-//        private final double epsS;
         /** Epsilon for convergence of the tail series. */
         private final double epsT;
         /** Math context for extended precision evaluations. */
@@ -1044,13 +1029,11 @@ class HurwitzZetaTest {
          *
          * @param n the number of terms for the series sum
          * @param m the number of terms for the tail sum
-         * @param epsS the epsilon for the sum
          * @param epsT the epsilon for the tail
          * @param mc the math context for BigDecimal evaluations
          * @param options the options
          */
-        // TODO - remove epsS
-        private Context(int n, int m, double epsS, double epsT, MathContext mc,
+        private Context(int n, int m, double epsT, MathContext mc,
             int options) {
             // Assume all tables for the tail series are the same size
             if (m > RF.length) {
@@ -1058,7 +1041,6 @@ class HurwitzZetaTest {
             }
             this.n = n;
             this.m = m;
-//            this.epsS = epsS;
             this.epsT = epsT;
             this.mc = mc;
             this.options = options;
@@ -1072,17 +1054,7 @@ class HurwitzZetaTest {
          * @return the context
          */
         static Context of(int n, int m) {
-            return new Context(n, m, 0, EPS_T, MC, DEFAULT_OPTIONS);
-        }
-
-        /**
-         * Return a context that uses the provided convergence epsilon in the series sum S.
-         *
-         * @param value the value
-         * @return the context
-         */
-        Context withSumEpsilon(double value) {
-            return new Context(n, m, value, epsT, mc, options);
+            return new Context(n, m, EPS_T, MC, DEFAULT_OPTIONS);
         }
 
         /**
@@ -1092,7 +1064,7 @@ class HurwitzZetaTest {
          * @return the context
          */
         Context withTailEpsilon(double value) {
-            return new Context(n, m, 0, value, mc, options);
+            return new Context(n, m, value, mc, options);
         }
 
         /**
@@ -1102,7 +1074,7 @@ class HurwitzZetaTest {
          * @return the context
          */
         Context withMathContext(MathContext value) {
-            return new Context(n, m, 0, epsT, value, options);
+            return new Context(n, m, epsT, value, options);
         }
 
         /**
@@ -1112,7 +1084,7 @@ class HurwitzZetaTest {
          * @return the context
          */
         Context withOptions(int value) {
-            return new Context(n, m, 0, epsT, mc, value);
+            return new Context(n, m, epsT, mc, value);
         }
 
         /**
@@ -1130,14 +1102,6 @@ class HurwitzZetaTest {
         int getM() {
             return m;
         }
-
-//        /**
-//         * Gets the convergence epsilon for the series S.
-//         * @return the epsilon
-//         */
-//        double getSumEps() {
-//            return epsS;
-//        }
 
         /**
          * Gets the convergence epsilon for the tail series T.
