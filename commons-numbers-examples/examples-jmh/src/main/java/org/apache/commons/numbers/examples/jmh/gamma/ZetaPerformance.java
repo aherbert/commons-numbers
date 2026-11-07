@@ -52,7 +52,7 @@ import org.openjdk.jmh.infra.Blackhole;
 @Fork(value = 1, jvmArgs = {"-server", "-Xms512M", "-Xmx512M"})
 public class ZetaPerformance {
     /** Number of terms of the series summation S.
-     * Must match the final HurwitzZeta version for benchmarking comparisons. */
+     * Should match the final HurwitzZeta version for benchmarking comparisons. */
     static final int N = 8;
     /** Convergence epsilon for the sum of the tail function. This prevents summation
      * of terms that do not affect the final result. Equal to 2^-53. */
@@ -81,7 +81,7 @@ public class ZetaPerformance {
      * Precomputed factors for {@code k}-th element of the tail function {@code T}
      * in double-double (DD) precision.
      * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
-     * Provides 25 terms.
+     * Provides 25 terms which requires N=7 or higher.
      */
     private static final double[] F = {
         0.08333333333333333, // (1 / 6) / 2!
@@ -388,6 +388,8 @@ public class ZetaPerformance {
 
     /** Context for the BigDecimal zeta implementation. */
     private static final class Context {
+        // TODO
+        // N and M should match the final HurwitzZeta version for benchmarking comparisons
         /** Context for double precision. */
         static final Context BD_DOUBLE = new Context(9, 15, new MathContext(18));
         /** Context for double-double precision. */
@@ -519,15 +521,17 @@ public class ZetaPerformance {
      * <ul>
      * <li>remove the extended precision power function
      * <li>remove summation in double-double precision
-     * <li>remove summation of sub-normal terms in the series S
+     * <li>remove summation of sub-normal terms in the series S:
+     *     This function is not accurate when any term is sub-normal.
      * </ul>
      *
-     * <p>The function has a max ULP error of twice the HurwitzZeta function at approximately
-     * 4 versus 2 when {@code a} is positive, and an increased accuracy when {@code a} is negative.
+     * <p>The function has a max ULP error higher then the HurwitzZeta function at approximately
+     * 6 versus 2 when {@code a} is positive and terms are not sub-normal. It has an increased
+     * accuracy when {@code a} is negative due to an implementation based on BigDecimal.
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a > 0}
-     * @param n Argument {@code n >= 7}
+     * @param N Argument {@code n >= 7}
      * @return zeta(s, a)
      */
     private static double zetaImp(double s, double a, int N) {
@@ -543,15 +547,13 @@ public class ZetaPerformance {
         // https://dlmf.nist.gov/25.11#E43
         // When a is large the series cannot use a+k.
         // This reduces to N=0 (no series sum S): the I term and the first term of T.
-        if (a > LARGE_A) {
+        if (a > LARGE_A || t0 == 0) {
             return Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5;
         }
 
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow
 
         // Methods are used to increase precision
-        // - Extended precision summation (low cost)
-        // - Extended precision power function using round-off from (a+k) (selectively applied)
         // - Scaling for sub-normal tail terms (no cost)
         // - Adding series terms in magnitude order (no cost)
 
