@@ -1321,6 +1321,11 @@ class HurwitzZetaTest {
 
         // The double implementation is accurate until zeta values are sub-normal
         T_DOUBLE_ZETA_IS((s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, Context.DOUBLE), INT_TEST_RESOURCES, 1.5, 0.75),
+        // Standard double precision sum and power function works
+        // with sub-normal term scaling
+        T_ZETA_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN,
+            Context.of(8, 12).withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
+        ), "hzeta_2p-1022.csv", 5.5, 0.35),
         // These are within 0.5 ULP as a double-double but rounding put single errors at just over 0.5 ulp.
         // The zeta values are far below the min double value.
         T_BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(),
@@ -1401,6 +1406,7 @@ class HurwitzZetaTest {
 
 //        JDK Temurin 25.492-b09
 //        T_DOUBLE_ZETA_IS                         max        1.03517   RMS       0.259700   mean    -0.00351798  n  6000  (445ms)
+//        T_ZETA_2_POW_N1022_STD                   max        5.31274   RMS       0.338810   mean      0.0129054  n  1998  (262ms)
 //        T_BD_ZETA_IS                             max       0.552489   RMS      0.0389050   mean    0.000441930  n 15000  (1.31e+03ms)
 //        T_DD_ZETA_IS                             max       0.509511   RMS      0.0153543   mean   -1.97006e-07  n 15000  (267ms)
 //        T_DOUBLE_ZETA_S2_4_N_A1_15               max        1.43054   RMS       0.362453   mean    -0.00659925  n  3000  (82.9ms)
