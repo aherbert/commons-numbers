@@ -151,6 +151,7 @@ class HurwitzZetaTest {
         "hzeta_s9_1075_tail.csv",
         "hzeta_s9_1837_tail.csv",
         "hzeta_s15_1128_tail.csv",
+        "hzeta_is_2p-1075.csv",
     };
     /** Filenames of resources used for the roots of the zeta function using integer s. */
     private static final String[] ROOT_TEST_RESOURCES = {
@@ -1436,10 +1437,7 @@ class HurwitzZetaTest {
          * @param rmsUlp maximum allowed RMS ulp
          */
         ZetaTestCase(DoubleBinaryOperator fun, String filename, double maxUlp, double rmsUlp) {
-            this.fun = fun;
-            this.filenames = new String[] {filename};
-            this.maxUlp = maxUlp;
-            this.rmsUlp = rmsUlp;
+            this(fun, new String[] {filename}, maxUlp, rmsUlp);
         }
 
         /**
@@ -1465,6 +1463,93 @@ class HurwitzZetaTest {
         @Override
         public String[] getFilenames() {
             return filenames;
+        }
+
+        @Override
+        public double getTolerance() {
+            return maxUlp;
+        }
+
+        @Override
+        public double getRmsTolerance() {
+            return rmsUlp;
+        }
+    }
+    /**
+     * Define the test cases for the extended precision zeta function.
+     * This encapsulates the function to test, the expected maximum and RMS error, and
+     * the resource file(s) containing the data.
+     */
+    private enum ExtZetaTestCase implements ExtendedPrecisionTestCase {
+        // Prefix T_ for test code in this class.
+
+        T_DD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, DD.of(a), Context.DD_DOUBLE_DOUBLE),
+            "hzeta_is_2p-1022.csv", 1.5, 0.75, 106),
+        T_BD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, new BigDecimal(a), null, Context.BD_DOUBLE_DOUBLE),
+            "hzeta_is_2p-1022.csv", 1.5, 0.75, 106);
+
+        // TODO - Example output
+
+        /** The function. */
+        private final BiFunction<Integer, Double, BigDecimal> fun;
+
+        /** The filenames containing the test data. */
+        private final String[] filenames;
+
+        /** The maximum allowed ulp. */
+        private final double maxUlp;
+
+        /** The maximum allowed RMS ulp. */
+        private final double rmsUlp;
+
+        /** Scale to apply to the relative error. */
+        private final int scale;
+
+        /**
+         * Create an instance.
+         *
+         * @param fun function to test
+         * @param filename Filename of the test data
+         * @param maxUlp maximum allowed ulp
+         * @param rmsUlp maximum allowed RMS ulp
+         * @param scale scale to apply to the relative error
+         */
+        ExtZetaTestCase(BiFunction<Integer, Double, BigDecimal> fun, String filename,
+            double maxUlp, double rmsUlp, int scale) {
+            this(fun, new String[] {filename}, maxUlp, rmsUlp, scale);
+        }
+
+        /**
+         * Create an instance.
+         *
+         * @param fun function to test
+         * @param filenames Filenames of the test data
+         * @param maxUlp maximum allowed ulp
+         * @param rmsUlp maximum allowed RMS ulp
+         * @param scale scale to apply to the relative error
+         */
+        ExtZetaTestCase(BiFunction<Integer, Double, BigDecimal> fun, String[] filenames,
+            double maxUlp, double rmsUlp, int scale) {
+            this.fun = fun;
+            this.filenames = filenames;
+            this.maxUlp = maxUlp;
+            this.rmsUlp = rmsUlp;
+            this.scale = scale;
+        }
+
+        @Override
+        public BiFunction<Integer, Double, BigDecimal> getFunction() {
+            return fun;
+        }
+
+        @Override
+        public String[] getFilenames() {
+            return filenames;
+        }
+
+        @Override
+        public int scale() {
+            return scale;
         }
 
         @Override
@@ -2684,6 +2769,19 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Helper function to compute a BigDecimal result using the DD zeta implementation.
+     *
+     * @param s Argument {@code s > 1}, expected {@code s < 1024}
+     * @param a Argument {@code a > 0}
+     * @param c Evaluation context.
+     */
+    private static BigDecimal zeta(int s, DD a, Context c) {
+        final int[] exp = {0};
+        final DD r = HurwitzZetaTest.zeta(s, a, null, exp, c);
+        return toBigDecimal(r, exp[0]);
+    }
+
+    /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
      * when {@code a} is negative. Uses double arithmetic.
      *
@@ -3292,7 +3390,7 @@ class HurwitzZetaTest {
                     return String.format("ZETA %s  dps=%3d  %2d", zetaName(c.getN()), digits, options);
                 }
             };
-            assertFunction(test, 0);
+            assertFunction(test, 0, true);
             // When not reporting cut the test short
             if (!doReporting()) {
                 break;
@@ -3413,11 +3511,7 @@ class HurwitzZetaTest {
 
                 @Override
                 public BiFunction<Integer, Double, BigDecimal> getFunction() {
-                    return (s, a) -> {
-                        final int[] exp = {0};
-                        final DD r = HurwitzZetaTest.zeta(s, DD.of(a), null, exp, c);
-                        return toBigDecimal(r, exp[0]);
-                    };
+                    return (s, a) -> HurwitzZetaTest.zeta(s, DD.of(a), c);
                 }
 
                 @Override
@@ -3432,7 +3526,7 @@ class HurwitzZetaTest {
                     return String.format("ZETA %s  2^%-4d  %3d", zetaName(c.getN()), b, options);
                 }
             };
-            assertFunction(test, ignoreB);
+            assertFunction(test, ignoreB, true);
             // When not reporting cut the test short
             if (!doReporting()) {
                 break;
@@ -3502,9 +3596,12 @@ class HurwitzZetaTest {
             f.lo() == 0 && Math.scalb(Math.abs(f.hi()), exp) >= Double.MIN_NORMAL) {
             return f.scalb(exp).bigDecimalValue().round(MathContext.DECIMAL128);
         }
-        // scale by 2^-exp = 1 << -exp
+        // scale by 2^exp = 1 << exp
         final BigDecimal v = f.bigDecimalValue();
-        return v.divide(new BigDecimal(BigInteger.ONE.shiftLeft(-exp)), MathContext.DECIMAL128);
+        if (exp < 0) {
+            return v.divide(new BigDecimal(BigInteger.ONE.shiftLeft(-exp)), MathContext.DECIMAL128);
+        }
+        return v.multiply(new BigDecimal(BigInteger.ONE.shiftLeft(exp)), MathContext.DECIMAL128);
     }
 
     @ParameterizedTest
@@ -3986,6 +4083,15 @@ class HurwitzZetaTest {
         assertFunction(tc, tc.name().startsWith("T_"));
     }
 
+    // TODO - Test this ...
+    @ParameterizedTest
+    @EnumSource(value = ExtZetaTestCase.class)
+    void testZeta(ExtZetaTestCase tc) {
+        // Cases starting with T_ are for testing code.
+        // This can be configured to skip most cases to reduce runtime.
+        assertFunction(tc, 0, tc.name().startsWith("T_"));
+    }
+
     /**
      * Assert the function is close to the expected value.
      *
@@ -4004,6 +4110,7 @@ class HurwitzZetaTest {
      * Assert the function using extended precision.
      *
      * @param tc Test case
+     * @param allowSkips Allow skipping cases when not reporting
      */
     private static void assertFunction(DoublePrecisionTestCase tc, boolean allowSkips) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
@@ -4043,14 +4150,16 @@ class HurwitzZetaTest {
      *
      * @param tc Test case
      * @param ignoreB Base-2 exponent of results to ignore
+     * @param allowSkips Allow skipping cases when not reporting
      */
-    private static void assertFunction(ExtendedPrecisionTestCase tc, int ignoreB) {
+    private static void assertFunction(ExtendedPrecisionTestCase tc, int ignoreB, boolean allowSkips) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
         BigDecimal ignore = BigDecimal.ZERO;
         if (ignoreB < 0) {
             ignore = BigDecimal.valueOf(2).pow(ignoreB, MathContext.DECIMAL64);
         }
-        final BooleanSupplier skip = createSkipSupplier(doReporting(), 7);
+        final boolean noSkips = !allowSkips || doReporting();
+        final BooleanSupplier skip = createSkipSupplier(noSkips, 7);
         final long start = System.nanoTime();
         for (final String filename : tc.getFilenames()) {
             try (DataReader in = new DataReader(filename)) {
@@ -4124,7 +4233,7 @@ class HurwitzZetaTest {
      * Check if reporting to stdout. Prints the JDK version on first return of true.
      *
      * <p>Some test fixtures also use the reporting setting to configure random
-     * skipping of tests to reduce build times. 
+     * skipping of tests to reduce build times.
      *
      * @return true if reporting
      * @see #reporting
@@ -4536,7 +4645,7 @@ class HurwitzZetaTest {
 
     /**
      * Test if the tail can converge on the provided stop magnitude.
-     * 
+     *
      * @param t Tail terms.
      * @param stop Stop magnitude
      * @return true if the tail converges
@@ -4738,7 +4847,7 @@ class HurwitzZetaTest {
 
     /**
      * Test if the tail can converge on the provided stop magnitude.
-     * 
+     *
      * @param t Exponent of the tail terms.
      * @param stop Exponent of the stop magnitude
      * @return true if the tail converges
@@ -5238,7 +5347,6 @@ class HurwitzZetaTest {
         }
     }
 
-
     // TODO
     // for data generation:
     // if any a or s are the same then use the record closest to t.
@@ -5256,7 +5364,7 @@ class HurwitzZetaTest {
      * Create a line in the zeta domain for (s, a) where the result is sub-normal.
      * For any {@code (s',a') < (s,a)} the result will be sub-normal or normal.
      * This is the region where the function should support accurate evaluation.
-     * 
+     *
      * <p>This uses the current test implementation to find (s, a). These are recorded
      * to file for independent evaluation.
      */
@@ -5335,6 +5443,76 @@ class HurwitzZetaTest {
         }
 
         try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.txt", b))) {
+            points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
+        }
+    }
+    /**
+     * Create a line in the zeta domain for (s, a) where the result is sub-normal.
+     * For any {@code (s',a') < (s,a)} the result will be sub-normal or normal.
+     * This is the region where the function should support accurate evaluation.
+     *
+     * <p>This uses the current test implementation to find (s, a). These are recorded
+     * to file for independent evaluation.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // Reflection identity must use max s=1837.
+        // zeta(1837, 1.5) = 3.31e-324
+        "1837, -1075",
+    })
+    @Disabled("Used to generate test data")
+    void testDataSubNormalDomainDD(int maxS, int b) throws IOException {
+        // Configure for high accuracy
+        final Context context = Context.of(40, 106);
+        // This may target numbers that are outside the domain of a double.
+        // Use a log representation of the double-double result.
+        // Requires mapping log2 exponents to base e logarithm.
+        // log(x) = log2(x) * log(2)
+        final double ln2 = Math.log(2);
+        final int[] e = {0};
+        final BiFunction<Integer, Double, DD> zeta = (s, a) -> {
+            DD r = HurwitzZetaTest.zeta(s, DD.of(a), null, e, context);
+            // Map the double-double result to a log result
+            // log(x + xx) = log(x * (1+xx/x))
+            //             = log(x) + log1p(xx/x)
+            // Note: The round-off may be useless if log(x) is not exact
+            // but will be monotonic which allows root finding
+            return DD.ofSum(Math.log(r.hi()), Math.log1p(r.lo() / r.hi())).add(e[0] * ln2);
+        };
+        final BrentSolver solver = new BrentSolver(0, 0, 0);
+
+        // Map zeta(a, s) = t using n points
+        // This can be changed to a lower value
+        // log(2^b)
+        final double t = b * ln2;
+        final ArrayList<double[]> points = new ArrayList<>();
+
+        // Map zeta(a, s) = t using s
+        final double minA = Math.nextUp(1.0);
+        final double maxA = 0x1p53;
+        for (int i = 2; i <= maxS; i++) {
+            final int s = i;
+            double a;
+            // Note: This starts at s=2. The first s that achieves a sub-normal result
+            // with max a is (2^53)^-s = 2^-1022 => s = -log2(2^1022) / log2(2^53) = 19.28.
+            // The target may be lower. Catch the no bracket exception and use maxA.
+            try {
+                a = solver.findRoot(x -> zeta.apply(s, x).subtract(t).hi(), minA, maxA);
+                // Debug the result
+                final DD z = HurwitzZetaTest.zeta(s, DD.of(a), null, e, context);
+                // Check z ~ 1.0 * 2^b or 0.5 * 2^(b+1)
+                Assertions.assertTrue(b <= e[0] && e[0] <= b + 1,
+                    () -> "Failed to find target: " + toBigDecimal(z, e[0]));
+                final double expected = e[0] == b ? 1.0 : 0.5;
+                Assertions.assertEquals(expected, z.hi(), expected * 1e-12,
+                    () -> "Failed to find target: " + toBigDecimal(z, e[0]));
+            } catch (IllegalArgumentException ignored) {
+                a = maxA;
+            }
+            points.add(new double[] {s, a});
+        }
+
+        try (PrintStream out = getPrintStream(String.format("hzeta_is_2p%d.txt", b))) {
             points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
         }
     }
