@@ -36,6 +36,13 @@ import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
+import org.apache.commons.math3.optim.univariate.BrentOptimizer;
+import org.apache.commons.math3.optim.MaxEval;
+import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
+import org.apache.commons.math3.optim.univariate.BrentOptimizer;
+import org.apache.commons.math3.optim.univariate.SearchInterval;
+import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction;
+import org.apache.commons.math3.optim.univariate.UnivariatePointValuePair;
 import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.core.DDMath;
 import org.apache.commons.numbers.fraction.BigFraction;
@@ -4652,13 +4659,6 @@ class HurwitzZetaTest {
     }
 
     // TODO:
-    // This does not always work. It does not detect the failed cases found
-    // in the other method. So targeting I = 0.5 * zeta(s, a) is wrong.
-    // It does identify the same n when a ~ 0.1 - 0.5.
-    //
-    // Search for maximum n required to converge the tail.
-    // Requires use of an optimiser for a function of (s, a) (two params)
-    // where it maximises real n.
     // Create the function and plot the score over the domain of zeta.
     // Can use the same plotting as for the planned error plot.
     // Should be easy as getScaledTailTerms accepts real (a+n).
@@ -4666,6 +4666,12 @@ class HurwitzZetaTest {
     // with variable n until it can converge. It will show the hotspot
     // in the domain for convergence issues.
 
+    // Write javadoc for this method
+    //
+    // Search for maximum n required to converge the tail.
+    // Requires use of an optimiser for a function of (s, a) (two params)
+    // where it maximises real n.
+    //
     // [1] We want to never rely on requiring an accurate tail T.
     //
     // The first tail term should always be below the magnitude of zeta
@@ -4676,22 +4682,39 @@ class HurwitzZetaTest {
     // (a+n)^-(1+s) * s / 12 < a^-s + (a+1)^(1-s)/(s-1)
     //
     // [2] We want the tail to always converge within M when used.
+    //
+
+    // TODO: Write an equivalent for the DD version.
+    // To maximise (a+n) requires fixed a.
+    // But s is not univariate for an optimiser. We can enumerate s.
 
     @ParameterizedTest
     @CsvSource({
-        "1.0000000000000002, 1075, false, -250, 53, 53, 6",
-        "1.0000000000000002, 1075, false, -250, 10, 53, 6",
-        "1.0000000000000002, 1075, false, -250, 53, 106, 12",
+        // double precision
+//        "0.1, 200, false, -250, 8, 53, 6",
+//        "0.1, 200, false, -250, 10, 53, 6",
+//        "0.1, 200, false, -250, 12, 53, 6",
+        "0.1, 200, false, -250, 15, 53, 6",
+        "0.1, 200, false, -250, 26, 53, 6",
+//        "0.1, 200, false, -250, 53, 53, 6",
+        "0.1, 200, false, -250, 15, 55, 6",
+        "0.1, 200, false, -250, 26, 55, 6",
+
+        // double-double precision
+        "0.1, 200, false, -250, 26, 106, 6",
+        "0.1, 200, false, -250, 53, 106, 6",
+        "0.1, 200, false, -250, 26, 108, 6",
+        "0.1, 200, false, -250, 53, 108, 6",
     })
-    void testTailConvergence2(double minS, double maxS, boolean uniform, int samples, int m,
+    void testTailConvergence2(double minA, double maxA, boolean uniform, int samples, int m,
             int b, int testN) {
         // Negative N for tests that should fail
         final boolean expectedToFail = testN < 0;
         final boolean noSkips = doReporting() || expectedToFail;
         final int expectedN = Math.abs(testN);
 
-        Assertions.assertTrue(minS > 1);
-        Assertions.assertTrue(maxS > minS);
+        Assertions.assertTrue(minA > 0x1p-53);
+        Assertions.assertTrue(maxA > minA);
         Assertions.assertTrue(m > 0);
         Assertions.assertNotEquals(0, samples);
         Assertions.assertTrue(b > 40);
@@ -4720,67 +4743,82 @@ class HurwitzZetaTest {
         //
         // cannot occur for large s.
 
-        // Start below the expected N
-        int n = Math.min(1, expectedN - 1);
+        double n = 0;
 
-        // Find critical s where the I = zeta(s, a) / 2
+        // TODO:
+        // For selected a in the supported range: [2^-1023, 2^53]
+        // Search for s where (a+n) to converge the tail is the maximum.
+        // Initial bracket for s can be 1+2^-53 to a limit based on a^-s = 2^-1075-106
+        // which is the support for the scaled tail power terms.
+        // IIUC as a -> large then s -> 1 and (a+n) should reduce.
+        BrentOptimizer optimizer = new BrentOptimizer(1e-15, 1e-14);
 
-        // Lowest tolerance allowed
-        final BrentSolver solver = new BrentSolver(0, 0, 0);
+        // Note negative samples will enumerate and this RNG may not be used.
+        final SplittableRandom rng = new SplittableRandom();
+        DoubleSupplier nextA;
+        if (samples < 0) {
+            nextA = createRange(samples, minA, maxA, uniform);
+        } else {
+            nextA = createSampler(rng, minA, maxA, uniform);
+        }
 
-        for (final double a : new double[] {//0x1p-53, 0x1p-43, 0x1p-33, 0.01, 0.25, 0.5,
-            //0x1p-53,
-            0x1p-26,
-            1.0/10, 1.0/9, 1.0/8, 1.0/7, 1.0/6, 1.0/5, 1.0/4, 1.0/3,
-            0.5,
-            1, 1.5, 4.777555110220352,
-            }) {
+        final int inc = samples < 0 ? 1 : -1;
+        for (int i = samples; i != 0; i += inc) {
+            final double a = nextA.getAsDouble();
+
+            // TODO:
+            // Before we computed (a+n) where the tail will diverge for given s and m.
+            // Can this calculate the min s where the tail will not converge
+            // for m terms? If this creates a zeta(s, a) of zero then this is not
+            // an issue.
+
+            // Find the largest n for (a+n) used in tail convergence at point a.
+            // This is the function to optimise
+            final DoubleUnaryOperator fun = s -> {
+                final double z = zeta(s, a, Double.NaN, context);
+                if (z > LARGE_T0 || z == 0) {
+                    // Only occurs with a < 0. s is too large. No tail usage.
+                    return 0;
+                }
+                final double stop = z * 0x1p106 * eps;
+                // Find a+n required for tail convergence
+                double l = 1;
+                double u = context.getN();
+                while (Math.nextUp(l) < u) {
+                    double nn = (l + u) * 0.5;
+                    double[] t = getScaledTailTerms(m, a + nn, s);
+                    if (canConverge(t, stop)) {
+                        u = nn;
+                    } else {
+                        l = nn;
+                    }
+                }
+                // l is the largest n that could not converge for this s
+                // u is the smallest n that could converge for this s
+                return u;
+            };
+
+            // Optimise
+            // Guess bracket for start point
+
             // Small a: avoid overflow of a^-s
-            // a^-s = 2^1023 (effectively infinity)
             // s = -log(2^1023) / log(a)
             // Large a: avoid underflow of a^-s
-            // a^-s = 2^-1075 (effectively infinity)
-            // s = -log(2^-1075) / log(a)
-            double maxSS = a < 1 ?
-                -Math.log(Double.MAX_VALUE) / Math.log(a) :
-                Math.min(Double.MAX_VALUE, Math.log(2) * 1075 / Math.log(a));
-            int n0 = 1;
-            while (n0 <= expectedN) {
-                final int nn = n0;
-                final double s = solver.findRoot(x -> {
-                    final double z = zeta(x, a, Double.NaN, context);
-                    // Avoid intermediate under/overflow
-                    double ti = Context.extPow(a, nn, (1 - x) * 0.5);
-                    if (ti > 0x1p511 || ti < 0x1p-511) {
-                        ti = ti * (ti / (x - 1));
-                    } else {
-                        ti = ti * ti / (x - 1);
-                    }
-                    return z > 1 ? ti - z * 0.5 : 2 * ti - z;
-                }, minS, maxSS);
-                final double z = zeta(s, a, Double.NaN, context);
-                // For comparison to the scaled tail term at the configured epsilon
-                final double stop = z * 0x1p106 * eps;
-                double[] t = getScaledTailTerms(m, a + n0, s);
-                if (canConverge(t, stop)) {
-                    System.out.printf("%s %s %d%n", s, a, n0);
-                    break;
-                }
-                n0++;
-                if (n0 > expectedN) {
-//                    if (expectedToFail) {
-//                        return;
-//                    }
-//                    Assertions.fail(String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s", expectedN, s, a,
-//                        z, Arrays.toString(t)));
-                }
-            }
-//            System.out.printf("%s %d%n", a, n0);
-            n = n0;
+            // a^-s = 2^-1075 - 106 (effectively zero)
+            // s = -log(2^-1181) / log(a)
+            double minS = Math.nextUp(1.0);
+            double maxS = a < 1 ?
+                Math.min(Double.MAX_VALUE, -Math.log(Double.MAX_VALUE) / Math.log(a)) :
+                Math.min(Double.MAX_VALUE, Math.log(2) * 1181 / Math.log(a));
+            UnivariatePointValuePair point = optimizer.optimize(GoalType.MAXIMIZE, new SearchInterval(minS, maxS, 2),
+                 new UnivariateObjectiveFunction(fun::applyAsDouble), new MaxEval(10000));
+//            System.out.printf("%25s, %25s + %25s = %s%n", point.getPoint(), a, point.getValue(),
+//                zeta(point.getPoint(), a, Double.NaN, context));
+            n = Math.max(n, point.getValue());
         }
-        System.out.println(n);
-        Assertions.assertFalse(expectedToFail,
-            () -> String.format("Should fail M=%d, maxS=%s, N=%d", m, maxS, testN));
+        System.out.printf("%d 2^-%-3d  %s%n", m, b, n);
+//        Assertions.assertFalse(expectedToFail,
+//            () -> String.format("Should fail M=%d, A=[%s, %s), N=%d", m, minA, maxA, testN));
 
     }
 
