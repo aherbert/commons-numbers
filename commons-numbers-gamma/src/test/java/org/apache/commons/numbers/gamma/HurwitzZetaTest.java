@@ -1670,6 +1670,14 @@ class HurwitzZetaTest {
             pow = powSeries = Context::stdPow;
         }
 
+        // TODO
+        // Check if support for sub-normal summation is required.
+        // Compute t1 = (a+1)^-s.
+        // If sub-normal then recompute with sub-normal scaling.
+        // If (a+1)^-s is within 106-bits of a^-s then compute the full evaluation.
+        // Recompute scale t0 if applicable.
+        // Otherwise return a^-s.
+
         // If t0 is sub-normal the summation S is of sub-normal terms.
         // Avoid by using: scale * x^y = x^(y/2) * scale * x^(y/2).
         final boolean scaledSum = c.isSet(Context.SUB_NORMAL_SUM) && t0 < Double.MIN_NORMAL;
@@ -4561,7 +4569,7 @@ class HurwitzZetaTest {
                 if (Math.abs(t[m - 2]) > Double.MIN_NORMAL) {
                     Assertions.assertEquals(Math.abs(t[m - 2]), Math.abs(t[m - 1]), Math.abs(t[m - 2]) * 1e-15);
                 }
-                // Test the terms reduce magnitude
+                // Test the terms reduce in magnitude
                 for (int k = 1; k < m - 1; k++) {
                     Assertions.assertTrue(Math.abs(t[k - 1]) >= Math.abs(t[k]), "Tail not convergent");
                 }
@@ -4641,6 +4649,139 @@ class HurwitzZetaTest {
         }
         Assertions.assertFalse(expectedToFail,
             () -> String.format("Should fail M=%d, maxS=%s, N=%d", m, maxS, testN));
+    }
+
+    // TODO:
+    // This does not always work. It does not detect the failed cases found
+    // in the other method. So targeting I = 0.5 * zeta(s, a) is wrong.
+    // It does identify the same n when a ~ 0.1 - 0.5.
+    //
+    // Search for maximum n required to converge the tail.
+    // Requires use of an optimiser for a function of (s, a) (two params)
+    // where it maximises real n.
+    // Create the function and plot the score over the domain of zeta.
+    // Can use the same plotting as for the planned error plot.
+    // Should be easy as getScaledTailTerms accepts real (a+n).
+    // Effectively evaluate zeta. Then bracket getScaledTail terms
+    // with variable n until it can converge. It will show the hotspot
+    // in the domain for convergence issues.
+
+    // [1] We want to never rely on requiring an accurate tail T.
+    //
+    // The first tail term should always be below the magnitude of zeta
+    // for all s and a:
+    // (a+n)^-(1+s) * s / 12 < zeta(s, a)
+    //
+    // Possible approximation that could be solved:
+    // (a+n)^-(1+s) * s / 12 < a^-s + (a+1)^(1-s)/(s-1)
+    //
+    // [2] We want the tail to always converge within M when used.
+
+    @ParameterizedTest
+    @CsvSource({
+        "1.0000000000000002, 1075, false, -250, 53, 53, 6",
+        "1.0000000000000002, 1075, false, -250, 10, 53, 6",
+        "1.0000000000000002, 1075, false, -250, 53, 106, 12",
+    })
+    void testTailConvergence2(double minS, double maxS, boolean uniform, int samples, int m,
+            int b, int testN) {
+        // Negative N for tests that should fail
+        final boolean expectedToFail = testN < 0;
+        final boolean noSkips = doReporting() || expectedToFail;
+        final int expectedN = Math.abs(testN);
+
+        Assertions.assertTrue(minS > 1);
+        Assertions.assertTrue(maxS > minS);
+        Assertions.assertTrue(m > 0);
+        Assertions.assertNotEquals(0, samples);
+        Assertions.assertTrue(b > 40);
+        Assertions.assertTrue(expectedN > 3 && expectedN <= 53);
+
+        // Evaluate zeta with larger N and support for sub-normal terms.
+        // The purpose of this test is to find the smallest n where the tail can converge before m.
+        // Accuracy when using small N is evaluated elsewhere.
+        final double eps = Math.scalb(1.0, -b);
+        // Limit N ~ M ~ P bits of precision
+        final Context context = Context.of(53, 53).withTailEpsilon(eps);
+
+        // convergence is slowest at large a=2^53
+        // Maximum s to support at a=2^53
+        // (2^53)^-s = 2^-1075 (effectively zero)
+        // s = 1075 / 53 = 20.28
+        // as s reduces the tail is more important.
+        // find n where (a+n)^(1-s)/(s-1) = 0.5 * zeta(s, a) and the tail converges.
+
+        // slowest convergence s = 1 + 2^-52
+        // fastest convergence s = 20.28
+        // critical convergence I ~ 0.5 * zeta(s, a)
+        // find n where (a+n)^(1-s)/(s-1) = 0.5 * zeta(s, a) and the tail converges in m terms at a=0
+
+        // for a ~ 0 find the min n for tail convergence within m tail terms
+        //
+        // cannot occur for large s.
+
+        // Start below the expected N
+        int n = Math.min(1, expectedN - 1);
+
+        // Find critical s where the I = zeta(s, a) / 2
+
+        // Lowest tolerance allowed
+        final BrentSolver solver = new BrentSolver(0, 0, 0);
+
+        for (final double a : new double[] {//0x1p-53, 0x1p-43, 0x1p-33, 0.01, 0.25, 0.5,
+            //0x1p-53,
+            0x1p-26,
+            1.0/10, 1.0/9, 1.0/8, 1.0/7, 1.0/6, 1.0/5, 1.0/4, 1.0/3,
+            0.5,
+            1, 1.5, 4.777555110220352,
+            }) {
+            // Small a: avoid overflow of a^-s
+            // a^-s = 2^1023 (effectively infinity)
+            // s = -log(2^1023) / log(a)
+            // Large a: avoid underflow of a^-s
+            // a^-s = 2^-1075 (effectively infinity)
+            // s = -log(2^-1075) / log(a)
+            double maxSS = a < 1 ?
+                -Math.log(Double.MAX_VALUE) / Math.log(a) :
+                Math.min(Double.MAX_VALUE, Math.log(2) * 1075 / Math.log(a));
+            int n0 = 1;
+            while (n0 <= expectedN) {
+                final int nn = n0;
+                final double s = solver.findRoot(x -> {
+                    final double z = zeta(x, a, Double.NaN, context);
+                    // Avoid intermediate under/overflow
+                    double ti = Context.extPow(a, nn, (1 - x) * 0.5);
+                    if (ti > 0x1p511 || ti < 0x1p-511) {
+                        ti = ti * (ti / (x - 1));
+                    } else {
+                        ti = ti * ti / (x - 1);
+                    }
+                    return z > 1 ? ti - z * 0.5 : 2 * ti - z;
+                }, minS, maxSS);
+                final double z = zeta(s, a, Double.NaN, context);
+                // For comparison to the scaled tail term at the configured epsilon
+                final double stop = z * 0x1p106 * eps;
+                double[] t = getScaledTailTerms(m, a + n0, s);
+                if (canConverge(t, stop)) {
+                    System.out.printf("%s %s %d%n", s, a, n0);
+                    break;
+                }
+                n0++;
+                if (n0 > expectedN) {
+//                    if (expectedToFail) {
+//                        return;
+//                    }
+//                    Assertions.fail(String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s", expectedN, s, a,
+//                        z, Arrays.toString(t)));
+                }
+            }
+//            System.out.printf("%s %d%n", a, n0);
+            n = n0;
+        }
+        System.out.println(n);
+        Assertions.assertFalse(expectedToFail,
+            () -> String.format("Should fail M=%d, maxS=%s, N=%d", m, maxS, testN));
+
     }
 
     /**
@@ -4779,7 +4920,7 @@ class HurwitzZetaTest {
             // Test the final terms are equal
             Assertions.assertEquals(Math.abs(t[m - 2].hi()), Math.abs(t[m - 1].hi()));
             Assertions.assertEquals(et[m - 2], et[m - 1]);
-            // Test the terms reduce magnitude
+            // Test the terms reduce in magnitude
             for (int k = 1; k < m - 1; k++) {
                 Assertions.assertTrue(et[k - 1] > et[k] ||
                     Math.abs(t[k - 1].hi()) >= Math.abs(t[k].hi()), "Tail not convergent");
@@ -5352,8 +5493,10 @@ class HurwitzZetaTest {
     // if any a or s are the same then use the record closest to t.
     // remove spurious points not close to t when at the ends of the range.
     // Create trapezoids under the curve for all a-axis points.
-    // Compute the area. Sample trapezoids uniformly. Then sample within
-    // the chosen trapezoid uniformly.
+    // Compute the area. Check the size of each vs the total. How many points
+    // to sample in each a few times?
+    // Sample trapezoids uniformly. Then sample within
+    // the chosen trapezoid uniformly. Rejection should be <50%.
 
     // Generate data within the valid space: 50,000 points.
     // Get reference result.
@@ -5445,7 +5588,28 @@ class HurwitzZetaTest {
         try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.txt", b))) {
             points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
         }
+
+        // TODO - remove
+        // Dump data for line close to t
+        try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.debug.csv", b))) {
+            // Find the largest region to sample data
+            double delta = t * 1e-14;
+            long minBits = Double.doubleToLongBits(minA);
+            for (int i = 1; i < points.size(); i++) {
+                double[] p = points.get(i);
+                double z = p[2];
+                if (Math.abs(t - z) < delta) {
+                    continue;
+                }
+                // Number of double values in (1, x)
+                long bitsS = Double.doubleToRawLongBits(p[0]);
+                long bitsA = Double.doubleToRawLongBits(p[1]);
+                double size = (double) (bitsS - minBits) * (bitsA - minBits);
+                out.printf("%s, %s, %d, %d, %s%n", p[0], p[1], bitsS, bitsA, size);
+            }
+        }
     }
+
     /**
      * Create a line in the zeta domain for (s, a) where the result is sub-normal.
      * For any {@code (s',a') < (s,a)} the result will be sub-normal or normal.
