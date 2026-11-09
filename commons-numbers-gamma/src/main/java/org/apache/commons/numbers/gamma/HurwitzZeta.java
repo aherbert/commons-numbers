@@ -468,26 +468,53 @@ public final class HurwitzZeta {
             HurwitzZeta::stdPowxpn :
             HurwitzZeta::extPowxpn;
 
-        // If t0 is sub-normal the summation S is of sub-normal terms.
+        // Scaled power for the series sum to support sub-normal terms.
         // Avoid by using: scale * x^y = x^(y/2) * scale * x^(y/2).
-        final boolean scaledSum = t0 < Double.MIN_NORMAL;
-        // Scaled power for the series sum
-        final PowOperator powS;
+        // This includes early-exit traps for when s is too large and the value is zero or t0.
+        PowOperator powS = pow;
+
+        // Check if a^-s or (a+1)^-s are sub-normal and use scaling.
+        boolean scaledSum = t0 < Double.MIN_NORMAL;
+        final double originalT0 = t0;
         if (scaledSum) {
             // Re-compute t0 using scaling
             t0 = Math.pow(a, -s * 0.5);
             t0 = t0 * UPSCALE_1022 * t0;
             if (t0 == 0) {
+                // I = (a+n)^(1-s) / (s-1) = (a+n)^-s * (a+n) / (s-1)
                 // For any s > 1 the I term is not 2^1022 larger than a^-s.
-                // No need to compute 2^-1022 * powS.apply(a, N, 1 - s) / (s - 1).
+                // The max is ~ 2^53 with a~2^53 and s~1.
+                // No need to compute I
                 return 0;
             }
+            scaledSum = true;
             powS = (x, n, z) -> {
                 final double p = pow.apply(x, n, z * 0.5);
                 return p * UPSCALE_1022 * p;
             };
-        } else {
-            powS = pow;
+        }
+
+        // Compute t1 = (a+1)^-s. This may be scaled or unscaled.
+        double t1 = powS.apply(a, 1, -s);
+        if (t1 < Double.MIN_VALUE) {
+            // If t0 was sub-normal then return t0 as t1 cannot be added.
+            // If t0 was normal check if a sub-normal term can be added
+            // otherwise s is very large and the result is t0.
+            if (scaledSum || t0 > UPSCALE_106 * Double.MIN_NORMAL) {
+                return originalT0;
+            }
+            t0 *= UPSCALE_1022;
+            scaledSum = true;
+            powS = (x, n, z) -> {
+                final double p = pow.apply(x, n, z * 0.5);
+                return p * UPSCALE_1022 * p;
+            };
+            t1 = powS.apply(a, 1, -s);
+        }
+
+        // Exit early if t1 cannot be added to t0 (exponent s is too large)
+        if (t1 * UPSCALE_106 < t0) {
+            return originalT0;
         }
 
         double p = powS.apply(a, N, -s);

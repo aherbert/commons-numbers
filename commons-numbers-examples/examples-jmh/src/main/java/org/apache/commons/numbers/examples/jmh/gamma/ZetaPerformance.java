@@ -81,6 +81,7 @@ public class ZetaPerformance {
      * Precomputed factors for {@code k}-th element of the tail function {@code T}
      * in double-double (DD) precision.
      * Uses Bernoulli number {@code B_2k} divided by {@code 2k!}.
+     * TODO: Check this. It may be N=6.
      * Provides 25 terms which requires N=7 or higher.
      */
     private static final double[] F = {

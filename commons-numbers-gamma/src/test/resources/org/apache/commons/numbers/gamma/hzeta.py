@@ -19,6 +19,10 @@ from mpmath import mp, zeta, __version__ as version
 parser = argparse.ArgumentParser(description="Program to compute zeta(s, a).")
 parser.add_argument("data", type=str, nargs="+", help="s, a values")
 parser.add_argument("--dps", type=int, default=50, help="Digits of precision (default: %(default)s)")
+parser.add_argument("--max-a", type=float, default=1e100, help="Maximum a in [min, max] (default: %(default)s)")
+parser.add_argument("--min-a", type=float, default=0, help="Minimum a in [min, max] (default: %(default)s)")
+parser.add_argument("--negate-a", default=False, action=argparse.BooleanOptionalAction,
+    help="Negate the range a in [min, max] (default: %(default)s)")
 args = parser.parse_args()
 mp.dps = args.dps
 mp.pretty = True
@@ -37,6 +41,8 @@ for filename in args.data:
           continue
         i = line.index(',') # raise error if not found
         s, a = float(line[0:i]), float(line[i+1:])
+        if (a > args.max_a or a < args.min_a) != args.negate_a:
+          continue
         z = zeta(s, a)
         n += 1
         if float(z) < 2.2250738585072014e-308:

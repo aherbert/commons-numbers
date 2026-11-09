@@ -32,6 +32,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleBinaryOperator;
+import java.util.function.DoublePredicate;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
@@ -46,6 +47,8 @@ import org.apache.commons.numbers.core.DD;
 import org.apache.commons.numbers.core.DDMath;
 import org.apache.commons.numbers.fraction.BigFraction;
 import org.apache.commons.numbers.rootfinder.BrentSolver;
+import org.apache.commons.rng.sampling.distribution.AliasMethodDiscreteSampler;
+import org.apache.commons.rng.sampling.distribution.SharedStateDiscreteSampler;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Disabled;
@@ -173,6 +176,7 @@ class HurwitzZetaTest {
         "hzeta_s20_1024_ap1_subnormal1040.csv",
         "hzeta_s20_1024_ap1_subnormal1053.csv",
         "hzeta_s20_1024_ap0.1_subnormal1073.csv",
+        "hzeta_2p-1022.csv",
     };
 
     // For the configurable double implementation these constants are from the main class
@@ -1317,8 +1321,11 @@ class HurwitzZetaTest {
         // Standard double precision sum and power function works
         // with sub-normal term scaling
         T_ZETA_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN,
-            Context.of(8, 12).withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
-        ), "hzeta_2p-1022.csv", 5.5, 0.35),
+            Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
+        ), "hzeta_2p-1022.csv", 40, 0.95),
+        T_ZETA_DOMAIN_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN,
+            Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
+        ), "hzeta_domain_2p-1022.csv", 65, 0.95),
         // These are within 0.5 ULP as a double-double but rounding put single errors at just over 0.5 ulp.
         // The zeta values are far below the min double value.
         T_BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(),
@@ -1380,9 +1387,11 @@ class HurwitzZetaTest {
         // 48.3% of results are sub-normal
         ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1, 0.15),
         // 100% of results are sub-normal
-        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.1, 0.1),
+        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.6, 0.1),
         // Full domain range that evaluates at 2^-1022 (51.5% sub-normal)
         ZETA_2_POW_N1022(HurwitzZeta::value, "hzeta_2p-1022.csv", 1.35, 0.35),
+        // Random samples from the domain
+        ZETA_DOMAIN(HurwitzZeta::value, "hzeta_domain_2p-1022.csv", 2.0, 0.5),
         // Negative a
         ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -1398,51 +1407,53 @@ class HurwitzZetaTest {
         ZETA_ROOTS(HurwitzZeta::value, ROOT_TEST_RESOURCES, 0.7, 0.05);
 
 //        JDK Temurin 25.492-b09
-//        T_DOUBLE_ZETA_IS                         max        1.03517   RMS       0.259700   mean    -0.00351798  n  6000  (445ms)
-//        T_ZETA_2_POW_N1022_STD                   max        5.31274   RMS       0.338810   mean      0.0129054  n  1998  (262ms)
-//        T_BD_ZETA_IS                             max       0.552489   RMS      0.0389050   mean    0.000441930  n 15000  (1.31e+03ms)
-//        T_DD_ZETA_IS                             max       0.509511   RMS      0.0153543   mean   -1.97006e-07  n 15000  (267ms)
-//        T_DOUBLE_ZETA_S2_4_N_A1_15               max        1.43054   RMS       0.362453   mean    -0.00659925  n  3000  (82.9ms)
-//        T_DOUBLE_ZETA_S2_4_N_A40_99              max        1.40007   RMS       0.398324   mean    -0.00538358  n  3000  (106ms)
-//        T_BD_ZETA_S2_4_N_A1_15                   max       0.550507   RMS      0.0510756   mean    0.000694938  n  3000  (220ms)
-//        T_BD_ZETA_S2_4_N_A40_99                  max       0.566598   RMS      0.0524151   mean   -0.000150341  n  3000  (207ms)
-//        T_DD_ZETA_S2_4_N_A1_15                   max       0.504587   RMS      0.0159107   mean   -0.000503140  n  3000  (74.0ms)
-//        T_DD_ZETA_S2_4_N_A40_99                  max       0.507904   RMS      0.0260235   mean   -0.000670253  n  3000  (46.2ms)
-//        T_DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30      max    8.40748e+06   RMS    1.04226e+06   mean        15829.2  n  3000  (53.6ms)
-//        T_DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30    max        87729.7   RMS        7926.41   mean        93.2080  n  3000  (52.2ms)
-//        T_BD_ZETA_S3_5_N_A1_15_HALF_B30          max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (695ms)
-//        T_BD_ZETA_S3_5_N_A40_99_HALF_B30         max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (434ms)
-//        T_DD_ZETA_S3_5_N_A1_15_HALF_B30          max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (59.7ms)
-//        T_DD_ZETA_S3_5_N_A40_99_HALF_B30         max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (55.1ms)
-//        T_DOUBLE_ZETA_ROOT_S3_21_N_A0_100        max    1.30515e+16   RMS    6.71498e+14   mean    2.99768e+13  n   642  (44.5ms)
-//        T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100      max    9.57925e+13   RMS    6.03802e+12   mean   -2.72521e+11  n   642  (28.7ms)
-//        T_BD_ZETA_ROOTS                          max        0.00000   RMS        0.00000   mean        0.00000  n  2640  (508ms)
-//        T_DD_ZETA_ROOTS                          max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (78.2ms)
-//        ZETA_S1_4_A1_8                           max        1.42523   RMS       0.280230   mean     0.00955661  n  3000  (69.4ms)
-//        ZETA_S1_4_A8_32                          max        1.66254   RMS       0.349121   mean      0.0206591  n  3000  (27.8ms)
-//        ZETA_S1_4_A32_2147483648                 max        1.73462   RMS       0.467895   mean    -0.00635160  n  3000  (25.2ms)
-//        ZETA_S1_4_A0_1                           max        1.07284   RMS       0.313402   mean    -0.00320456  n  3000  (24.5ms)
-//        ZETA_S1_4_A0                             max       0.952404   RMS       0.108517   mean    -0.00255755  n  3000  (44.7ms)
-//        ZETA_S4_32_A1_8                          max        1.04547   RMS       0.327507   mean    -0.00516095  n  3000  (36.1ms)
-//        ZETA_S1_19_A2147483648_1E16              max        1.65134   RMS       0.470885   mean      0.0114105  n  3000  (34.4ms)
-//        ZETA_CONVERGENCE                         max        1.05975   RMS       0.181056   mean    -0.00404078  n 15000  (208ms)
-//        ZETA_S20_1024_AP9_SUB_NORMAL_1023        max        1.39149   RMS       0.243816   mean    0.000265916  n  3000  (42.1ms)
-//        ZETA_S20_1024_AP1_SUB_NORMAL_1040        max        1.26613   RMS       0.158744   mean     0.00395250  n  3000  (45.7ms)
-//        ZETA_S20_1024_AP1_SUB_NORMAL_1053        max        1.15446   RMS       0.108455   mean    0.000873996  n  3000  (35.2ms)
-//        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073      max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (44.8ms)
-//        ZETA_2_POW_N1022                         max        1.27858   RMS       0.295340   mean      0.0119315  n  1998  (42.0ms)
-//        ZETA_S2_4_N_A1_15                        max       0.518098   RMS      0.0402256   mean    -0.00218941  n  3000  (60.8ms)
-//        ZETA_S2_4_N_A40_99                       max       0.527688   RMS      0.0523742   mean    -0.00135787  n  3000  (77.9ms)
-//        ZETA_S2_4_N_A1_15_B30                    max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (24.1ms)
-//        ZETA_S2_4_N_A1_15_HALF_B30               max       0.511209   RMS      0.0503863   mean   -0.000326508  n  3000  (36.5ms)
-//        ZETA_S3_5_N_A1_15                        max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (58.6ms)
-//        ZETA_S3_5_N_A40_99                       max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (107ms)
-//        ZETA_S3_5_N_A1_15_B30                    max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (31.2ms)
-//        ZETA_S3_5_N_A1_15_HALF_B30               max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (65.5ms)
-//        ZETA_S3_5_N_A40_99_HALF_B30              max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (71.9ms)
-//        ZETA_S6_50_N_A400_999_HALF_B3            max       0.517315   RMS      0.0207425   mean   -0.000509997  n  3000  (50.9ms)
-//        ZETA_S7_51_N_A400_999_HALF_B3            max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (70.2ms)
-//        ZETA_ROOTS                               max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (74.8ms)
+//        T_DOUBLE_ZETA_IS                         max        1.05975   RMS       0.260675   mean    -0.00757331  n  6000  (392ms)
+//        T_ZETA_2_POW_N1022_STD                   max        36.0615   RMS       0.881910   mean      0.0364887  n  1998  (116ms)
+//        T_ZETA_DOMAIN_2_POW_N1022_STD            max        58.8128   RMS       0.883161   mean    -0.00500754  n 50000  (714ms)
+//        T_BD_ZETA_IS                             max       0.552489   RMS      0.0369241   mean    0.000364038  n 16836  (1.33e+03ms)
+//        T_DD_ZETA_IS                             max       0.509511   RMS      0.0149965   mean   -2.98738e-05  n 16836  (328ms)
+//        T_DOUBLE_ZETA_S2_4_N_A1_15               max        1.43054   RMS       0.363239   mean    -0.00657329  n  3000  (59.0ms)
+//        T_DOUBLE_ZETA_S2_4_N_A40_99              max        1.40007   RMS       0.398324   mean    -0.00538358  n  3000  (81.8ms)
+//        T_BD_ZETA_S2_4_N_A1_15                   max       0.550507   RMS      0.0510756   mean    0.000694938  n  3000  (171ms)
+//        T_BD_ZETA_S2_4_N_A40_99                  max       0.566598   RMS      0.0524151   mean   -0.000150341  n  3000  (285ms)
+//        T_DD_ZETA_S2_4_N_A1_15                   max       0.504587   RMS      0.0159107   mean   -0.000503140  n  3000  (49.7ms)
+//        T_DD_ZETA_S2_4_N_A40_99                  max       0.507904   RMS      0.0260235   mean   -0.000670253  n  3000  (69.6ms)
+//        T_DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30      max    8.40748e+06   RMS    1.04226e+06   mean        15829.3  n  3000  (61.8ms)
+//        T_DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30    max        87729.7   RMS        7926.41   mean        93.2080  n  3000  (55.0ms)
+//        T_BD_ZETA_S3_5_N_A1_15_HALF_B30          max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (528ms)
+//        T_BD_ZETA_S3_5_N_A40_99_HALF_B30         max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (428ms)
+//        T_DD_ZETA_S3_5_N_A1_15_HALF_B30          max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (57.2ms)
+//        T_DD_ZETA_S3_5_N_A40_99_HALF_B30         max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (55.4ms)
+//        T_DOUBLE_ZETA_ROOT_S3_21_N_A0_100        max    1.30515e+16   RMS    6.71498e+14   mean    2.99768e+13  n   642  (37.5ms)
+//        T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100      max    9.57925e+13   RMS    6.03802e+12   mean   -2.72521e+11  n   642  (18.2ms)
+//        T_BD_ZETA_ROOTS                          max        0.00000   RMS        0.00000   mean        0.00000  n  2640  (585ms)
+//        T_DD_ZETA_ROOTS                          max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (72.6ms)
+//        ZETA_S1_4_A1_8                           max        1.29125   RMS       0.287148   mean     0.00943939  n  3000  (89.3ms)
+//        ZETA_S1_4_A8_32                          max        1.74869   RMS       0.361734   mean     0.00183242  n  3000  (48.0ms)
+//        ZETA_S1_4_A32_2147483648                 max        1.77377   RMS       0.467224   mean     0.00262765  n  3000  (32.4ms)
+//        ZETA_S1_4_A0_1                           max        1.18864   RMS       0.316203   mean     0.00322568  n  3000  (31.7ms)
+//        ZETA_S1_4_A0                             max       0.952404   RMS       0.108517   mean    -0.00255755  n  3000  (43.5ms)
+//        ZETA_S4_32_A1_8                          max        1.03142   RMS       0.331588   mean     0.00607164  n  3000  (41.4ms)
+//        ZETA_S1_19_A2147483648_1E16              max        1.76616   RMS       0.473537   mean      0.0109014  n  3000  (39.5ms)
+//        ZETA_CONVERGENCE                         max        1.04351   RMS       0.169635   mean    -0.00212817  n 16836  (194ms)
+//        ZETA_S20_1024_AP9_SUB_NORMAL_1023        max        1.89978   RMS       0.250231   mean     0.00651038  n  3000  (37.7ms)
+//        ZETA_S20_1024_AP1_SUB_NORMAL_1040        max        1.48305   RMS       0.159991   mean     0.00413054  n  3000  (28.0ms)
+//        ZETA_S20_1024_AP1_SUB_NORMAL_1053        max       0.895140   RMS       0.103818   mean    7.07467e-05  n  3000  (26.7ms)
+//        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073      max       0.500519   RMS     0.00913819   mean    0.000166840  n  3000  (27.6ms)
+//        ZETA_2_POW_N1022                         max        1.27858   RMS       0.270062   mean      0.0120844  n  1998  (23.8ms)
+//        ZETA_DOMAIN                              max        1.96329   RMS       0.428365   mean     0.00334990  n 50000  (531ms)
+//        ZETA_S2_4_N_A1_15                        max       0.518098   RMS      0.0402256   mean    -0.00218941  n  3000  (54.3ms)
+//        ZETA_S2_4_N_A40_99                       max       0.527688   RMS      0.0523742   mean    -0.00135787  n  3000  (86.5ms)
+//        ZETA_S2_4_N_A1_15_B30                    max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (28.5ms)
+//        ZETA_S2_4_N_A1_15_HALF_B30               max       0.511209   RMS      0.0503863   mean   -0.000326508  n  3000  (36.4ms)
+//        ZETA_S3_5_N_A1_15                        max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (60.7ms)
+//        ZETA_S3_5_N_A40_99                       max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (94.8ms)
+//        ZETA_S3_5_N_A1_15_B30                    max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (22.5ms)
+//        ZETA_S3_5_N_A1_15_HALF_B30               max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (25.8ms)
+//        ZETA_S3_5_N_A40_99_HALF_B30              max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (50.3ms)
+//        ZETA_S6_50_N_A400_999_HALF_B3            max       0.517315   RMS      0.0207425   mean   -0.000509997  n  3000  (40.9ms)
+//        ZETA_S7_51_N_A400_999_HALF_B3            max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (56.9ms)
+//        ZETA_ROOTS                               max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (56.7ms)
 
         /** The function. */
         private final DoubleBinaryOperator fun;
@@ -1672,7 +1683,7 @@ class HurwitzZetaTest {
         // Threshold so (a+N) <= 2^53.
         if (a > LARGE_APN - n) {
             // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
-            // sub-normal as a is large.
+            // sub-normal as a is large. Compute using pow.
             return (Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5) * resultScale;
         }
 
@@ -1685,13 +1696,17 @@ class HurwitzZetaTest {
         // 4. Scaling for sub-normal tail terms (no cost)
         // 5. Adding series terms in magnitude order (no cost)
         //
-        // Options 1-4 must be enabled.
+        // Options 1-4 must be enabled by the context.
         //
         // Option 5 requires reversal of the summation loop and is not supported.
-        // Testing shows that summation of terms to a configured epsilon typically
-        // reaches max allowed N and the tail is required. Only a very strongly converging
-        // series can save computation by forward summation in extended precision and stopping
-        // when the sum is converged in double precision. This can then ignore I and T.
+        // Testing shows that forward summation loses precision unless performed in
+        // extended precision. The sum must stop not at 2^-53 of the current sum but well
+        // past it (e.g. another 10 bits) otherwise a slowly converging sum will have
+        // errors without computing I and T.
+        // TODO:
+        // Create a test to sample within the zeta domain for each power of 2 below 2^53
+        // and histogram the N required for convergence compared to the N used by the
+        // current implementation.
 
         PowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? Context::extPow : Context::stdPow;
         // Power function for the series (allows switching to a faster pow)
@@ -1738,10 +1753,13 @@ class HurwitzZetaTest {
             // Compute t1 = (a+1)^-s. This may be scaled or unscaled.
             t1 = powS.apply(a, 1, -s);
             if (t1 < Double.MIN_VALUE) {
-                // If t0 was sub-normal then return t0 as t1 cannot be added
-                if (scaledSum) {
+                // If t0 was sub-normal then return t0 as t1 cannot be added.
+                // If t0 was normal check if a sub-normal term can be added
+                // otherwise s is very large and the result is t0.
+                if (scaledSum || t0 > UPSCALE_106 * Double.MIN_NORMAL) {
                     return originalT0 * resultScale;
                 }
+                t0 *= UPSCALE_1022;
                 scaledSum = true;
                 // Redefine the series power function
                 PowOperator originalPowSeries = powSeries;
@@ -1755,7 +1773,7 @@ class HurwitzZetaTest {
             t1 = powSeries.apply(a, 1, -s);
         }
 
-        // Exit early if t1 cannot be added to t0
+        // Exit early if t1 cannot be added to t0 (exponent s is too large)
         if (t1 * UPSCALE_106 < t0) {
             return originalT0 * resultScale;
         }
@@ -3068,14 +3086,30 @@ class HurwitzZetaTest {
      *
      * <p>Note convergence requires:
      * <pre>
-     * M   N
+     * M   N    eps
+     * 8   10   2^-53
+     * 10  8
+     * 12  7
+     * 15  6
      * 53  6
-     * 13  7
+     * 15  8    2^-63
+     * 26  7
+     * 53  7
      * </pre>
-     * <p>Smaller M can prevent tail convergence before the last term and error
-     * can increase.
      *
-     * @see #testTailConvergence(double, double, boolean, int, int, int, int)
+     * <p>Smaller M can prevent tail convergence before the last term and error
+     * can increase due to a truncated tail. If N is too low for the size of the
+     * tail it can diverge and error is extreme. This can be handled by
+     * increasing N; or a emergency brake in the tail to stop when the terms
+     * diverge. The second option will avoid extreme error. It will not provide
+     * an accurate result for some part of the zeta domain.
+     *
+     * <p>The performance of the function is very dependent on N as it is
+     * proportional to the number of power functjon calls. The ideal parameters
+     * (N, M) should have low error across the entire domain, and ensure
+     * convergence of the tail within M.
+     *
+     * @see #testTailConvergence2(double, double, boolean, int, int, int, int)
      */
     @ParameterizedTest
     @CsvSource({
@@ -3125,21 +3159,24 @@ class HurwitzZetaTest {
         "7, 12, 26, -53, 775, false",
         "7, 12, 53, -53, 775, false",
 
-        // M convergence (negligible error change unless too high > -50, does increase required M)
-        "8, 10, 15, -49, 7, false",
-        "8, 10, 15, -50, 7, false",
-        "8, 10, 15, -51, 7, false",
-        "8, 10, 15, -52, 7, false",
-        "8, 10, 15, -53, 7, false",
-        "8, 10, 15, -54, 7, false",
-        "8, 10, 15, -55, 7, false",
-        "8, 10, 15, -56, 7, false",
+        // M convergence
+        // Negligible error change unless too high (> -53) where the
+        // tail may have remaining terms that can be added to the sum.
+        // If set much lower than 53-bits then N and M must be increased
+        // or tail divergence is observed.
+        "6, 10, 15, -53, 7, false",
+        // At N=6 the tail will diverge if M=53 on the current resources.
+        // M=30 has a ~9 ulp max error on cases where the tail is truncated
+        // before it diverged.
+        "6, 10, 30, -63, 7, false",
 
         // Sub-normal zeta result and/or terms.
         // Requires scaling of the tail series terms (option 256).
         "7, 12, 15, -53, 263, true", // 7 + 256
         // Using summation of sub-normal terms to prevent underflow.
         "7, 12, 15, -53, 775, true", // 7 + 256 + 512
+        // Using summation of sub-normal terms to prevent underflow.
+        "7, 12, 18, -63, 775, true", // 7 + 256 + 512
     })
     void testPrecisionDouble(int ln, int un, int maxM, int bt, int options, boolean subNormal)
         throws IOException {
@@ -4140,7 +4177,7 @@ class HurwitzZetaTest {
 
     /**
      * Print the formatted message to stdout.
-     * 
+     *
      * <p><strong>WARNING: Use only in testing code</strong>.
      * No message will be printed when the reporting flag is not configured.
      *
@@ -4756,10 +4793,17 @@ class HurwitzZetaTest {
 
     @Test
     void test() {
-        double s = 122.73158606620008, a = 188.72931726907467, expected = 1.01322755836996823274878209618e-279;
-        TestUtils.assertEquals(expected, zeta(s, a, Double.NaN, Context.DOUBLE), 200);
-        TestUtils.assertEquals(expected * UPSCALE_106, zeta(s, a, Double.NaN,
-            Context.DOUBLE.addOptions(Context.SCALED_RESULT)), 200);
+//        double s = 1121.1037200772555, a = 9.007199254740992E15, expected = 0;
+//        double s = 1121.1037200772555, a = Math.nextUp(1.0), expected = 0.999999999999751064967395493924;
+//        double s=1501.7021967661672, a=1.535965979848382, expected =1.2892791106364060286402216376328398051685475849534E-280;
+        double s=798.4098080701187, a=2.44681658669993, expected =5.4552937300588262652119314762621199432693920384755E-311;
+
+
+//        double s = Math.nextUp(1.0), a = 9.007199254740992E15, expected = 4503599627370459.5;
+//        TestUtils.assertEquals(expected, zeta(s, a, Double.NaN, Context.DOUBLE), 0);
+        TestUtils.assertEquals(expected, zeta(s, a, Double.NaN, Context.DOUBLE), 0);
+//        TestUtils.assertEquals(expected * UPSCALE_106, zeta(s, a, Double.NaN,
+//            Context.DOUBLE.addOptions(Context.SCALED_RESULT)), 200);
     }
 
     /**
@@ -5461,16 +5505,229 @@ class HurwitzZetaTest {
         }
     }
 
-    // TODO
-    // for data generation:
-    // if any a or s are the same then use the record closest to t.
-    // remove spurious points not close to t when at the ends of the range.
-    // Create trapezoids under the curve for all a-axis points.
-    // Compute the area. Check the size of each vs the total. How many points
-    // to sample in each a few times?
-    // Sample trapezoids uniformly. Then sample within
-    // the chosen trapezoid uniformly. Rejection should be <50%.
+    /**
+     * Create data within a line for the zeta domain for (s, a) == x.
+     * The line is loaded from a CSV file using records: s, a, z.
+     * The file should contain reference data from an independent zeta implementation.
+     * The expected value must be provided as a power of 2.
+     *
+     * <p>Any points not close to the line are discard. This can occur
+     * when 2^b approaches zero. Trapezoids are created under each successive
+     * pair of points (a_i, a_(i+1)). The size of the trapezoid is computed
+     * and then sampled are generated across the entire domain under the line
+     * by sampling a trapezoid proportional to its area, then sampling randomly
+     * with the trapezoid by rejection sampling.
+     *
+     * <p>Note that data can only be generated within the bounds defined
+     * by the input file. Points on the curve can be discarded using the parameters
+     * [minS, maxS] and [minA, maxA] to bracket the range. Ranges are ignored
+     * if the lower and upper bounds match.
+     *
+     * @see #testDataSubNormalDomain(int)
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "hzeta_2p-1022.csv, -1022, 1e-6, 50000, 0, 0, 0, 0",
+    })
+    @Disabled("Used to generate test data")
+    void testDataWithinDomain(String filename, int b, double eps, int samples,
+        double minS, double maxS, double minA, double maxA) throws IOException {
+        final double t = Math.scalb(1.0, b);
+        Assertions.assertTrue(t > 0);
+        Assertions.assertTrue(eps >= 0);
+        final DoublePredicate filterS = minS < maxS ? s -> s < minS || s > maxS : s -> false;
+        final DoublePredicate filterA = minA < maxA ? a -> a < minA || a > maxA : a -> false;
+        final ArrayList<double[]> points = new ArrayList<>();
+        final double delta = t * eps;
+        int removed = 0;
+        try (DataReader in = new DataReader(filename)) {
+            while (in.next()) {
+                try {
+                    final double z = in.getDouble(2);
+                    // Ignore z not close to the target
+                    if (Math.abs(z - t) > delta) {
+                        removed++;
+                        continue;
+                    }
+                    final double s = in.getDouble(0);
+                    final double a = in.getDouble(1);
+                    // Ignore outside the configured ranges
+                    if (filterS.test(s) || filterA.test(a)) {
+                        removed++;
+                        continue;
+                    }
+                    points.add(new double[] {s, a, z});
+                } catch (final NumberFormatException ex) {
+                    Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
+                }
+            }
+        } catch (final IOException ex) {
+            Assertions.fail("Failed to load data: " + filename, ex);
+        }
 
+        // If any a or s are the same then use the record closest to t
+        final Comparator<double[]> cs = Comparator.comparingDouble(k -> k[0]);
+        final Comparator<double[]> ca = Comparator.comparingDouble(k -> k[1]);
+        // Sort by s then a
+        points.sort(cs.thenComparing(ca));
+        int current = 0;
+        for (int i = 1; i < points.size(); i++) {
+            if (points.get(i)[1] == points.get(current)[1]) {
+                // Keep the result closest to t
+                if (Math.abs(points.get(i)[2] - t) < Math.abs(points.get(current)[2] - t)) {
+                    points.set(current, null);
+                    current = i;
+                } else {
+                    points.set(i, null);
+                }
+                removed++;
+            } else {
+                current = i;
+            }
+        }
+        points.removeIf(x -> x == null);
+
+        // Sort by a then s
+        points.sort(ca.thenComparing(cs));
+        current = 0;
+        for (int i = 1; i < points.size(); i++) {
+            if (points.get(i)[1] == points.get(current)[1]) {
+                // Keep the result closest to t
+                if (Math.abs(points.get(i)[2] - t) < Math.abs(points.get(current)[2] - t)) {
+                    points.set(current, null);
+                    current = i;
+                } else {
+                    points.set(i, null);
+                }
+                removed++;
+            } else {
+                current = i;
+            }
+        }
+        points.removeIf(x -> x == null);
+
+        // Data is now sorted by ascending a. It should be descending for s.
+        // If not then the curve is not always at 2^b and data generation will not
+        // represent the space under the curve a 2^b. We could continue
+        // and sample anyway. But we fail and require a better input curve.
+        double maxD = 0;
+        for (int i = 0; i < points.size(); i++) {
+            final double d = Math.abs(points.get(i)[2] - t);
+            maxD = Math.max(maxD, d);
+            if (i != 0) {
+                Assertions.assertTrue(points.get(i)[0] < points.get(i - 1)[0]);
+            }
+        }
+        Assertions.assertTrue(points.size() > 1, "No points to create samples under the curve");
+
+        // Create right trapezoids under the curve for all a-axis points.
+        // The two right angles are between the base along the a-axis and the heights in s.
+        // We have n-1 regions. First convert the double to raw bits
+        // and subtract from the minimum to sample. This is the number of double
+        // values between the min and the curve point.
+        // Then compute the the width and area.
+        final long[] w = new long[points.size()];
+        final long[] h = new long[points.size()];
+        final long bitsS = Double.doubleToRawLongBits(Math.nextUp(1.0));
+        for (int i = 0; i < points.size(); i++) {
+            double[] p = points.get(i);
+            // The height is sampled from the minimum to the highest point of the trapezoid
+            h[i] = Double.doubleToLongBits(p[0]) - bitsS;
+            // The width is sampled using the difference between parallel side
+            w[i] = Double.doubleToLongBits(p[1]);
+            Assertions.assertTrue(h[i] > 0);
+            Assertions.assertTrue(w[i] > 0);
+        }
+        final double[] probability = new double[w.length - 1];
+        double total = 0;
+        for (int i = 0; i < probability.length; i++) {
+            // Area = width * height at the middle
+            probability[i] = (double) (w[i + 1] - w[i]) * ((h[i + 1] + h[i]) >>> 1);
+            total += probability[i];
+        }
+        // Sample probability = area / total
+        for (int i = 0; i < probability.length; i++) {
+            probability[i] /= total;
+        }
+        // Sample trapezoids uniformly. Then sample within
+        // the chosen trapezoid uniformly. Rejection should be < 50%.
+        // For consistency we keep the same random source as other tests.
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final SharedStateDiscreteSampler sampler =
+            AliasMethodDiscreteSampler.of(rng::nextLong, probability);
+        int rejects = 0;
+        // This could write directly to the output file.
+        // For convenience the data are sorted by a to allow slicing the
+        // data to domains supported by reference implementations.
+        final ArrayList<double[]> data = new ArrayList<>(samples);
+        for (int n = 0; n < samples; n++) {
+            final int i = sampler.sample();
+            final long h1 = h[i];
+            final long h2 = h[i + 1];
+            final long wa = w[i + 1] - w[i];
+            // Rejection sampling is worse case 50% rejection if h2 ~ 0 and this is
+            // a right angled triangle. h2 < h1 due to the prior check in descending s.
+            //
+            // h1
+            // |      h2
+            // |      |
+            // |      |
+            // +--wa--+
+            long s;
+            long a;
+            for (;;) {
+                s = rng.nextLong(h1);
+                a = rng.nextLong(wa);
+                if (s > h2) {
+                    // Check if the height is below the line joining h1 to h1.
+                    // Interpolate
+                    final double x = (double) a / wa;
+                    final long y = (long) ((1 - x) * h1 + x * h2);
+                    if (s >= y) {
+                        rejects++;
+                        continue;
+                    }
+                }
+                break;
+            }
+            // Map the raw bits back to double values
+            data.add(new double[] {Double.longBitsToDouble(bitsS + s),
+                Double.longBitsToDouble(w[i] + a)});
+        }
+        data.sort(ca.thenComparing(cs));
+        // Write the data directly to file. Name the file using range filters and the target power.
+        String rangeS = "";
+        String rangeA = "";
+        if (minS < maxS) {
+            rangeS = String.format("_s%s_%s", shortFormat(minS), shortFormat(maxS));
+        }
+        if (minA < maxA) {
+            rangeA = String.format("_s%s_%s", shortFormat(minA), shortFormat(maxA));
+        }
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_domain_%s%s2p%d.txt", rangeS, rangeA, b))) {
+            // Report statistics on the data
+            out.printf("# Input: %s%n", filename);
+            out.printf("# Target: 2^%d%n", b);
+            if (minS < maxS) {
+                out.printf("# Filtered: s in [%s, %s]%n", minS, maxS);
+            }
+            if (minA < maxA) {
+                out.printf("# Filtered: a in [%s, %s]%n", minA, maxA);
+            }
+            out.printf("# Points: %d / %d%n", points.size(), points.size() + removed);
+            out.printf("# Max relative deviation = %.5g%n", maxD / t);
+            final double[] copy = probability.clone();
+            Arrays.sort(copy);
+            out.printf("# Region sample probability: Mean %s; Median %s%n",
+                1.0 / probability.length, copy[copy.length >>> 1]);
+            out.printf("# Samples: %d%n", samples);
+            out.printf("# Rejection rate: %.5g%n", (double) rejects / samples);
+            data.forEach(x -> out.printf("%s, %s%n", x[0], x[1]));
+        }
+    }
+
+    // TODO
     // Generate data within the valid space: 50,000 points.
     // Get reference result.
     // Get M and error for all points and plot a density of the data.
@@ -5512,13 +5769,17 @@ class HurwitzZetaTest {
 
         // a in (1, 2^53]
         // Expecting s in [20.2, 3.19e18]
-        // Interpolate a in uniform steps find s
+        // Interpolate a in uniform steps to find s
         final DoubleSupplier nextA = createRange(n, minA, maxA, false);
         for (int i = 0; i < n; i++) {
             double a = nextA.getAsDouble();
-            double s = solver.findRoot(x -> zeta.applyAsDouble(x, a) - t, minS, maxS);
-            double z = zeta.applyAsDouble(s, a);
-            points.add(new double[] {s, a, z});
+            try {
+                double s = solver.findRoot(x -> zeta.applyAsDouble(x, a) - t, minS, maxS);
+                double z = zeta.applyAsDouble(s, a);
+                points.add(new double[] {s, a, z});
+            } catch (IllegalArgumentException e) {
+                Assertions.fail(e.getMessage() + ": a=" + a);
+            }
         }
 
         // Map zeta(a, s) = t using s
@@ -5528,9 +5789,13 @@ class HurwitzZetaTest {
         nextS.getAsDouble();
         for (int i = 2; i < n; i++) {
             double s = nextS.getAsDouble();
-            double a = solver.findRoot(x -> zeta.applyAsDouble(s, x) - t, minA, maxA);
-            double z = zeta.applyAsDouble(s, a);
-            points.add(new double[] {s, a, z});
+            try {
+                double a = solver.findRoot(x -> zeta.applyAsDouble(s, x) - t, minA, maxA);
+                double z = zeta.applyAsDouble(s, a);
+                points.add(new double[] {s, a, z});
+            } catch (IllegalArgumentException e) {
+                Assertions.fail(e.getMessage() + ": s=" + s);
+            }
         }
 
         // Note:
@@ -5543,43 +5808,27 @@ class HurwitzZetaTest {
         final Comparator<double[]> cs = Comparator.comparingDouble(k -> k[0]);
         final Comparator<double[]> ca = Comparator.comparingDouble(k -> -k[1]);
         points.sort(ca.thenComparing(cs));
-        final double a = points.get(0)[1];
+        double[] previous = points.get(0);
         for (int i = 1; i < points.size(); i++) {
-            if (points.get(i)[1] == a) {
-                Assertions.assertTrue(points.get(i)[2] <= points.get(i - 1)[2]);
+            final double[] current = points.get(i);
+            if (current[1] == previous[1]) {
+                Assertions.assertTrue(current[2] <= previous[2]);
             }
+            previous = current;
         }
         // Sort by s then a (descending) and check the zeta result is ascending for decreasing a
         points.sort(cs.thenComparing(ca));
-        final double s = points.get(0)[0];
+        previous = points.get(0);
         for (int i = 1; i < points.size(); i++) {
-            if (points.get(i)[0] == s) {
-                Assertions.assertTrue(points.get(i)[2] >= points.get(i - 1)[2]);
+            final double[] current = points.get(i);
+            if (current[0] == previous[0]) {
+                Assertions.assertTrue(current[2] >= previous[2]);
             }
+            previous = current;
         }
 
         try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.txt", b))) {
             points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
-        }
-
-        // TODO - remove
-        // Dump data for line close to t
-        try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.debug.csv", b))) {
-            // Find the largest region to sample data
-            double delta = t * 1e-14;
-            long minBits = Double.doubleToLongBits(minA);
-            for (int i = 1; i < points.size(); i++) {
-                double[] p = points.get(i);
-                double z = p[2];
-                if (Math.abs(t - z) < delta) {
-                    continue;
-                }
-                // Number of double values in (1, x)
-                long bitsS = Double.doubleToRawLongBits(p[0]);
-                long bitsA = Double.doubleToRawLongBits(p[1]);
-                double size = (double) (bitsS - minBits) * (bitsA - minBits);
-                out.printf("%s, %s, %d, %d, %s%n", p[0], p[1], bitsS, bitsA, size);
-            }
         }
     }
 
