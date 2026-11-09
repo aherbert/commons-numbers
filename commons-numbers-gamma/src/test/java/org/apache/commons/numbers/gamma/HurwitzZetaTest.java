@@ -39,7 +39,6 @@ import java.util.stream.Stream;
 import org.apache.commons.math3.optim.univariate.BrentOptimizer;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
-import org.apache.commons.math3.optim.univariate.BrentOptimizer;
 import org.apache.commons.math3.optim.univariate.SearchInterval;
 import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction;
 import org.apache.commons.math3.optim.univariate.UnivariatePointValuePair;
@@ -213,7 +212,7 @@ class HurwitzZetaTest {
      * is configured then the test will still run but with a subset of the
      * cases. This ensures test code is asserted but without excessive runtimes.
      */
-    private static int reporting = -1;
+    private static int reporting = 0;
 
     /**
      * Numerators of the even Bernoulli numbers {@code B_{2k}}.
@@ -1063,6 +1062,16 @@ class HurwitzZetaTest {
          */
         static Context of(int n, int m) {
             return new Context(n, m, EPS_T, MC, DEFAULT_OPTIONS);
+        }
+
+        /**
+         * Return a context that uses the provided number of terms N.
+         *
+         * @param value the value
+         * @return the context
+         */
+        Context withN(int value) {
+            return new Context(value, m, epsT, mc, options);
         }
 
         /**
@@ -4237,10 +4246,8 @@ class HurwitzZetaTest {
     private static void debugRms(String name, double maxAbsUlp, double rmsUlp, double meanUlp,
         int size, long nanos) {
         if (doReporting()) {
-            // CHECKSTYLE: stop regexp
-            System.out.printf("%-38s   max %14.6g   RMS %14.6g   mean %14.6g  n %5d  (%.3gms)%n",
+            report("%-38s   max %14.6g   RMS %14.6g   mean %14.6g  n %5d  (%.3gms)%n",
                 name, maxAbsUlp, rmsUlp, meanUlp, size, nanos * 1e-6);
-            // CHECKSTYLE: resume regex
         }
     }
 
@@ -4257,16 +4264,32 @@ class HurwitzZetaTest {
         if (reporting < 0) {
             return false;
         }
-        // CHECKSTYLE: stop regexp
         if (reporting == 0) {
             reporting = 1;
-            System.out.printf("JDK %s %s%n",
+            report("JDK %s %s%n",
                 System.getProperty("java.vm.vendor"),
                 System.getProperty("java.vm.version")
             );
         }
-        // CHECKSTYLE: resume regex
         return true;
+    }
+
+    /**
+     * Print the formatted message to stdout.
+     * 
+     * <p><strong>WARNING: Use only in testing code</strong>.
+     * No message will be printed when the reporting flag is not configured.
+     *
+     * @param format Format string.
+     * @param args Arguments.
+     * @see java.io.PrintStream#printf(String, Object...)
+     */
+    private static void report(String format, Object... args) {
+        if (reporting >= 0) {
+            // CHECKSTYLE: stop regexp
+            System.out.printf(format, args);
+            // CHECKSTYLE: stop regexp
+        }
     }
 
     @Test
@@ -4706,6 +4729,8 @@ class HurwitzZetaTest {
         "0.1, 200, false, -250, 26, 108, 6",
         "0.1, 200, false, -250, 53, 108, 6",
     })
+    // TODO - Change testN to double
+    // when not reporting change epsilon to 1e-3
     void testTailConvergence2(double minA, double maxA, boolean uniform, int samples, int m,
             int b, int testN) {
         // Negative N for tests that should fail
@@ -4751,7 +4776,14 @@ class HurwitzZetaTest {
         // Initial bracket for s can be 1+2^-53 to a limit based on a^-s = 2^-1075-106
         // which is the support for the scaled tail power terms.
         // IIUC as a -> large then s -> 1 and (a+n) should reduce.
-        BrentOptimizer optimizer = new BrentOptimizer(1e-15, 1e-14);
+
+        // Caution:
+        // Lowering the convergence tolerance increases speed.
+        // The result is only required to find an integer so a few digits
+        // is sufficient. When the result is close to an integer then the
+        // tolerance can be raised to check to higher accuracy.
+        final double relativeTolerance = 1e-15;
+        final BrentOptimizer optimizer = new BrentOptimizer(relativeTolerance, 1e-15);
 
         // Note negative samples will enumerate and this RNG may not be used.
         final SplittableRandom rng = new SplittableRandom();
@@ -4784,13 +4816,19 @@ class HurwitzZetaTest {
                 // Find a+n required for tail convergence
                 double l = 1;
                 double u = context.getN();
-                while (Math.nextUp(l) < u) {
+                // Converge to higher accuracy than the solver is using
+                while ((u - l) > u * relativeTolerance * 0.5) {
                     double nn = (l + u) * 0.5;
                     double[] t = getScaledTailTerms(m, a + nn, s);
                     if (canConverge(t, stop)) {
                         u = nn;
                     } else {
                         l = nn;
+                    }
+                    // Safety check to avoid infinite loop when the relative tolerance
+                    // is too low Stop when 1 ulp apart.
+                    if (Math.nextUp(l) == u) {
+                        break;
                     }
                 }
                 // l is the largest n that could not converge for this s
@@ -4806,17 +4844,25 @@ class HurwitzZetaTest {
             // Large a: avoid underflow of a^-s
             // a^-s = 2^-1075 - 106 (effectively zero)
             // s = -log(2^-1181) / log(a)
-            double minS = Math.nextUp(1.0);
-            double maxS = a < 1 ?
+            final double minS = Math.nextUp(1.0);
+            final double maxS = a < 1 ?
                 Math.min(Double.MAX_VALUE, -Math.log(Double.MAX_VALUE) / Math.log(a)) :
                 Math.min(Double.MAX_VALUE, Math.log(2) * 1181 / Math.log(a));
-            UnivariatePointValuePair point = optimizer.optimize(GoalType.MAXIMIZE, new SearchInterval(minS, maxS, 2),
+            final UnivariatePointValuePair point = optimizer.optimize(GoalType.MAXIMIZE, new SearchInterval(minS, maxS, 2),
                  new UnivariateObjectiveFunction(fun::applyAsDouble), new MaxEval(10000));
-//            System.out.printf("%25s, %25s + %25s = %s%n", point.getPoint(), a, point.getValue(),
-//                zeta(point.getPoint(), a, Double.NaN, context));
-            n = Math.max(n, point.getValue());
+            final double s = point.getPoint();
+            final double n0 = point.getValue();
+            n = Math.max(n, n0);
+            // Check that use of n above this threshold matches the expected result
+            final double z = zeta(s, a, Double.NaN, context);
+            final int nn = (int) Math.ceil(n0);
+            final double zn = zeta(s, a, Double.NaN, context.withN(nn));
+            TestUtils.assertEquals(z, zn, 1,
+                String.format("zeta(%s, %s) (n=%d, m=%d) : %s != %s (n=%d)", s, a, context.getN(), m, z, zn, nn));
+//            report("%25s, %25s + %25s = %s%n", s, a, n0, z);
         }
-        System.out.printf("%d 2^-%-3d  %s%n", m, b, n);
+        report("%d 2^-%-3d  %s%n", m, b, n);
+        // TODO fix this
 //        Assertions.assertFalse(expectedToFail,
 //            () -> String.format("Should fail M=%d, A=[%s, %s), N=%d", m, minA, maxA, testN));
 
@@ -5101,12 +5147,7 @@ class HurwitzZetaTest {
                 final double r = HurwitzZetaTest.zeta(s, 1 - a, Double.NaN, Context.DOUBLE);
                 final int cancellation = Math.getExponent(z) - Math.getExponent(r);
                 maxCancellation = Math.max(maxCancellation, cancellation);
-                if (doReporting()) {
-                    // CHECKSTYLE: stop regexp
-                    System.out.printf("|%d|%s|%.4g|%.4g|%d|%n",
-                        s, a, z, r, cancellation);
-                    // CHECKSTYLE: resume regexp
-                }
+                report("|%d|%s|%.4g|%.4g|%d|%n", s, a, z, r, cancellation);
             }
         }
         Assertions.assertTrue(maxCancellation > 53);
