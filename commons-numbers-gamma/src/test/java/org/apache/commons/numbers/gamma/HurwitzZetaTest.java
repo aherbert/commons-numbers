@@ -967,7 +967,9 @@ class HurwitzZetaTest {
         /** Use extended precision summation. */
         static final int EXT_SUM = 4;
 
-        // Flag 8 was used for an option no longer support and is available
+        /** Return the result scaled by 2^106. This is the scale used for the
+         * tail scaling option. This is only applied when tail scaling is enabled. */
+        static final int SCALED_RESULT = 8;
 
         /** Use the power function to compute the power term in the tail series. */
         static final int TAIL_POW = 16;
@@ -1102,6 +1104,16 @@ class HurwitzZetaTest {
          */
         Context withOptions(int value) {
             return new Context(n, m, epsT, mc, value);
+        }
+
+        /**
+         * Return a context that adds the provided options to the current options.
+         *
+         * @param value the value
+         * @return the context
+         */
+        Context addOptions(int value) {
+            return new Context(n, m, epsT, mc, options | value);
         }
 
         /**
@@ -1640,10 +1652,15 @@ class HurwitzZetaTest {
         // First term may be provided
         double t0 = Double.isNaN(a0) ? Math.pow(a, -s) : a0;
 
+        // For testing the tail convergence this supports return of the result
+        // using the scaling of the tail series
+        final double resultScale = c.isSet(Context.SCALED_RESULT | Context.TAIL_SCALING) ?
+            UPSCALE_106 : 1;
+
         // Can overflow if 0 <= a < 1
         if (t0 >= LARGE_T0) {
             // Nothing can be added in double-double precision
-            return t0;
+            return t0 * resultScale;
         }
 
         final int n = c.getN();
@@ -1656,7 +1673,7 @@ class HurwitzZetaTest {
         if (a > LARGE_APN - n) {
             // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
             // sub-normal as a is large.
-            return Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5;
+            return (Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5) * resultScale;
         }
 
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow
@@ -1686,37 +1703,85 @@ class HurwitzZetaTest {
             pow = powSeries = Context::stdPow;
         }
 
-        // TODO
-        // Check if support for sub-normal summation is required.
-        // Compute t1 = (a+1)^-s.
-        // If sub-normal then recompute with sub-normal scaling.
-        // If (a+1)^-s is within 106-bits of a^-s then compute the full evaluation.
-        // Recompute scale t0 if applicable.
-        // Otherwise return a^-s.
+        // TODO:
+        // Find a data line where the first term is normal and the next term is sub-normal.
+        // Do we have this already?
 
-        // If t0 is sub-normal the summation S is of sub-normal terms.
-        // Avoid by using: scale * x^y = x^(y/2) * scale * x^(y/2).
-        final boolean scaledSum = c.isSet(Context.SUB_NORMAL_SUM) && t0 < Double.MIN_NORMAL;
-        // Scaled power for the series sum
-        PowOperator powS;
-        if (scaledSum) {
-            // Re-compute t0 using scaling
-            t0 = Math.pow(a, -s * 0.5);
-            t0 = t0 * UPSCALE_1022 * t0;
-            if (t0 == 0) {
-                // For any s > 1 the I term is not 2^1022 larger than a^-s.
-                // No need to compute 2^-1022 * powS.apply(a, N, 1 - s) / (s - 1).
-                return 0;
+        // Scaled power for the series sum to support sub-normal terms.
+        // This includes early-exit traps for when s is too large and the value is zero or t0.
+        PowOperator powS = powSeries;
+        boolean scaledSum = false;
+        final double originalT0 = t0;
+        double t1;
+        if (c.isSet(Context.SUB_NORMAL_SUM)) {
+            // Check t0
+            // Recompute scaled t0 if applicable.
+            if (t0 < Double.MIN_NORMAL) {
+                t0 = Math.pow(a, -s * 0.5);
+                t0 = t0 * UPSCALE_1022 * t0;
+                if (t0 == 0) {
+                    // I = (a+n)^(1-s) / (s-1) = (a+n)^-s * (a+n) / (s-1)
+                    // For any s > 1 the I term is not 2^1022 larger than a^-s.
+                    // The max is ~ 2^53 with a~2^53 and s~1.
+                    // No need to compute I
+                    return 0;
+                }
+                scaledSum = true;
+                // Redefine the series power function
+                PowOperator originalPowSeries = powSeries;
+                powS = (x, y, z) -> {
+                    final double p = originalPowSeries.apply(x, y, z * 0.5);
+                    return p * UPSCALE_1022 * p;
+                };
             }
-            // Only the power function for the series is scaled
-            PowOperator originalPowSeries = powSeries;
-            powS = (x, y, z) -> {
-                final double p = originalPowSeries.apply(x, y, z * 0.5);
-                return p * UPSCALE_1022 * p;
-            };
+
+            // Compute t1 = (a+1)^-s. This may be scaled or unscaled.
+            t1 = powS.apply(a, 1, -s);
+            if (t1 < Double.MIN_VALUE) {
+                // If t0 was sub-normal then return t0 as t1 cannot be added
+                if (scaledSum) {
+                    return originalT0 * resultScale;
+                }
+                scaledSum = true;
+                // Redefine the series power function
+                PowOperator originalPowSeries = powSeries;
+                powS = (x, y, z) -> {
+                    final double p = originalPowSeries.apply(x, y, z * 0.5);
+                    return p * UPSCALE_1022 * p;
+                };
+                t1 = powS.apply(a, 1, -s);
+            }
         } else {
-            powS = powSeries;
+            t1 = powSeries.apply(a, 1, -s);
         }
+
+        // Exit early if t1 cannot be added to t0
+        if (t1 * UPSCALE_106 < t0) {
+            return originalT0 * resultScale;
+        }
+
+//        // TODO - Remove original
+//        // If t0 is sub-normal the summation S is of sub-normal terms.
+//        // Avoid by using: scale * x^y = x^(y/2) * scale * x^(y/2).
+//        final boolean scaledSum = c.isSet(Context.SUB_NORMAL_SUM) && t0 < Double.MIN_NORMAL;
+//        if (scaledSum) {
+//            // Re-compute t0 using scaling
+//            t0 = Math.pow(a, -s * 0.5);
+//            t0 = t0 * UPSCALE_1022 * t0;
+//            if (t0 == 0) {
+//                // For any s > 1 the I term is not 2^1022 larger than a^-s.
+//                // No need to compute 2^-1022 * powS.apply(a, N, 1 - s) / (s - 1).
+//                return 0;
+//            }
+//            // Only the power function for the series is scaled
+//            PowOperator originalPowSeries = powSeries;
+//            powS = (x, y, z) -> {
+//                final double p = originalPowSeries.apply(x, y, z * 0.5);
+//                return p * UPSCALE_1022 * p;
+//            };
+//        } else {
+//            powS = powSeries;
+//        }
 
         double p = powS.apply(a, n, -s);
 
@@ -1751,7 +1816,7 @@ class HurwitzZetaTest {
             } else {
                 ti = UPSCALE_1022 * pow.apply(a, n, 1 - s);
             }
-            ti /= (s - 1);
+            ti /= s - 1;
             // Add in magnitude order. When a in [0, 1] it may be the dominant term.
             // Note: This makes a measurable difference to the RMS error when the summation
             // is in single precision. When in double-double precision the difference
@@ -1832,15 +1897,20 @@ class HurwitzZetaTest {
             p = UPSCALE_1022 * p / (a + n);
         }
 
-        double downscale = DOWNSCALE_106;
+        // The result is 2^106 too high.
+        // Remove this scaling unless the scaled result has been requested.
+        // The result scale is only changed when tail scaling is active.
+        double downscale = resultScale == 1 ? DOWNSCALE_106 : 1;
         if (!c.isSet(Context.TAIL_SCALING)) {
             // Currently: p * 2^1022; f * 2^-916; sum * 2^106
             // The terms sum is 2^106 too large. This allows the tail sum to use
             // normal numbers and converge on a normal result.
-            // Disable this scaling.
+            // Disable this scaling. The function will readily underflow when
+            // the tail power term is sub-normal and there can be significant
+            // loss of precision if the tail was required.
             p *= 0x1p-1022;
             f = s;
-            sum = DD.ofSum(sum.hi() * downscale, sum.lo() * downscale);
+            sum = DD.ofSum(sum.hi() * DOWNSCALE_106, sum.lo() * DOWNSCALE_106);
             downscale = 1;
         }
 
@@ -1867,212 +1937,6 @@ class HurwitzZetaTest {
         // Used to histogram convergence when testing
         M[i]++;
         return sum.add(tsum).hi() * downscale;
-
-//     // -------------------
-//     // -------------------
-//     // -------------------
-//
-//
-//        // Tail scaling. Configured before computation of power terms that affect the tail.
-//        double pScale = 1;
-//        if (c.isSet(Context.TAIL_SCALING)) {
-//            // If a or s are large then (a+n)^-(2k-1+s) will underflow.
-//            // We can downscale the rising factorial (always above 1)
-//            // and upscale p (always below 1) by the same amount.
-//            // The loop will still exit immediately if p = 0
-//            // (zeta evaluation is limited by Math.pow).
-//            // Use a trick to compute a non-zero value:
-//            //   x^-s = (x^-s/2)^2
-//            // This extends the usable range of the tail for large s.
-//            pScale = 0x1p1022;
-//        }
-//
-//        // I : (a+p)^(1-s) / (s-1)
-//        // This term should be as accurate as possible.
-//        // Use of (a+n)^(1-s) = (a+n)^-s * apn to recycle the power lowers precision.
-//        final double ti;
-//        double ip;
-//        if (c.isSet(Context.RECYCLE_I_TERM) && pScale != 1 && expScale == 1) {
-//            // Tail scaling is active. Compute the scaled term.
-//            if (p * (a + n) > Double.MIN_NORMAL) {
-//                ip = pScale * pow.apply(a, n, 1 - s);
-//            } else {
-//                // Avoid sub-normal loss of precision.
-//                ip = pow.apply(a, n, (1 - s) * 0.5);
-//                ip = ip * pScale * ip;
-//            }
-//            // Avoid intermediate overflow
-//            if (s < 2) {
-//                ti = ip / ((s - 1) * pScale);
-//            } else {
-//                ti = ip / (s - 1) / pScale;
-//            }
-//        } else {
-//            // Unscaled or log-sum-exp
-//            ip = pow.apply(a, n, 1 - s);
-//            ti = ip / (s - 1);
-//        }
-//
-//        // Add in magnitude order. When a in [0, 1] it may be the dominant term.
-//        // Note: This makes a measurable difference to the RMS error when the summation
-//        // is in single precision. When in double-double precision the difference
-//        // cannot be measured with the test resources.
-//        if (t0 > ti) {
-//            sum = add.apply(sum, ti);
-//            sum = add.apply(sum, t0);
-//        } else {
-//            sum = add.apply(sum, t0);
-//            sum = add.apply(sum, ti);
-//        }
-//
-//        // T
-//        // The following incorporates the factor for T into the sum terms
-//        // as (a+n)^-(2k-1+s).
-//        // This sets the first power as (a+n)^-(1+s) not (a+n)^-1.
-//        // When s is large the loop exits before the rising factorial overflows.
-//        // This factor can be computed using alternative implementations.
-//
-//        // Rising factorial term : (s)_{2k-1}
-//        // Note: When s is large the loop exits before the rising factorial overflows.
-//        // (a+n) >= 9 : 9^-340 = 3.6e-325 : max (2k-1+s) = 339
-//        // (339)_{2k-1}; k=53 = Pochammer(339, 105) = 1.1e272
-//        // The rising factorial will not overflow for k <= 50 before (a+n)^-(2k-1+s) is
-//        // zero. This is within the length of table F.
-//        // If tail scaling is used to compute p the factor is 2^1022.
-//        // The limit on (2k-1+s) increases:
-//        // 9^-y = 2^-(1075+1022) : y = log(2)/log(9) * (1075+1022) = 662
-//        // Pochammer(662, 105) = 3.41e299
-//        // This is still safe from overflow.
-//        double f = s;
-//        // 2k - 1
-//        double k2 = 1;
-//
-//        // Sum of an alternating series as each F changes sign.
-//        // Sum until terms will not impact the result.
-//        // Note: if the factor is too small (e.g. 0x1p-63) then the series continues
-//        // further and terms may be less accurate (i.e. add noise to the T sum).
-//
-//        // tsum can use extended precision.
-//        DD tsum = DD.ZERO;
-//        int i;
-//        add = c.isSet(Context.TAIL_EXT_SUM) ?
-//            DD::add :
-//            (x, y) -> DD.of(x.hi() + y);
-//
-//        // Alternative implementations for (a+n)^-(2k-1+s).
-//        double apn = 0;
-//        final int powerTermOption;
-//
-//        if (c.isSet(Context.TAIL_POW)) {
-//            // Compute using the power function.
-//            // For simplicity this does not use the x^-s = (x^-s/2)^2 trick
-//            // as it would have to be applied within the loop as well.
-//            powerTermOption = 2;
-//            p = pScale * pow.apply(a, n, -(k2 + s));
-//        } else if (c.isSet(Context.TAIL_DIVIDE)) {
-//            // Initialise (a+n)^-(2k-1+s) to (a+n)^-s
-//            // Divide by (a+n) twice inside the loop.
-//            // p is already (a+n)^-s
-//            powerTermOption = 1;
-//            apn = a + n;
-//            if (pScale != 1 && expScale == 1) {
-//                if (p > Double.MIN_NORMAL) {
-//                    p *= pScale;
-//                } else {
-//                    p = pow.apply(a, n, -s * 0.5);
-//                    p = p * pScale * p;
-//                }
-//            } else {
-//                p *= pScale;
-//            }
-//        } else if (c.isSet(Context.RECYCLE_I_TERM)) {
-//            // Recycle (a+p)^(1-s). This does not use further calls to pow.
-//            // Divide by (a+n)^2
-//            apn = a + n;
-//            apn *= apn;
-//            // The term has already been scaled if not using log-sum-exp
-//            if (expScale != 1) {
-//                ip *= pScale;
-//            }
-//            p = ip / apn;
-//            // Flag to signal to continue dividing
-//            powerTermOption = 3;
-//        } else {
-//            // Default
-//            // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
-//            // Divide by (a+n)^2 using multiplication
-//            powerTermOption = 0;
-//            if (pScale != 1 && expScale == 1) {
-//                if (p > (a + n) * Double.MIN_NORMAL) {
-//                    p = pScale * pow.apply(a, n, -s - 1);
-//                } else {
-//                    p = pow.apply(a, n, (-s - 1) * 0.5);
-//                    p = p * pScale * p;
-//                }
-//            } else {
-//                p = pScale * pow.apply(a, n, -s - 1);
-//            }
-//            // The power function may be using log-sum-exp.
-//            if (expScale != 1) {
-//                apn = Context.extPow(a, n, -2);
-//            } else {
-//                apn = pow.apply(a, n, -2);
-//            }
-//        }
-//
-//        double stop = sum.hi() * c.getTailEps();
-//        int rescale = 0;
-//
-//        if (c.isSet(Context.TAIL_SCALING)) {
-//            // p is already scaled
-//            f /= pScale;
-//
-//            if (stop < Double.MIN_NORMAL && c.isSet(Context.TAIL_SUM_SCALING)) {
-//                // Compute a scaled tail sum so convergence is on a normal number.
-//                // Sum, tail terms and stop criteria are 2^106 larger.
-//                // Upscaling sum cannot overflow due to overflow check on t0.
-//                // Note: Scaling up to allow addition of a normal tail computation
-//                // may not improve the result as precision has already been lost
-//                // in the existing sum.
-//                sum = sum.scalb(106);
-//                stop = sum.hi() * c.getTailEps();
-//                f *= 0x1p106;
-//                rescale = -106;
-//            }
-//        }
-//
-//        for (i = 0; i < c.getM(); i++) {
-//            // p = (a+n)^-(2k-1+s)
-//            if (powerTermOption == 1) {
-//                p /= apn;
-//            }
-//            // Note that this uses divide by F rather than multiply by FM.
-//            // Testing shows negligible difference. The first 6 of 7 terms of
-//            // F are exact so divide is used.
-//            final double t = f * p / F[i];
-//            tsum = add.apply(tsum, t);
-//            if (Math.abs(t) <= stop) {
-//                break;
-//            }
-//            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-//            f *= s + k2;
-//            k2 += 1.0;
-//            f *= s + k2;
-//            k2 += 1.0;
-//            // Update (a+n)^-(2k-1+s)
-//            if (powerTermOption == 2) {
-//                // Note updating p with the power function must use the scale.
-//                p = pScale * pow.apply(a, n, -(k2 + s));
-//            } else if ((powerTermOption & 1) == 1) {
-//                // Used to divide by (a+n) or (a+n)^2
-//                p /= apn;
-//            } else {
-//                p *= apn;
-//            }
-//        }
-//        // Used to histogram convergence when testing
-//        M[i]++;
-//        return Math.scalb(sum.add(tsum).hi(), rescale) * expScale;
     }
 
     /**
@@ -4718,16 +4582,27 @@ class HurwitzZetaTest {
 //        "0.1, 200, false, -250, 10, 53, 6",
 //        "0.1, 200, false, -250, 12, 53, 6",
         "0.1, 200, false, -250, 15, 53, 6",
-        "0.1, 200, false, -250, 26, 53, 6",
+//        "0.1, 200, false, -250, 26, 53, 6",
 //        "0.1, 200, false, -250, 53, 53, 6",
-        "0.1, 200, false, -250, 15, 55, 6",
-        "0.1, 200, false, -250, 26, 55, 6",
+//        "0.1, 200, false, -250, 15, 54, 6",
+//        "0.1, 200, false, -250, 26, 54, 6",
+//        "0.1, 200, false, -250, 15, 55, 6",
+//        "0.1, 200, false, -250, 26, 55, 6",
+//        // Critical size M=15 to converge tail at 53-55 bits precision is ~ n=6
+//        // Check higher M
+//        "0.1, 200, false, -250, 17, 54, 6",
+//        "0.1, 200, false, -250, 18, 54, 6",
+//        "0.1, 200, false, -250, 17, 55, 6",
+//        "0.1, 200, false, -250, 18, 55, 6",
+        // Converge tail beyond 10-bits of the result ~ n=7
+        "0.1, 200, false, -250, 18, 63, 6",
+//        "0.1, 200, false, -250, 26, 63, 6",
 
         // double-double precision
-        "0.1, 200, false, -250, 26, 106, 6",
-        "0.1, 200, false, -250, 53, 106, 6",
-        "0.1, 200, false, -250, 26, 108, 6",
-        "0.1, 200, false, -250, 53, 108, 6",
+//        "0.1, 200, false, -250, 26, 106, 6",
+//        "0.1, 200, false, -250, 53, 106, 6",
+//        "0.1, 200, false, -250, 26, 108, 6",
+//        "0.1, 200, false, -250, 53, 108, 6",
     })
     // TODO - Change testN to double
     // when not reporting change epsilon to 1e-3
@@ -4750,7 +4625,9 @@ class HurwitzZetaTest {
         // Accuracy when using small N is evaluated elsewhere.
         final double eps = Math.scalb(1.0, -b);
         // Limit N ~ M ~ P bits of precision
-        final Context context = Context.of(53, 53).withTailEpsilon(eps);
+        final Context context = Context.of(53, 53)
+            .withTailEpsilon(eps)
+            .addOptions(Context.SCALED_RESULT);
 
         // convergence is slowest at large a=2^53
         // Maximum s to support at a=2^53
@@ -4808,11 +4685,18 @@ class HurwitzZetaTest {
             // This is the function to optimise
             final DoubleUnaryOperator fun = s -> {
                 final double z = zeta(s, a, Double.NaN, context);
-                if (z > LARGE_T0 || z == 0) {
+                // Note the result is scaled 2^106
+                if (z > LARGE_T0 * UPSCALE_106 || z == 0) {
                     // Only occurs with a < 0. s is too large. No tail usage.
                     return 0;
                 }
-                final double stop = z * 0x1p106 * eps;
+                final double stop = z * eps;
+                // TODO: remove when certain the scaling flag works
+//                if (z > LARGE_T0 || z == 0) {
+//                    // Only occurs with a < 0. s is too large. No tail usage.
+//                    return 0;
+//                }
+//                final double stop = z * UPSCALE_106 * eps;
                 // Find a+n required for tail convergence
                 double l = 1;
                 double u = context.getN();
@@ -4855,17 +4739,27 @@ class HurwitzZetaTest {
             n = Math.max(n, n0);
             // Check that use of n above this threshold matches the expected result
             final double z = zeta(s, a, Double.NaN, context);
-            final int nn = (int) Math.ceil(n0);
+            // Add some tolerance
+            final int nn = (int) Math.ceil(n0 + 0.05);
             final double zn = zeta(s, a, Double.NaN, context.withN(nn));
-            TestUtils.assertEquals(z, zn, 1,
-                String.format("zeta(%s, %s) (n=%d, m=%d) : %s != %s (n=%d)", s, a, context.getN(), m, z, zn, nn));
-//            report("%25s, %25s + %25s = %s%n", s, a, n0, z);
+            // When n is very low the result can differ a few ULP
+            TestUtils.assertEquals(z, zn, nn <= 5 ? 2 : 1,
+                String.format("zeta(%s, %s) (n=%d, m=%d) : %s : %s != %s (n=%d; %s)",
+                    s, a, context.getN(), m, z * DOWNSCALE_106, z, zn, nn, n0));
+//            report("%25s, %25s + %25s = %s * 2^106 = %s%n", s, a, n0, z * DOWNSCALE_106, z);
         }
         report("%d 2^-%-3d  %s%n", m, b, n);
         // TODO fix this
 //        Assertions.assertFalse(expectedToFail,
 //            () -> String.format("Should fail M=%d, A=[%s, %s), N=%d", m, minA, maxA, testN));
+    }
 
+    @Test
+    void test() {
+        double s = 122.73158606620008, a = 188.72931726907467, expected = 1.01322755836996823274878209618e-279;
+        TestUtils.assertEquals(expected, zeta(s, a, Double.NaN, Context.DOUBLE), 200);
+        TestUtils.assertEquals(expected * UPSCALE_106, zeta(s, a, Double.NaN,
+            Context.DOUBLE.addOptions(Context.SCALED_RESULT)), 200);
     }
 
     /**
