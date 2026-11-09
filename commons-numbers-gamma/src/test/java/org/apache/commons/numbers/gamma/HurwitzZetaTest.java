@@ -137,6 +137,7 @@ class HurwitzZetaTest {
         "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s4_32_a1_8.csv",
         "hzeta_s1_19_a2147483648_10000000000000000.csv",
+        "hzeta_domain_2p-1022.csv",
     };
     /** Filenames of resources used for the extended precision zeta function using integer s
      * and a in the expected range for the negative a use case. This requires {@code 0 < a < 1}
@@ -3139,23 +3140,37 @@ class HurwitzZetaTest {
         //   scaling up the power term, and scaling down another factor by an equivalent amount
         //   to extend the number of terms before underflow, or convergence.
 
-        // Extended precision power function (improvement if used for all terms)
-        "7, 15, 15, -53, 0, false",
-        "7, 15, 15, -53, 1, false",
-        "7, 15, 15, -53, 3, false",
-        // Extended precision sum (small difference with/without the power function)
-        // RMS drops as N increases. Max error is variable.
-        "7, 15, 15, -53, 4, false", // 0 vs 0 + 4
-        "7, 15, 15, -53, 5, false", // 1 vs 1 + 4
-        "7, 15, 15, -53, 7, false", // 3 vs 3 + 4
-        // Using tail series scaling to prevent underflow
-        // (exactly the same - test data has no sub-normal results; scaling is exact)
-        // Test resources using sub-normal resources show differences (see below).
-        "7, 12, 15, -53, 263, false", // 7 vs 7 + 256
+        // TODO:
+        // Add option to record errors and M to a file and plot them.
+        // Require domain data for a in [0, 1].
+        // Require a sub-normal curve at 2^1070 for reference.
+        //
+        // Test the domain data for all a > 2^b with the asymptotic formula.
+        // Compare to the full evaluation then the threshold is OK.
 
-        // All options enabled. Extend the tail M.
-        // Max and RMS error is the same.
-        // Test resources may not target the part of the domain with highest error.
+        // The full domain data requires tail scaling: +256.
+        // Without this option the tail cannot be computed when
+        // the power terms -> 0.
+
+        // Extended precision power function (big improvement if used for all terms)
+        "7, 15, 15, -53, 256, false",
+        "7, 15, 15, -53, 257, false",
+        "7, 15, 15, -53, 259, false",
+        // With extended precision sum: +4
+        // Difference is not visible due to other errors.
+        "7, 15, 15, -53, 260, false",
+        "7, 15, 15, -53, 262, false",
+        "7, 15, 15, -53, 263, false",
+
+        // Sub-normal term: +512. Large drop in max error.
+        "7, 12, 15, -53, 771, false",
+        "7, 12, 26, -53, 771, false",
+        "7, 12, 53, -53, 771, false",
+        // With extended precision sum: +4
+        // The extended precision sum makes a small difference only when
+        // the major errors have been removed.
+        // RMS drops as N increases. Max error is variable.
+        "7, 12, 15, -53, 775, false",
         "7, 12, 26, -53, 775, false",
         "7, 12, 53, -53, 775, false",
 
@@ -3164,11 +3179,9 @@ class HurwitzZetaTest {
         // tail may have remaining terms that can be added to the sum.
         // If set much lower than 53-bits then N and M must be increased
         // or tail divergence is observed.
-        "6, 10, 15, -53, 7, false",
-        // At N=6 the tail will diverge if M=53 on the current resources.
-        // M=30 has a ~9 ulp max error on cases where the tail is truncated
-        // before it diverged.
-        "6, 10, 30, -63, 7, false",
+        "7, 10, 15, -50, 775, false", // Worse due to truncated tail
+        "8, 10, 15, -63, 775, false",
+        "7, 10, 26, -63, 775, false",
 
         // Sub-normal zeta result and/or terms.
         // Requires scaling of the tail series terms (option 256).
@@ -3182,8 +3195,12 @@ class HurwitzZetaTest {
         throws IOException {
         // Default to not use variable convergence on series sum S.
         // Early convergence can be very bad and requires adjusting the tolerance.
-        final double maxTolerance = 10;
-        final double rmsTolerance = 1;
+        // The zeta domain data is very challenging.
+        // Lower tolerance when using extended precision.
+        final int extFlags = Context.EXT_SUM | Context.EXT_POW_TERMS | Context.EXT_POW_SERIES;
+        final boolean extPrecision = (options & extFlags) == extFlags;
+        final double maxTolerance = extPrecision ? 10 : 100;
+        final double rmsTolerance = extPrecision ? 1 : 10;
         final double epsT = Math.scalb(1.0, bt);
         for (int n = ln; n <= un; n++) {
             // Reset
@@ -3212,8 +3229,7 @@ class HurwitzZetaTest {
                 @Override
                 public String[] getFilenames() {
                     // Use combined data from multiple resources in order to
-                    // find N and M values. Sub-normal data is for testing the
-                    // log-sum-exp implementation and tail scaling
+                    // find N and M values. Sub-normal data is for testing tail scaling
                     return subNormal ? SUB_NORMAL_RESOURCES : TEST_RESOURCES;
                 }
 
