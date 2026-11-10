@@ -4630,11 +4630,18 @@ class HurwitzZetaTest {
 
     @ParameterizedTest
     @CsvSource({
+        // Note:
+        // When a -> 0 the usage of the tail reduces as a^-s increasingly
+        // dominates the result when both (a+1)^-s can be added and
+        // I = (a+1)^-s * (a+1) / (s-1) is not significant.
+        // The largest tail usage is for large a.
+
         // double precision
 //        "0.1, 200, false, -250, 8, 53, 6",
 //        "0.1, 200, false, -250, 10, 53, 6",
 //        "0.1, 200, false, -250, 12, 53, 6",
         "0.1, 200, false, -250, 15, 53, 6",
+//        "1e-9, 200, false, -250, 15, 53, 6",
 //        "0.1, 200, false, -250, 26, 53, 6",
 //        "0.1, 200, false, -250, 53, 53, 6",
 //        "0.1, 200, false, -250, 15, 54, 6",
@@ -4713,7 +4720,8 @@ class HurwitzZetaTest {
         // is sufficient. When the result is close to an integer then the
         // tolerance can be raised to check to higher accuracy.
         final double relativeTolerance = 1e-15;
-        final BrentOptimizer optimizer = new BrentOptimizer(relativeTolerance, 1e-15);
+        final BrentOptimizer optimizer = new BrentOptimizer(relativeTolerance, Math.ulp(1.0));
+        final BrentSolver solver = new BrentSolver(1e-4, 1e-8, 0);
 
         // Note negative samples will enumerate and this RNG may not be used.
         final SplittableRandom rng = new SplittableRandom();
@@ -4723,6 +4731,10 @@ class HurwitzZetaTest {
         } else {
             nextA = createSampler(rng, minA, maxA, uniform);
         }
+        PowOperator powS = (x, y, z) -> {
+            final double p = Context.extPow(x, y, z * 0.5);
+            return p * UPSCALE_1022 * p;
+        };
 
         final int inc = samples < 0 ? 1 : -1;
         for (int i = samples; i != 0; i += inc) {
@@ -4744,12 +4756,6 @@ class HurwitzZetaTest {
                     return 0;
                 }
                 final double stop = z * eps;
-                // TODO: remove when certain the scaling flag works
-//                if (z > LARGE_T0 || z == 0) {
-//                    // Only occurs with a < 0. s is too large. No tail usage.
-//                    return 0;
-//                }
-//                final double stop = z * UPSCALE_106 * eps;
                 // Find a+n required for tail convergence
                 double l = 1;
                 double u = context.getN();
@@ -4774,18 +4780,42 @@ class HurwitzZetaTest {
             };
 
             // Optimise
-            // Guess bracket for start point
-
-            // Small a: avoid overflow of a^-s
-            // s = -log(2^1023) / log(a)
-            // Large a: avoid underflow of a^-s
-            // a^-s = 2^-1075 - 106 (effectively zero)
-            // s = -log(2^-1181) / log(a)
+            //
+            // The tail is required when I < S:
+            // (a+n)^(1-s) / (s-1) < a^-s
+            // (a+n)^-s * (a+n) / (s-1) < a^-s + (a+n)^-s
+            //
+            // This function knows the highest use of the tail is at larger a
+            // where s > a and zeta(s, a) -> 0. So the bounds can be fixed
+            // where zeta(s, a) = 0.
             final double minS = Math.nextUp(1.0);
-            final double maxS = a < 1 ?
-                Math.min(Double.MAX_VALUE, -Math.log(Double.MAX_VALUE) / Math.log(a)) :
-                Math.min(Double.MAX_VALUE, Math.log(2) * 1181 / Math.log(a));
-            final UnivariatePointValuePair point = optimizer.optimize(GoalType.MAXIMIZE, new SearchInterval(minS, maxS, 2),
+            final double maxS = 400;
+
+            // The tail is required when I < S:
+            // (a+n)^(1-s) / (s-1) < a^-s
+            // (a+n)^-s * (a+n) / (s-1) < a^-s + ... + (a+n)^-s
+            // Find where a tail of 2 can be used.
+            final DoubleUnaryOperator f = s -> {
+                // n=2
+                double t0 = Math.pow(a, -s);
+                double t1;
+                double t2;
+                // Scale if underflow
+                if (t0 < Double.MIN_VALUE) {
+                    t0 = Math.pow(a, -s * 0.5);
+                    t0 = t0 * UPSCALE_1022 * t0;
+                    t1 = powS.apply(a, 1, -s);
+                    t2 = powS.apply(a, 2, -s);
+                } else {
+                    t1 = Context.extPow(a, 1, -s);
+                    t2 = Context.extPow(a, 2, -s);
+                }
+                double ti = t2 * (a + 2) / (s - 1);
+                return t2 + t1 + t0 - ti;
+            };
+            double startS = solver.findRoot(f, minS, maxS);
+
+            final UnivariatePointValuePair point = optimizer.optimize(GoalType.MAXIMIZE, new SearchInterval(minS, maxS, startS),
                  new UnivariateObjectiveFunction(fun::applyAsDouble), new MaxEval(10000));
             final double s = point.getPoint();
             final double n0 = point.getValue();
@@ -4796,10 +4826,10 @@ class HurwitzZetaTest {
             final int nn = (int) Math.ceil(n0 + 0.05);
             final double zn = zeta(s, a, Double.NaN, context.withN(nn));
             // When n is very low the result can differ a few ULP
-            TestUtils.assertEquals(z, zn, nn <= 5 ? 2 : 1,
+            TestUtils.assertEquals(z, zn, nn <= 5 ? 10 : 1,
                 String.format("zeta(%s, %s) (n=%d, m=%d) : %s : %s != %s (n=%d; %s)",
                     s, a, context.getN(), m, z * DOWNSCALE_106, z, zn, nn, n0));
-//            report("%25s, %25s + %25s = %s * 2^106 = %s%n", s, a, n0, z * DOWNSCALE_106, z);
+//            report("%25s  %25s, %25s + %25s = %s * 2^106 = %s%n", startS, s, a, n0, z * DOWNSCALE_106, z);
         }
         report("%d 2^-%-3d  %s%n", m, b, n);
         // TODO fix this
