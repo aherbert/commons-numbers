@@ -754,6 +754,13 @@ class HurwitzZetaTest {
 
         /** Context for double precision zeta implementation. */
         static final Context DOUBLE = Context.of(9, 15);
+        /** Context for double precision zeta implementation for a reference
+         * implementation where tail divergence will never occur.
+         * The N and M are chosen using the test fixture
+         * {@code testTailConvergenceLimit}.
+         * Could use (50, 53) but this will be ~8% faster by using fewer
+         * power operations. */
+        static final Context DOUBLE_REF = Context.of(46, 39);
 
         /** Context for double precision using the DD zeta implementation.
          * Uses standard DD pow for all terms. Converge the tail beyond 53-bits. */
@@ -4129,138 +4136,302 @@ class HurwitzZetaTest {
         return t;
     }
 
+    // TODO - Remove this
+//    /**
+//     * For a given (s, a), test if convergence is possible in the tail series T within M
+//     * terms to double precision using the configured N for the series sum S.
+//     *
+//     * <p>This uses real {@code s > 1.0}. Note that the tail series eventually diverges as
+//     * the Pochammer term (s)_2k-1 (eventually) grows faster than the power and Bernoulli
+//     * factor terms reduce. If the tail does not converge within a set M then the result
+//     * is error limited by the omitted residual term R.
+//     *
+//     * <p>As N increases the magnitude of the tail terms reduce compared to the sum S + I.
+//     * At the limit when N is infinite then this is simply the infinite zeta series and no
+//     * other terms are used. In practice choosing too small an N can give very inaccurate
+//     * results if the tail diverges significantly.
+//     *
+//     * <p>The terms S using N and T using M evaluate the same number of power terms. So N
+//     * ~ M is reasonable. However the tail power term can be computed using iterative
+//     * updates and is faster. A performant implementation can use {@code N < M}.
+//     *
+//     * <p>This test computes the point (a+n) where an update to find the magnitude of the
+//     * M-th term of the tail series is 1. Any (a+n) after this threshold will have a
+//     * converging tail series in the first M terms. Any (a+n) below this will diverge. The
+//     * choice of N then requires that terms in the tail series are below the epsilon of
+//     * zeta(s, a) before it diverges. Use of the tail can then be stopped before
+//     * it diverges.
+//     *
+//     * <p>This test will assert that the tail for (a+N) is not used before it diverges.
+//     * It does not provide errors for an implementation using N and M and the optimal
+//     * choice for N may be higher. It does provide the minimum N that should be used
+//     * when testing errors of different implementations for a given table size M. Any lower
+//     * N can have very high error.
+//     *
+//     * <p>Note: The test M is used to find where the M-th and (M-1)-th terms are the same.
+//     * If a test passes at M=9, all sampled points converged within (M-1) tail terms. So
+//     * the test M is 1 higher than the required table size of pre-computed tail factors
+//     * for an implementation to avoid tail divergence. If the table size is larger
+//     * the implementation may use extra table values for higher (a+n) which can impact
+//     * precision.
+//     *
+//     * <p>Note as s increases the series is strongly convergent for small a, and will
+//     * underflow a double for large a. As (a+n) increases the magnitude of the tail
+//     * terms reduces compared to the other terms S+I. Thus choosing N requires a value
+//     * large enough to avoid excess use of the tail when a is close to 0, and moderate
+//     * use when a is small to medium.
+//     *
+//     * <p>This test is slow when enumerating all supported s. Tests that should pass are
+//     * configured to skip samples from a when not in reporting mode. Skipping is periodic
+//     * with a random start. When run many times this should visit all points since the
+//     * samples are deterministic. Tests that fail as N is too low run without skipping.
+//     */
+//    @ParameterizedTest
+//    @CsvSource({
+//        // double precision
+//        // Deterministic failure; then enumerate and random sampling when expected to pass.
+//        // Use of a smaller tail M requires higher N (this test finds the smallest N
+//        // to avoid using diverging tail terms within size M; if the tail is smaller
+//        // then N must be higher). Accuracy of the function before/beyond the
+//        // point (a+n) where the tail converges within M is not tested.
+//
+//        // Enumerate and random sampling when expected to pass.
+//        // Timings when no reporting is configured are < 1s per test.
+//
+//        // Note: N ~ M ~ P for P-bits of precision
+//        // M=53 requires N >= 6 to converge
+//        "1.0000000000000002, 1075, false, -250, 53, 53, -5",
+//        "1.0000000000000002, 1075, false, -250, 53, 53, 6",
+//        "1.0000000000000002, 1075, false, 250, 53, 53, 6",
+//
+//        // Smaller M will truncate the tail before it diverges.
+//        // May require higher N to converge within the M-th term.
+//        "1.0000000000000002, 1075, false, -250, 26, 53, -5",
+//        "1.0000000000000002, 1075, false, -250, 26, 53, 6",
+//        "1.0000000000000002, 1075, false, 250, 26, 53, 6",
+//
+//        "1.0000000000000002, 1075, false, -250, 13, 53, -6",
+//        "1.0000000000000002, 1075, false, -250, 13, 53, 7",
+//        "1.0000000000000002, 1075, false, 250, 13, 53, 7",
+//
+//        // double-double precision
+//        // Note the tail may underflow in this implementation where the DD
+//        // implementation would not. The limit is the same as the issue
+//        // occurs for s -> 1 and small a.
+//        // M=106 requires N >= 18 to converge
+//        "1.0000000000000002, 1075, false, -250, 106, 106, -11",
+//        "1.0000000000000002, 1075, false, -250, 106, 106, 12",
+//        "1.0000000000000002, 1075, false, 250, 106, 106, 12",
+//
+//        // Smaller M
+//        "1.0000000000000002, 1075, false, -250, 53, 106, -11",
+//        "1.0000000000000002, 1075, false, -250, 53, 106, 12",
+//        "1.0000000000000002, 1075, false, 250, 53, 106, 12",
+//        "1.0000000000000002, 1075, false, -250, 26, 106, -12",
+//        "1.0000000000000002, 1075, false, -250, 26, 106, 13",
+//        "1.0000000000000002, 1075, false, 250, 26, 106, 13",
+//    })
+//    void testTailConvergence(double minS, double maxS, boolean uniform, int samples, int m,
+//            int b, int testN) {
+//        // Negative N for tests that should fail
+//        final boolean expectedToFail = testN < 0;
+//        final boolean noSkips = doReporting() || expectedToFail;
+//        final int expectedN = Math.abs(testN);
+//
+//        Assertions.assertTrue(minS > 1);
+//        Assertions.assertTrue(maxS > minS);
+//        Assertions.assertTrue(m > 0);
+//        Assertions.assertNotEquals(0, samples);
+//        Assertions.assertTrue(b > 40);
+//        Assertions.assertTrue(expectedN > 3 && expectedN <= 53);
+//
+//        // Run 1 in 1024 cases
+//        final BooleanSupplier skip = createSkipSupplier(noSkips, 10);
+//
+//        // Evaluate zeta with larger N and support for sub-normal terms.
+//        // The purpose of this test is to find the smallest n where the tail can converge before m.
+//        // Accuracy when using small N is evaluated elsewhere.
+//        final double eps = Math.scalb(1.0, -b);
+//        // Limit N ~ M ~ P bits of precision
+//        final Context context = Context.of(53, 53).withTailEpsilon(eps);
+//
+//        // Note negative samples will enumerate and this RNG may not be used.
+//        final SplittableRandom rng = new SplittableRandom();
+//        DoubleSupplier nextS;
+//        if (samples < 0) {
+//            nextS = createRange(samples, minS, maxS, uniform);
+//        } else {
+//            nextS = createSampler(rng, minS, maxS, uniform);
+//        }
+//
+//        // Start below the expected N
+//        int n = Math.min(3, expectedN - 1);
+//
+//        final int inc = samples < 0 ? 1 : -1;
+//        for (int i = samples; i != 0; i += inc) {
+//            final double s = nextS.getAsDouble();
+//            // Tail term: (a+n)^-s * [ (s)_{2k-1} * (a+n)^-(2k-1) * B_2k/2k! ]
+//            // For k<=M find (a+n) where the Pochammer term can cause tail divergence as it
+//            // is a larger magnitude than the reduction. To compute magnitudes as the
+//            // reciprocal this inverts (a+n)^-(2k-1) as (a+n)^(2k-1) and B_2k/2k! as 2k!/B_2k.
+//            //
+//            // First term: Check if larger
+//            // (s)_1 >= (a+n)^(1+s) * 2k!/B_2k
+//            // a+n = exp(log(s * B_2k/2k!) / (1+s))
+//            //
+//            // Successive terms: Check if the pochammer increase is larger than the decrease
+//            // (s+2k-1)*(s+2k) >= (a+n)^2 * 2k!/B_2k / 2(k-1)!/B_2(k-1)
+//            // a+n = sqrt((s+2k-1)*(s+2k) * 2(k-1)!/B_2(k-1) * B_2k/2k!)
+//            //
+//            // This only computes the (a+n) for the last term k=M.
+//            // An assertion checks terms are descending magnitude up to this point.
+//
+//            // Cannot overflow for small m
+//            final double p = (s + 2 * m - 3) * (s + 2 * m - 2);
+//            final double apn = Math.sqrt(p * -RF[m - 2] * F[m - 1]);
+//            // This is the value of (a+n) that prevents tail divergence at t[k],
+//            // (i.e. where t[k] == t[k-1])
+//            double[] t = getScaledTailTerms(m, apn, s);
+//            // Sanity check for double precision
+//            if (m <= 53) {
+//                // Test the final terms are equal
+//                if (Math.abs(t[m - 2]) > Double.MIN_NORMAL) {
+//                    Assertions.assertEquals(Math.abs(t[m - 2]), Math.abs(t[m - 1]), Math.abs(t[m - 2]) * 1e-15);
+//                }
+//                // Test the terms reduce in magnitude
+//                for (int k = 1; k < m - 1; k++) {
+//                    Assertions.assertTrue(Math.abs(t[k - 1]) >= Math.abs(t[k]), "Tail not convergent");
+//                }
+//            }
+//
+//            // The aim is to choose large enough n so that t[k] is not required when
+//            // the tail will diverge after t[k].
+//            // We know (a+n) where the tail converges at M terms for s.
+//            // Any a > (a+n) has a converging tail.
+//            // Below this the tail will not converge. Ensure the M-th term of the tail
+//            // is not required. Compute zeta(s, a) for a -> 0 using a reference
+//            // in steps. For each a find the M-th tail term for a+n < ulp(zeta(s, a)).
+//
+//            // Too many representable values in [0, 0.5): use a spot check
+//            for (final double a : new double[] {0x1p-53, 0x1p-43, 0x1p-33, 0.01, 0.25}) {
+//                final double z = zeta(s, a, Double.NaN, context);
+//                if (z > 0x1p106) {
+//                    // Zeta cannot be zero with a < 1
+//                    continue;
+//                }
+//                // For comparison to the scaled tail term at the configured epsilon
+//                final double stop = z * 0x1p106 * eps;
+//                t = getScaledTailTerms(m, a + n, s);
+//                while (!canConverge(t, stop)) {
+//                    n++;
+//                    if (n > expectedN) {
+//                        if (expectedToFail) {
+//                            return;
+//                        }
+//                        Assertions.fail(
+//                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s",
+//                                expectedN, s, a, z, Arrays.toString(t)));
+//                    }
+//                    t = getScaledTailTerms(m, a + n, s);
+//                }
+//            }
+//            // Sample a in [0.5, a+n)
+//            // Tail may be zero.
+//            // First lower a until a tail exists.
+//            double ua = apn;
+//            while (t[0] == 0) {
+//                ua -= 0.5;
+//                t = getScaledTailTerms(1, ua, s);
+//            }
+//            DoubleSupplier nextA;
+//            if (samples < 0) {
+//                nextA = createRange(samples, 0.5, ua, uniform);
+//            } else {
+//                nextA = createSampler(rng, 0.5, ua, uniform);
+//            }
+//            for (int j = samples; j != 0; j += inc) {
+//                if (skip.getAsBoolean()) {
+//                    continue;
+//                }
+//                final double a = nextA.getAsDouble();
+//                final double z = zeta(s, a, Double.NaN, context);
+//                if (z > 0x1p106 || z == 0) {
+//                    // Scaled tail was non-zero but after scaling the zeta result is zero
+//                    continue;
+//                }
+//                // For comparison to the scaled tail term at the configured epsilon
+//                final double stop = z * 0x1p106 * eps;
+//                t = getScaledTailTerms(m, a + n, s);
+//                while (!canConverge(t, stop)) {
+//                    n++;
+//                    if (n > expectedN) {
+//                        if (expectedToFail) {
+//                            return;
+//                        }
+//                        Assertions.fail(
+//                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s",
+//                                expectedN, s, a, z, Arrays.toString(t)));
+//                    }
+//                    t = getScaledTailTerms(m, a + n, s);
+//                }
+//            }
+//        }
+//        Assertions.assertFalse(expectedToFail,
+//            () -> String.format("Should fail M=%d, maxS=%s, N=%d", m, maxS, testN));
+//    }
+
     /**
-     * For a given (s, a), test if convergence is possible in the tail series T within M
-     * terms to double precision using the configured N for the series sum S.
+     * Test to identify the maximum (a+n) value for s where the tail can diverge within M terms.
      *
-     * <p>This uses real {@code s > 1.0}. Note that the tail series eventually diverges as
-     * the Pochammer term (s)_2k-1 (eventually) grows faster than the power and Bernoulli
-     * factor terms reduce. If the tail does not converge within a set M then the result
-     * is error limited by the omitted residual term R.
+     * <P>When the tail is longer it can diverge (terms get larger). This occurs when s is
+     * close to or above the (a+n) value. Large divergence creates error in the zeta evaluation.
      *
-     * <p>As N increases the magnitude of the tail terms reduce compared to the sum S + I.
-     * At the limit when N is infinite then this is simply the infinite zeta series and no
-     * other terms are used. In practice choosing too small an N can give very inaccurate
-     * results if the tail diverges significantly.
+     * <p>This is a simple test that computes the value (a+n) where a tail of length M
+     * is equal in the last two terms for chosen s. Any (a+n) above this will not
+     * create large errors. The tail is asserted to converge up to the M-th term.
      *
-     * <p>The terms S using N and T using M evaluate the same number of power terms. So N
-     * ~ M is reasonable. However the tail power term can be computed using iterative
-     * updates and is faster. A performant implementation can use {@code N < M}.
+     * <p>This test shows the N required to avoid divergence for the entire zeta domain
+     * from a=0 when limited to a non-zero tail of size M. It does not evaluate whether
+     * the N is optimum for speed or accuracy. A lower N and/or M will be faster but
+     * divergence may occur in the tail for some part of the domain.
      *
-     * <p>This test computes the point (a+n) where an update to find the magnitude of the
-     * M-th term of the tail series is 1. Any (a+n) after this threshold will have a
-     * converging tail series in the first M terms. Any (a+n) below this will diverge. The
-     * choice of N then requires that terms in the tail series are below the epsilon of
-     * zeta(s, a) before it diverges. Use of the tail can then be stopped before
-     * it diverges.
-     *
-     * <p>This test will assert that the tail for (a+N) is not used before it diverges.
-     * It does not provide errors for an implementation using N and M and the optimal
-     * choice for N may be higher. It does provide the minimum N that should be used
-     * when testing errors of different implementations for a given table size M. Any lower
-     * N can have very high error.
-     *
-     * <p>Note: The test M is used to find where the M-th and (M-1)-th terms are the same.
-     * If a test passes at M=9, all sampled points converged within (M-1) tail terms. So
-     * the test M is 1 higher than the required table size of pre-computed tail factors
-     * for an implementation to avoid tail divergence. If the table size is larger
-     * the implementation may use extra table values for higher (a+n) which can impact
-     * precision.
-     *
-     * <p>Note as s increases the series is strongly convergent for small a, and will
-     * underflow a double for large a. As (a+n) increases the magnitude of the tail
-     * terms reduces compared to the other terms S+I. Thus choosing N requires a value
-     * large enough to avoid excess use of the tail when a is close to 0, and moderate
-     * use when a is small to medium.
-     *
-     * <p>This test is slow when enumerating all supported s. Tests that should pass are
-     * configured to skip samples from a when not in reporting mode. Skipping is periodic
-     * with a random start. When run many times this should visit all points since the
-     * samples are deterministic. Tests that fail as N is too low run without skipping.
+     * <p>Note that the highest (a+n) values are for large s when the zeta result is non-zero.
+     * This can use s in (1, MAX_VALUE] but a more realistic range before the tail terms
+     * are zero is 150 to 250. When the tail is zero the zeta result may not be zero, but
+     * tail divergence is not an issue So the test just evaluates the tail which is very fast.
      */
     @ParameterizedTest
     @CsvSource({
-        // double precision
-        // Deterministic failure; then enumerate and random sampling when expected to pass.
-        // Use of a smaller tail M requires higher N (this test finds the smallest N
-        // to avoid using diverging tail terms within size M; if the tail is smaller
-        // then N must be higher). Accuracy of the function before/beyond the
-        // point (a+n) where the tail converges within M is not tested.
+        // A longer tail requires a higher (a+n) to ensure it never diverges.
 
-        // Enumerate and random sampling when expected to pass.
-        // Timings when no reporting is configured are < 1s per test.
-
-        // Note: N ~ M ~ P for P-bits of precision
-        // M=53 requires N >= 6 to converge
-        "1.0000000000000002, 1075, false, -250, 53, 53, -5",
-        "1.0000000000000002, 1075, false, -250, 53, 53, 6",
-        "1.0000000000000002, 1075, false, 250, 53, 53, 6",
-
-        // Smaller M will truncate the tail before it diverges.
-        // May require higher N to converge within the M-th term.
-        "1.0000000000000002, 1075, false, -250, 26, 53, -5",
-        "1.0000000000000002, 1075, false, -250, 26, 53, 6",
-        "1.0000000000000002, 1075, false, 250, 26, 53, 6",
-
-        "1.0000000000000002, 1075, false, -250, 13, 53, -6",
-        "1.0000000000000002, 1075, false, -250, 13, 53, 7",
-        "1.0000000000000002, 1075, false, 250, 13, 53, 7",
-
-        // double-double precision
-        // Note the tail may underflow in this implementation where the DD
-        // implementation would not. The limit is the same as the issue
-        // occurs for s -> 1 and small a.
-        // M=106 requires N >= 18 to converge
-        "1.0000000000000002, 1075, false, -250, 106, 106, -11",
-        "1.0000000000000002, 1075, false, -250, 106, 106, 12",
-        "1.0000000000000002, 1075, false, 250, 106, 106, 12",
-
-        // Smaller M
-        "1.0000000000000002, 1075, false, -250, 53, 106, -11",
-        "1.0000000000000002, 1075, false, -250, 53, 106, 12",
-        "1.0000000000000002, 1075, false, 250, 53, 106, 12",
-        "1.0000000000000002, 1075, false, -250, 26, 106, -12",
-        "1.0000000000000002, 1075, false, -250, 26, 106, 13",
-        "1.0000000000000002, 1075, false, 250, 26, 106, 13",
+        // For the minimum S this is the N required so that a tail of length M does not diverge.
+        // It does not evaluate whether a short tail will be accurate.
+        "1.0000000000000002, 1.0000000000000002, false, 1, 53, 17",
+        "1.0000000000000002, 1.0000000000000002, false, 1, 26, 9",
+        "1.0000000000000002, 1.0000000000000002, false, 1, 13, 4",
+        // For the maximum S (found by search of large s where tail is supported)
+        // this is the N required so that a tail of length M does not diverge.
+        // Note that for M=53 the (a+n) < 49. Thus for the entire zeta domain from a=0
+        // a tail of length 53 will never diverge using N=49.
+        // Use of N=49, M=53 in the Context will not have large errors.
+        "150, 250, false, 250, 53, 50",
+        "150, 250, false, 250, 39, 46",
+        "150, 250, false, 250, 26, 43",
+        "150, 250, false, 250, 13, 40",
     })
-    void testTailConvergence(double minS, double maxS, boolean uniform, int samples, int m,
-            int b, int testN) {
-        // Negative N for tests that should fail
-        final boolean expectedToFail = testN < 0;
-        final boolean noSkips = doReporting() || expectedToFail;
-        final int expectedN = Math.abs(testN);
-
+    void testTailConvergenceLimit(double minS, double maxS, boolean uniform, int samples, int m,
+            int testN) {
         Assertions.assertTrue(minS > 1);
-        Assertions.assertTrue(maxS > minS);
+        Assertions.assertTrue(maxS >= minS);
         Assertions.assertTrue(m > 0);
         Assertions.assertNotEquals(0, samples);
-        Assertions.assertTrue(b > 40);
-        Assertions.assertTrue(expectedN > 3 && expectedN <= 53);
 
-        // Run 1 in 1024 cases
-        final BooleanSupplier skip = createSkipSupplier(noSkips, 10);
+        final DoubleSupplier nextS = minS == maxS ? () -> minS : createRange(samples, minS, maxS, uniform);
 
-        // Evaluate zeta with larger N and support for sub-normal terms.
-        // The purpose of this test is to find the smallest n where the tail can converge before m.
-        // Accuracy when using small N is evaluated elsewhere.
-        final double eps = Math.scalb(1.0, -b);
-        // Limit N ~ M ~ P bits of precision
-        final Context context = Context.of(53, 53).withTailEpsilon(eps);
+        double maxapn = 0;
+        double maxs = 1;
 
-        // Note negative samples will enumerate and this RNG may not be used.
-        final SplittableRandom rng = new SplittableRandom();
-        DoubleSupplier nextS;
-        if (samples < 0) {
-            nextS = createRange(samples, minS, maxS, uniform);
-        } else {
-            nextS = createSampler(rng, minS, maxS, uniform);
-        }
-
-        // Start below the expected N
-        int n = Math.min(3, expectedN - 1);
-
-        final int inc = samples < 0 ? 1 : -1;
-        for (int i = samples; i != 0; i += inc) {
+        for (int i = 0; i < samples; i++) {
             final double s = nextS.getAsDouble();
             // Tail term: (a+n)^-s * [ (s)_{2k-1} * (a+n)^-(2k-1) * B_2k/2k! ]
             // For k<=M find (a+n) where the Pochammer term can cause tail divergence as it
@@ -4296,80 +4467,24 @@ class HurwitzZetaTest {
                 }
             }
 
-            // The aim is to choose large enough n so that t[k] is not required when
-            // the tail will diverge after t[k].
-            // We know (a+n) where the tail converges at M terms for s.
-            // Any a > (a+n) has a converging tail.
-            // Below this the tail will not converge. Ensure the M-th term of the tail
-            // is not required. Compute zeta(s, a) for a -> 0 using a reference
-            // in steps. For each a find the M-th tail term for a+n < ulp(zeta(s, a)).
+            // We know (a+n) after which any zeta evaluation using a tail of M will not diverge.
+            // Check if the tail can be used. We could evaluate zeta here with sub-normal support.
+            // Instead we check if the tail terms can be used.
+            if (t[0] == 0) {
+                // With ascending s no more tail computation is possible
+                // (all tail terms for larger s and (a+n) will also be zero)
+                break;
+            }
 
-            // Too many representable values in [0, 0.5): use a spot check
-            for (final double a : new double[] {0x1p-53, 0x1p-43, 0x1p-33, 0.01, 0.25}) {
-                final double z = zeta(s, a, Double.NaN, context);
-                if (z > 0x1p106) {
-                    // Zeta cannot be zero with a < 1
-                    continue;
-                }
-                // For comparison to the scaled tail term at the configured epsilon
-                final double stop = z * 0x1p106 * eps;
-                t = getScaledTailTerms(m, a + n, s);
-                while (!canConverge(t, stop)) {
-                    n++;
-                    if (n > expectedN) {
-                        if (expectedToFail) {
-                            return;
-                        }
-                        Assertions.fail(
-                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s",
-                                expectedN, s, a, z, Arrays.toString(t)));
-                    }
-                    t = getScaledTailTerms(m, a + n, s);
-                }
-            }
-            // Sample a in [0.5, a+n)
-            // Tail may be zero.
-            // First lower a until a tail exists.
-            double ua = apn;
-            while (t[0] == 0) {
-                ua -= 0.5;
-                t = getScaledTailTerms(1, ua, s);
-            }
-            DoubleSupplier nextA;
-            if (samples < 0) {
-                nextA = createRange(samples, 0.5, ua, uniform);
-            } else {
-                nextA = createSampler(rng, 0.5, ua, uniform);
-            }
-            for (int j = samples; j != 0; j += inc) {
-                if (skip.getAsBoolean()) {
-                    continue;
-                }
-                final double a = nextA.getAsDouble();
-                final double z = zeta(s, a, Double.NaN, context);
-                if (z > 0x1p106 || z == 0) {
-                    // Scaled tail was non-zero but after scaling the zeta result is zero
-                    continue;
-                }
-                // For comparison to the scaled tail term at the configured epsilon
-                final double stop = z * 0x1p106 * eps;
-                t = getScaledTailTerms(m, a + n, s);
-                while (!canConverge(t, stop)) {
-                    n++;
-                    if (n > expectedN) {
-                        if (expectedToFail) {
-                            return;
-                        }
-                        Assertions.fail(
-                            String.format("Exceeded expected N=%d, s=%s, a=%s, z=%s: t=%s",
-                                expectedN, s, a, z, Arrays.toString(t)));
-                    }
-                    t = getScaledTailTerms(m, a + n, s);
-                }
+            Assertions.assertTrue(testN > apn,
+                () -> String.format("M=%d, s=%s, (a+n)=%s, N=%d", m, s, apn, testN));
+
+            if (maxapn < apn) {
+                maxapn = apn;
+                maxs = s;
             }
         }
-        Assertions.assertFalse(expectedToFail,
-            () -> String.format("Should fail M=%d, maxS=%s, N=%d", m, maxS, testN));
+        report("Tail convergence: M=%d, s=%s, a+n=%s%n", m, maxs, maxapn);
     }
 
     // TODO:
@@ -4459,7 +4574,7 @@ class HurwitzZetaTest {
         // Accuracy when using small N is evaluated elsewhere.
         final double eps = Math.scalb(1.0, -b);
         // Limit N ~ M ~ P bits of precision
-        final Context context = Context.of(53, 53)
+        final Context context = Context.DOUBLE_REF
             .withTailEpsilon(eps)
             .addOptions(Context.SCALED_RESULT);
 
@@ -4855,7 +4970,7 @@ class HurwitzZetaTest {
         // Evaluate zeta with large N and support for sub-normal terms.
         // The purpose of this test is to examine if the tail can converge with
         // a much smaller N. Accuracy when using small N is evaluated elsewhere.
-        final Context context = Context.of(53, 53);
+        final Context context = Context.DOUBLE_REF;
         final double z = zeta(s, a, Double.NaN, context);
         final double[] t = getScaledTailTerms(m, a + n, s);
         // Convergence epsilon is 2^-53, tail terms are scaled 2^106.
@@ -5566,7 +5681,7 @@ class HurwitzZetaTest {
     @Disabled("Used to generate test data")
     void testDataSubNormalDomain(int b) throws IOException {
         // Configure for high accuracy
-        final Context context = Context.of(20, 53);
+        final Context context = Context.DOUBLE_REF;
         final DoubleBinaryOperator zeta = (s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, context);
         final BrentSolver solver = new BrentSolver(0, 0, 0);
 
