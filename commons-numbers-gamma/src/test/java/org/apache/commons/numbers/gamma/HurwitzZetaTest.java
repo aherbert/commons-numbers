@@ -178,6 +178,7 @@ class HurwitzZetaTest {
         "hzeta_s20_1024_ap1_subnormal1053.csv",
         "hzeta_s20_1024_ap0.1_subnormal1073.csv",
         "hzeta_2p-1022.csv",
+        "hzeta_2p-1065.csv",
     };
 
     // For the configurable double implementation these constants are from the main class
@@ -1147,6 +1148,8 @@ class HurwitzZetaTest {
         // Most of the results are sub-normal. The final implementation should compute zero
         // and not create +/-infinity from overflow of the tail series Pochammer term.
         ZETA_CONVERGENCE(HurwitzZeta::value, EXT_INT_TEST_RESOURCES, 3, 0.25),
+        // TODO: These may not be very useful.
+        // We require a set of data where a^-s is normal and (a+1)^-s is sub-normal
         // Terms of the series (a+k)^-s are sub-normal
         // 1.33% of results are sub-normal
         ZETA_S20_1024_AP9_SUB_NORMAL_1023(HurwitzZeta::value, "hzeta_s20_1024_ap9_subnormal1023.csv", 1.95, 0.3),
@@ -1156,8 +1159,9 @@ class HurwitzZetaTest {
         ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1, 0.15),
         // 100% of results are sub-normal
         ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.6, 0.1),
-        // Full domain range that evaluates at 2^-1022 (51.5% sub-normal)
+        // Full domain range that evaluates at 2^-1022 and 2^-1065
         ZETA_2_POW_N1022(HurwitzZeta::value, "hzeta_2p-1022.csv", 1.35, 0.35),
+        ZETA_2_POW_N1065(HurwitzZeta::value, "hzeta_2p-1065.csv", 0.6, 0.1),
         // Random samples from the domain
         ZETA_DOMAIN(HurwitzZeta::value, "hzeta_domain_2p-1022.csv", 2.0, 0.5),
         // Negative a
@@ -1209,6 +1213,7 @@ class HurwitzZetaTest {
 //        ZETA_S20_1024_AP1_SUB_NORMAL_1053        max       0.895140   RMS       0.103818   mean    7.07467e-05  n  3000  (26.7ms)
 //        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073      max       0.500519   RMS     0.00913819   mean    0.000166840  n  3000  (27.6ms)
 //        ZETA_2_POW_N1022                         max        1.27858   RMS       0.270062   mean      0.0120844  n  1998  (23.8ms)
+//        ZETA_2_POW_N1065                         max        0.00000   RMS        0.00000   mean        0.00000  n  1998  (27.8ms)
 //        ZETA_DOMAIN                              max        1.96329   RMS       0.428365   mean     0.00334990  n 50000  (531ms)
 //        ZETA_S2_4_N_A1_15                        max       0.518098   RMS      0.0402256   mean    -0.00218941  n  3000  (54.3ms)
 //        ZETA_S2_4_N_A40_99                       max       0.527688   RMS      0.0523742   mean    -0.00135787  n  3000  (86.5ms)
@@ -6029,17 +6034,18 @@ class HurwitzZetaTest {
      * to file for independent evaluation.
      */
     @ParameterizedTest
-    @ValueSource(ints = {-1022})
+    @ValueSource(ints = {-1022, -1065})
     @Disabled("Used to generate test data")
     void testDataSubNormalDomain(int b) throws IOException {
-        // Configure for high accuracy
-        final Context context = Context.DOUBLE_REF;
+        // Configure for high accuracy with a scaled result.
+        // Scaling by 2^106 allows the solver to find roots with a normal number
+        final Context context = Context.DOUBLE_REF.addOptions(Context.SCALED_RESULT);
         final DoubleBinaryOperator zeta = (s, a) -> HurwitzZetaTest.zeta(s, a, Double.NaN, context);
         final BrentSolver solver = new BrentSolver(0, 0, 0);
 
         // Map zeta(a, s) = t using n points
         // This can be changed to a lower value, e.g. 2^-(1022 + 23)
-        final double t = Math.scalb(1.0, b);
+        final double t = Math.scalb(1.0, b + 106);
         final int n = 1000;
         final ArrayList<double[]> points = new ArrayList<>();
 
