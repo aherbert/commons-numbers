@@ -1,0 +1,127 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Denominators of the even Bernoulli numbers {@code B_{2n}}.
+# Taken from:
+# A002445 Denominators of Bernoulli numbers B_{2n}
+# https://oeis.org/A002445/b002445.txt
+# Truncated at n = 106
+0 1
+1 6
+2 30
+3 42
+4 30
+5 66
+6 2730
+7 6
+8 510
+9 798
+10 330
+11 138
+12 2730
+13 6
+14 870
+15 14322
+16 510
+17 6
+18 1919190
+19 6
+20 13530
+21 1806
+22 690
+23 282
+24 46410
+25 66
+26 1590
+27 798
+28 870
+29 354
+30 56786730
+31 6
+32 510
+33 64722
+34 30
+35 4686
+36 140100870
+37 6
+38 30
+39 3318
+40 230010
+41 498
+42 3404310
+43 6
+44 61410
+45 272118
+46 1410
+47 6
+48 4501770
+49 6
+50 33330
+51 4326
+52 1590
+53 642
+54 209191710
+55 1518
+56 1671270
+57 42
+58 1770
+59 6
+60 2328255930
+61 6
+62 30
+63 4357878
+64 510
+65 8646
+66 4206930
+67 6
+68 4110
+69 274386
+70 679470
+71 6
+72 2381714790
+73 6
+74 4470
+75 2162622
+76 30
+77 138
+78 1794590070
+79 6
+80 230010
+81 130074
+82 2490
+83 1002
+84 3404310
+85 66
+86 5190
+87 2478
+88 1043970
+89 1074
+90 7225713885390
+91 6
+92 1410
+93 42
+94 30
+95 12606
+96 868841610
+97 6
+98 171390
+99 244713882
+100 1366530
+101 6
+102 281190
+103 6
+104 27030
+105 9225988926
+106 3210

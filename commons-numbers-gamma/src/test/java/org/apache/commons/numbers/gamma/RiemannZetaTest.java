@@ -617,6 +617,19 @@ class RiemannZetaTest {
         // Check the function is monotonic in s (relevant when precomputed values are used).
         Assertions.assertTrue(z >= RiemannZeta.value(Math.nextUp((double) s)));
         Assertions.assertTrue(z <= RiemannZeta.value(Math.nextDown((double) s)));
+        // Cross verify with supported Bernoulli numbers the Boost method:
+        // v = (int) s
+        // 2^(v-1) * pow(pi, v) * abs(B2N[v/2]) / v!
+        if (s > 0 && s < 54 && BernoulliNumbers.isSupported(s)) {
+            final double p = Math.scalb(1.0, s - 1);
+            final double pi = Math.pow(Math.PI, s);
+            final double b2n = BernoulliNumbers.value(s).doubleValue();
+            final double f = Gamma.value(s + 1);
+            final double result = p * pi * Math.abs(b2n) / f;
+            // At large s this is accurate to 20 ULP
+            final int u = s >= 50 ? 20 : 10;
+            TestUtils.assertEquals(z, result, u, null, () -> "zeta " + s);
+        }
     }
 
     @ParameterizedTest
@@ -906,6 +919,14 @@ class RiemannZetaTest {
         // Values alternate sign so test [zl, zu] contains z
         Assertions.assertTrue(z <= zu ? z >= zl : z <= zl,
             () -> String.format("%s, %s, %s", zl, z, zu));
+        // Cross verify with supported Bernoulli numbers the Boost method:
+        // v = (int) s
+        // n = (1 - v) / 2
+        // -B2N[n] / (1 - v)
+        final int n = (1 - s) >> 1;
+        if (BernoulliNumbers.isSupported(2 * n)) {
+            Assertions.assertEquals(z, BernoulliNumbers.value(2 * n).divide(1 - s).negate().doubleValue());
+        }
     }
 
     /**
