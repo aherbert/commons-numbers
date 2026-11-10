@@ -1516,9 +1516,14 @@ class HurwitzZetaTest {
             if (t1 < Double.MIN_VALUE) {
                 // If t0 was sub-normal then return t0 as t1 cannot be added.
                 // If t0 was normal check if a sub-normal term can be added
-                // otherwise s is very large and the result is t0.
+                // otherwise s is very large and the result is t0 to 1 ULP.
                 if (scaledSum || t0 > UPSCALE_106 * Double.MIN_NORMAL) {
-                    return originalT0 * resultScale;
+                    // Ideally return originalT0. But we must support result scaling.
+                    if (resultScale == 1) {
+                        return originalT0;
+                    }
+                    // Here we must return the best we can compute for t0 * 2^106
+                    return scaledSum ? t0 * DOWNSCALE_916 : originalT0 * UPSCALE_106;
                 }
                 t0 *= UPSCALE_1022;
                 scaledSum = true;
@@ -1535,8 +1540,17 @@ class HurwitzZetaTest {
         }
 
         // Exit early if t1 cannot be added to t0 (exponent s is too large)
+        // Note: Early exit upscale can be 2^53. The result is t0 to 1 ULP. This
+        // can be rounded better using the addition of (a+2)^-s from a single
+        // exponential evaluation as per the zeta method: (a+2)^-s + t1 + t0
         if (t1 * UPSCALE_106 < t0) {
-            return originalT0 * resultScale;
+            // Ideally return originalT0. But we must support result scaling.
+            if (resultScale == 1) {
+                return originalT0;
+            }
+            // Here we must return the best we can compute for t0 * 2^106.
+            // This trap can be used if scaled t1 was above MIN_NORMAL and missed the last trap.
+            return scaledSum ? t0 * DOWNSCALE_916 : originalT0 * UPSCALE_106;
         }
 
 //        // TODO - Remove original
