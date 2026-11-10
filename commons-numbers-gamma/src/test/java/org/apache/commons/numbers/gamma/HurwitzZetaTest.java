@@ -4495,13 +4495,13 @@ class HurwitzZetaTest {
     // with variable n until it can converge. It will show the hotspot
     // in the domain for convergence issues.
 
-    // Write javadoc for this method
+    // Function goals
     //
-    // Search for maximum n required to converge the tail.
-    // Requires use of an optimiser for a function of (s, a) (two params)
-    // where it maximises real n.
+    // [1] We want the tail to always converge within M when used.
+    // Tested in testTailConvergence2.
     //
-    // [1] We want to never rely on requiring an accurate tail T.
+    // [2] We want to never rely on requiring an accurate tail T.
+    // TODO: Untested
     //
     // The first tail term should always be below the magnitude of zeta
     // for all s and a:
@@ -4509,21 +4509,60 @@ class HurwitzZetaTest {
     //
     // Possible approximation that could be solved:
     // (a+n)^-(1+s) * s / 12 < a^-s + (a+1)^(1-s)/(s-1)
+    // Convergence is slowest at large a=2^53
+    // Maximum s to support at a=2^53
+    // (2^53)^-s = 2^-1075 (effectively zero)
+    // s = 1075 / 53 = 20.28
+    // As s reduces the tail is more important.
+    // find n where (a+n)^(1-s)/(s-1) = 0.5 * zeta(s, a) and the tail converges.
     //
-    // [2] We want the tail to always converge within M when used.
-    //
+    // slowest convergence s = 1 + 2^-52
+    // fastest convergence s = 20.28
+    // critical convergence I ~ 0.5 * zeta(s, a)
+    // find n where (a+n)^(1-s)/(s-1) = 0.5 * zeta(s, a) and the tail converges in m terms at a=0
+
 
     // TODO: Write an equivalent for the DD version.
     // To maximise (a+n) requires fixed a.
     // But s is not univariate for an optimiser. We can enumerate s.
 
+    /**
+     * A test to search for the maximum n required to converge the tail.
+     *
+     * <ul>
+     * <li>When a is much larger than s then the tail cannot realistically diverge
+     * with a fixed length of M terms.
+     * <li>When s is much larger than a then the series converges within N terms
+     * and there is no tail.
+     * <li>Between these extremes is a point where the tail can diverge unless the
+     * series is evaluated to a higher number of terms N. This increases the current
+     * sum's magnitude in relation to the magnitude of the tail.
+     *
+     * <p>To search the entire parameter space (s, a) requires use of an optimiser for
+     * a function of (s, a) to maximise n. Here we sample random a within the domain
+     * and optimise a univariate function of s to n as a real value. This function
+     * is itself a binary search within a supported n=[1, maxN] for the smallest
+     * n where the tail can converge. 
+     *
+     * <p>The highest n occurs with larger s where {@code s > a}. This is limited by
+     * the tail becoming zero as zeta approaches zero. So the bound on a only
+     * requires a small range.
+     * 
+     * <p>Note this test provides a minimum bound on N for a zeta evaluation using M
+     * tail terms. It does not assess the accuracy.
+     */
     @ParameterizedTest
     @CsvSource({
         // Note:
-        // When a -> 0 the usage of the tail reduces as a^-s increasingly
-        // dominates the result when both (a+1)^-s can be added and
+        // Worst case for a=0 is to use N where convergence is possible for a=1
+        // and use (N+1). However when a -> 0 the usage of the tail reduces as
+        // a^-s increasingly dominates the result when both (a+1)^-s can be added and
         // I = (a+1)^-s * (a+1) / (s-1) is not significant.
         // The largest tail usage is for large a.
+        // No requirement to test down to a=0.
+
+        // TODO - When this is asserting reduce the range for a in a test case
+        // to show that (a+n) is lower
 
         // double precision
 //        "0.1, 200, false, -250, 8, 53, 6",
@@ -4559,7 +4598,6 @@ class HurwitzZetaTest {
             int b, int testN) {
         // Negative N for tests that should fail
         final boolean expectedToFail = testN < 0;
-        final boolean noSkips = doReporting() || expectedToFail;
         final int expectedN = Math.abs(testN);
 
         Assertions.assertTrue(minA > 0x1p-53);
@@ -4573,36 +4611,14 @@ class HurwitzZetaTest {
         // The purpose of this test is to find the smallest n where the tail can converge before m.
         // Accuracy when using small N is evaluated elsewhere.
         final double eps = Math.scalb(1.0, -b);
-        // Limit N ~ M ~ P bits of precision
         final Context context = Context.DOUBLE_REF
             .withTailEpsilon(eps)
             .addOptions(Context.SCALED_RESULT);
 
-        // convergence is slowest at large a=2^53
-        // Maximum s to support at a=2^53
-        // (2^53)^-s = 2^-1075 (effectively zero)
-        // s = 1075 / 53 = 20.28
-        // as s reduces the tail is more important.
-        // find n where (a+n)^(1-s)/(s-1) = 0.5 * zeta(s, a) and the tail converges.
-
-        // slowest convergence s = 1 + 2^-52
-        // fastest convergence s = 20.28
-        // critical convergence I ~ 0.5 * zeta(s, a)
-        // find n where (a+n)^(1-s)/(s-1) = 0.5 * zeta(s, a) and the tail converges in m terms at a=0
-
-        // for a ~ 0 find the min n for tail convergence within m tail terms
-        //
-        // cannot occur for large s.
-
         double n = 0;
 
-        // TODO:
         // For selected a in the supported range: [2^-1023, 2^53]
         // Search for s where (a+n) to converge the tail is the maximum.
-        // Initial bracket for s can be 1+2^-53 to a limit based on a^-s = 2^-1075-106
-        // which is the support for the scaled tail power terms.
-        // IIUC as a -> large then s -> 1 and (a+n) should reduce.
-
         // Caution:
         // Lowering the convergence tolerance increases speed.
         // The result is only required to find an integer so a few digits
@@ -4610,7 +4626,9 @@ class HurwitzZetaTest {
         // tolerance can be raised to check to higher accuracy.
         final double relativeTolerance = 1e-15;
         final BrentOptimizer optimizer = new BrentOptimizer(relativeTolerance, Math.ulp(1.0));
-        final BrentSolver solver = new BrentSolver(1e-4, 1e-8, 0);
+        // This is used to find an initial guess for s where the tail is used.
+        // High accuracy is not required.
+        final BrentSolver solver = new BrentSolver(relativeTolerance, Math.ulp(1.0), 0);
 
         // Note negative samples will enumerate and this RNG may not be used.
         final SplittableRandom rng = new SplittableRandom();
@@ -4620,7 +4638,7 @@ class HurwitzZetaTest {
         } else {
             nextA = createSampler(rng, minA, maxA, uniform);
         }
-        PowOperator powS = (x, y, z) -> {
+        PowOperator powScaled = (x, y, z) -> {
             final double p = Context.extPow(x, y, z * 0.5);
             return p * UPSCALE_1022 * p;
         };
@@ -4636,7 +4654,7 @@ class HurwitzZetaTest {
             // an issue.
 
             // Find the largest n for (a+n) used in tail convergence at point a.
-            // This is the function to optimise
+            // This is the function to optimise.
             final DoubleUnaryOperator fun = s -> {
                 final double z = zeta(s, a, Double.NaN, context);
                 // Note the result is scaled 2^106
@@ -4644,65 +4662,249 @@ class HurwitzZetaTest {
                     // Only occurs with a < 0. s is too large. No tail usage.
                     return 0;
                 }
+                // Find a+n required for tail convergence.
+                // Search n in [1, N] where N is used by the zeta reference.
                 final double stop = z * eps;
-                // Find a+n required for tail convergence
                 double l = 1;
                 double u = context.getN();
                 // Converge to higher accuracy than the solver is using
-                while ((u - l) > u * relativeTolerance * 0.5) {
-                    double nn = (l + u) * 0.5;
-                    double[] t = getScaledTailTerms(m, a + nn, s);
+                final double tol = relativeTolerance * 0.5;
+                while ((u - l) > u * tol) {
+                    double middle = (l + u) * 0.5;
+                    double[] t = getScaledTailTerms(m, a + middle, s);
                     if (canConverge(t, stop)) {
-                        u = nn;
+                        u = middle;
                     } else {
-                        l = nn;
+                        l = middle;
                     }
                     // Safety check to avoid infinite loop when the relative tolerance
-                    // is too low Stop when 1 ulp apart.
+                    // is too low. Stop when 1 ulp apart.
                     if (Math.nextUp(l) == u) {
                         break;
                     }
                 }
-                // l is the largest n that could not converge for this s
                 // u is the smallest n that could converge for this s
                 return u;
             };
 
             // Optimise
             //
-            // The tail is required when I < S:
-            // (a+n)^(1-s) / (s-1) < a^-s
-            // (a+n)^-s * (a+n) / (s-1) < a^-s + (a+n)^-s
+            // TODO:
+            // Find where a tail can be used with n=0.
+            // This is equal to the asymptotic approximation not being accurate.
             //
-            // This function knows the highest use of the tail is at larger a
-            // where s > a and zeta(s, a) -> 0. So the bounds can be fixed
-            // where zeta(s, a) = 0.
-            final double minS = Math.nextUp(1.0);
-            final double maxS = 400;
+            //
+            // Find where a tail can be used with n=1.
+            // We want the tail to overlap with the sum (S+I).
+            // Compute the bits of overlap.
+            //
+            // Evaluate the parts of the zeta function with n=1 and a tail of length 1:
+            // S = a^-s + (a+1)^-s
+            // I = a^(1-s) / (s-1)
+            // T_0 = s * (a+1)^-s / (a + 1) * F[0]
+            // This is a mini version of the zeta function with all options enabled.
+            // We cannot reuse that as we require comparing the tail to S+I.
+            // We requires the point where T_0 > (S+I)*eps.
+            // Find root at: (S+I)*eps - T_0 * small
+            // Point at which the first tail term can be added to (S+T).
+            // The factor small ensures the first tail term is significant.
+            // TODO: Overload the test implementation to accept an array which
+            // stores S+I and the first tail term?
 
+            // TODO:
+            // This is rubbish.
+            // We wish to find an N where the tail is used.
+            // To do this we can find an s where the series converges in N terms
+            // where n > 1. Then the tail will be used if n=1.
+            // Find where series n=1 is not converged and n=2 is converged,
+            // e.g. the extra term is not required.
+            //
+            // I represents the continuous integral of all remaining terms.
+            // We wish I to be very small so the series converges in n terms
+            // where n is > 1. Here the tail will be required.
+            // The tail is 
+            //
+            //
             // The tail is required when I < S:
             // (a+n)^(1-s) / (s-1) < a^-s
             // (a+n)^-s * (a+n) / (s-1) < a^-s + ... + (a+n)^-s
             // Find where a tail of 2 can be used.
+            //
+            // TODO:
+            // However the first tail term is:
+            // s * (a+n)^-s / (a+n) * F[0]
+            // This may be too small to add to S if we optimise for S ~ I.
+            // Why does it not work sometimes? Perhaps the initial bracket for
+            // s is too high when a is small. Should be limited where
+            // 2^106 * a^-s is not zero.
             final DoubleUnaryOperator f = s -> {
+                // TODO - Doesn't quite work.
+                // At n=1:
+                // S = a^-s + (a+1)^-s * 0.5
+                // I = (a+1)^(1-s) / (s-1) = (a+1)^-s * (a+1)
+                // T_0 = s * (a+1)^-s / (a+1) * F[0]
+                // I represents all remaining terms as a continuous integral.
+                // So this is finding s when n=2 converges to the zeta result.
+                // What we require is the s where zeta(s, a) using n > 1 uses the tail.
+                //
+                // Try finding where T_0 ~ I when n=1.
+
                 // n=2
                 double t0 = Math.pow(a, -s);
                 double t1;
                 double t2;
                 // Scale if underflow
-                if (t0 < Double.MIN_VALUE) {
+                double rescale = UPSCALE_106;
+                if (t0 < 1) {
                     t0 = Math.pow(a, -s * 0.5);
                     t0 = t0 * UPSCALE_1022 * t0;
-                    t1 = powS.apply(a, 1, -s);
-                    t2 = powS.apply(a, 2, -s);
+                    t1 = powScaled.apply(a, 1, -s) * DOWNSCALE_916;
+                    t2 = powScaled.apply(a, 2, -s) * DOWNSCALE_916;
+                    t0 *= DOWNSCALE_916;
+                    rescale = 1;
                 } else {
                     t1 = Context.extPow(a, 1, -s);
                     t2 = Context.extPow(a, 2, -s);
                 }
                 double ti = t2 * (a + 2) / (s - 1);
-                return t2 + t1 + t0 - ti;
+                // Note: the sum S uses half of the term (a+n)^-s
+                return (0.5 * t2 + t1 + t0 - 3 * ti) * rescale;
+
+                // This is rubbish
+//                double t0 = Math.pow(a, -s);
+//                if (t0 >= LARGE_T0) {
+//                    // Nothing can be added
+//                    return t0 * UPSCALE_106;
+//                }
+//                // Ignore asymptotic support
+//                boolean scaledSum = false;
+//                final double originalT0 = t0;
+//                double t1;
+//                if (t0 < Double.MIN_NORMAL) {
+//                    t0 = Math.pow(a, -s * 0.5);
+//                    t0 = t0 * UPSCALE_1022 * t0;
+//                    if (t0 == 0) {
+//                        // TODO:
+//                        // The root finder should lower s.
+//                        throw new IllegalStateException(String.format("Zeta cannot be computed: %s, %s", s, a));
+//                    }
+//                    scaledSum = true;
+//                    t1 = powScaled.apply(a, 1, -s);
+//                } else {
+//                    t1 = Context.extPow(a, 1, -s);
+//                }
+//                if (t1 < Double.MIN_VALUE) {
+//                    // If t0 was sub-normal then return t0 as t1 cannot be added.
+//                    // If t0 was normal check if a sub-normal term can be added
+//                    // otherwise s is very large and the result is t0 to 1 ULP.
+//                    if (scaledSum || t0 > UPSCALE_106 * Double.MIN_NORMAL) {
+//                        // Here we must return the best we can compute for t0 * 2^106
+//                        return scaledSum ? t0 * DOWNSCALE_916 : originalT0 * UPSCALE_106;
+//                    }
+//                    t0 *= UPSCALE_1022;
+//                    scaledSum = true;
+//                    t1 = powScaled.apply(a, 1, -s);
+//                }
+//                // Exit early if t1 cannot be added to t0 (exponent s is too large)
+//                if (t1 * UPSCALE_106 < t0) {
+//                    // Here we must return the best we can compute for t0 * 2^106.
+//                    // This trap can be used if scaled t1 was above MIN_NORMAL and missed the last trap.
+//                    return scaledSum ? t0 * DOWNSCALE_916 : originalT0 * UPSCALE_106;
+//                }
+//                // Compute S
+//                // Initialise sum with the first tail term
+//                double p = t1;
+//                DD sum = DD.of(0.5 * p);
+//                // S : k in [0, n-1]
+//                // Note k=0 already computed as t0. Nothing to sum with n=1.
+//
+//                // I: (a+n)^(1-s) / (s-1) = (a+n)^-s * (a+n) / (s-1)
+//                double ti;
+//                if (scaledSum) {
+//                    // Determine if (a+n)^(1-s) is sub-normal and compute in parts.
+//                    if (p * (a + 1) < 1) {
+//                        ti = powScaled.apply(a, 1, (1 - s) * 0.5);
+//                    } else {
+//                        ti = UPSCALE_1022 * Context.extPow(a, 1, 1 - s);
+//                    }
+//                    ti /= s - 1;
+//                    // Add in magnitude order
+//                    if (t0 > ti) {
+//                        sum = sum.add(ti).add(t0);
+//                    } else {
+//                        sum = sum.add(t0).add(ti);
+//                    }
+//                    // Partial downscale of the sum. The tail can use normal numbers.
+//                    sum = DD.ofSum(sum.hi() * DOWNSCALE_916, sum.lo() * DOWNSCALE_916);
+//                } else {
+//                    ti = Context.extPow(a, 1, 1 - s) / (s - 1);
+//                    // Add in magnitude order
+//                    if (t0 > ti) {
+//                        sum = sum.add(ti).add(t0);
+//                    } else {
+//                        sum = sum.add(t0).add(ti);
+//                    }
+//                    // Upscale the sum so the tail can use normal numbers
+//                    sum = DD.ofSum(sum.hi() * UPSCALE_106, sum.lo() * UPSCALE_106);
+//                }
+//                // Compute T
+//                double ff = s * DOWNSCALE_916;
+//                if (scaledSum) {
+//                    p /= a + 1;
+//                } else {
+//                    // Power term was not scaled.
+//                    p = UPSCALE_1022 * p / (a + 1);
+//                }
+//
+//                // First tail term
+//                final double t = ff * p * F[0];
+//
+//                // We want to know when T is required to the convergence epsilon.
+//                // sum.hi() * eps
+//                // |t| <= stop   :  s is too large
+//                // Find root where the tail can be added to the sum.
+//                // TODO:
+//                // Do this by returning the bits of overlap
+//                return sum.hi() * eps - Math.abs(t) * 0x1p-10;
+
+//                // Compute series S - I scaled by 2^106
+//                double rescale = UPSCALE_106;
+//                if (t0 < Double.MIN_VALUE) {
+//                    // Rescale for normal addition
+//                    t0 = Math.pow(a, -s * 0.5);
+//                    t0 = t0 * UPSCALE_1022 * t0;
+//                    t1 = powScaled.apply(a, 1, -s);
+//                    sum = t0 + t1;
+//                    ti = t1 * (a + 1) / (s - 1);
+//                    rescale = DOWNSCALE_916;
+//                } else {
+//                    t1 = Context.extPow(a, 1, -s);
+//                    ti = t1 * (a + 1) / (s - 1);
+//                    sum = t0 + t1;
+//                }
+//                return (sum - ti) * rescale;
             };
-            double startS = solver.findRoot(f, minS, maxS);
+            // This function knows the highest use of the tail is at larger a
+            // where s > a and zeta(s, a) -> 0. So the bounds on s can be fixed
+            // where zeta(s, a) is definitely zero and s is much larger.
+            // Note the solver to guess the start point will error if there is no
+            // usage of the tail in [minS, maxS] so this does not have to be exact.
+            final double minS = Math.nextUp(1.0);
+            final double maxS = 400;
+            final double startS = solver.findRoot(f, minS, maxS);
+
+            // This optimizer will work as long as the function value at startS is higher
+            // than at minS and maxS. This is true as the solver did not error for a tail
+            // of length 2. However the solver scaled the tail by 2^1022 when small.
+            // The function to optimize only scales the tail by 2^106. So the value
+            // at startS may be the same as the value at minS or maxS. Check for this
+            // and skip the optimizer.
+            final double n1 = fun.applyAsDouble(minS);
+            final double n2 = fun.applyAsDouble(startS);
+            if (n1 == n2 && n2 == fun.applyAsDouble(maxS)) {
+                report("Nothing to optimize: %25s, %25s n=%s (root=%s; a^-s=%s)%n",
+                    startS, a, n1, f.applyAsDouble(startS), Math.pow(a, -startS));
+            }
 
             final UnivariatePointValuePair point = optimizer.optimize(GoalType.MAXIMIZE, new SearchInterval(minS, maxS, startS),
                  new UnivariateObjectiveFunction(fun::applyAsDouble), new MaxEval(10000));
