@@ -177,7 +177,10 @@ class HurwitzZetaTest {
         "hzeta_s20_1024_ap1_subnormal1040.csv",
         "hzeta_s20_1024_ap1_subnormal1053.csv",
         "hzeta_s20_1024_ap0.1_subnormal1073.csv",
+        // This tests the tail is used to at least 7 terms when N=7
         "hzeta_2p-1022.csv",
+        // This tests scaling of terms S and I. The tail is not used
+        // as the result values only have 10-bits.
         "hzeta_2p-1065.csv",
     };
 
