@@ -4676,75 +4676,47 @@ class HurwitzZetaTest {
         // The largest tail usage is for large a.
         // No requirement to test down to a=0.
 
-        // TODO - When this is asserting reduce the range for a in a test case
-        // to show that (a+n) is lower
+        // These parameters can be printed by this test when the reporting is on.
+        // The report add 0.1 to the maximum N.
 
-//        // double precision
-//        "0.1, 200, false, -250, 8, 53, 6",
-//        "0.1, 200, false, -250, 10, 53, 6",
-//        "0.1, 200, false, -250, 12, 53, 6",
-//        "0.1, 200, false, -250, 15, 53, 6",
-////        "1e-9, 200, false, -250, 15, 53, 6",
-//        "0.1, 200, false, -250, 26, 53, 6",
-//        "0.1, 200, false, -250, 53, 53, 6",
-//        "0.1, 200, false, -250, 15, 54, 6",
-//        "0.1, 200, false, -250, 26, 54, 6",
-//        "0.1, 200, false, -250, 15, 55, 6",
-//        "0.1, 200, false, -250, 26, 55, 6",
-//        // Critical size M=15 to converge tail at 53-55 bits precision is ~ n=6
-//        // Check higher M
-//        "0.1, 200, false, -250, 17, 54, 6",
-//        "0.1, 200, false, -250, 18, 54, 6",
-//        "0.1, 200, false, -250, 17, 55, 6",
-//        "0.1, 200, false, -250, 18, 55, 6",
-//        // Converge tail beyond 10-bits of the result ~ n=7
-//        "0.1, 200, false, -250, 18, 63, 6",
-//        "0.1, 200, false, -250, 26, 63, 6",
-//
-//        // double-double precision
-//        "0.1, 200, false, -250, 26, 106, 6",
-//        "0.1, 200, false, -250, 53, 106, 6",
-//        "0.1, 200, false, -250, 26, 108, 6",
-//        "0.1, 200, false, -250, 53, 108, 6",
+        // TODO - Add some tests that fail.
+        // Increase speed when not reporting with lower epsilon.
+        // Repeat with much higher samples.
+        // Cross-verify with real data from the domain.
 
-//        "25, 130, false, -250, 8, 53, 6",
-//        "25, 130, false, -250, 10, 53, 6",
-//        "25, 130, false, -250, 12, 53, 6",
-//        "25, 130, false, -250, 15, 53, 6",
-//        "25, 130, false, -250, 26, 53, 6",
-//        "25, 130, false, -250, 53, 53, 6",
-//        "25, 130, false, -250, 15, 54, 6",
-//        "25, 130, false, -250, 26, 54, 6",
-//        "25, 130, false, -250, 15, 55, 6",
-//        "25, 130, false, -250, 26, 55, 6",
-//        // Critical size M=15 to converge tail at 53-55 bits precision is ~ n=6
-//        // Check higher M
-//        "25, 130, false, -250, 17, 54, 6",
-//        "25, 130, false, -250, 18, 54, 6",
-//        "25, 130, false, -250, 17, 55, 6",
-//        "25, 130, false, -250, 18, 55, 6",
-//        // Converge tail beyond 10-bits of the result ~ n=7
-//        "25, 130, false, -250, 18, 63, 6",
-//        "25, 130, false, -250, 26, 63, 6",
-//
-//        // double-double precision
-//        "25, 130, false, -250, 26, 106, 6",
-//        "25, 130, false, -250, 53, 106, 6",
-//        "25, 130, false, -250, 26, 108, 6",
-//        "25, 130, false, -250, 53, 108, 6",
+        "25.0, 130.0, false, 250, 8, 53, 9.78", // (159.0228355327598, 95.58232931726678) = 1.192e-283 * 2^-106 = 1.470e-315 : t_0=2.656e-291 (z * 2^-25.42)
+        "25.0, 130.0, false, 250, 10, 53, 7.56", // (172.10361659747323, 66.5783132530103) = 1.386e-282 * 2^-106 = 1.709e-314 : t_0=2.874e-291 (z * 2^-28.85)
+        "25.0, 130.0, false, 250, 12, 53, 6.60", // (182.3319254903897, 51.732931726907005) = 2.807e-281 * 2^-106 = 3.460e-313 : t_0=6.090e-291 (z * 2^-32.10)
+        "25.0, 130.0, false, 250, 15, 53, 6.02", // (194.34071488630175, 39.43775100401567) = 5.779e-279 * 2^-106 = 7.123e-311 : t_0=3.246e-291 (z * 2^-40.70)
+        "25.0, 130.0, false, 250, 26, 53, 5.86", // (203.45493627683237, 32.502008032128245) = 2.016e-276 * 2^-106 = 2.485e-308 : t_0=3.398e-291 (z * 2^-49.08)
+        "25.0, 130.0, false, 250, 53, 53, 5.86", // (203.45493627683217, 32.502008032128245) = 2.016e-276 * 2^-106 = 2.485e-308 : t_0=3.398e-291 (z * 2^-49.08)
+        "25.0, 130.0, false, 250, 15, 54, 6.16", // (193.47877526730463, 40.06827309236907) = 6.382e-279 * 2^-106 = 7.867e-311 : t_0=3.231e-291 (z * 2^-40.85)
+        "25.0, 130.0, false, 250, 26, 54, 5.88", // (204.29789206451426, 31.62048192771072) = 2.948e-275 * 2^-106 = 3.634e-307 : t_0=1.365e-290 (z * 2^-50.94)
+        "25.0, 130.0, false, 250, 15, 55, 6.29", // (189.4338618296996, 43.85140562248948) = 7.379e-280 * 2^-106 = 9.096e-312 : t_0=3.164e-291 (z * 2^-37.76)
+        "25.0, 130.0, false, 250, 26, 55, 6.08", // (203.96998643693334, 31.93574297188742) = 1.210e-275 * 2^-106 = 1.491e-307 : t_0=3.407e-291 (z * 2^-51.66)
+        // Critical size M=15 to converge tail at 53-55 bits precision is ~ n=6
+        // Check higher M
+        "25.0, 130.0, false, 250, 17, 54, 5.89", // (198.60538165878268, 35.02409638554185) = 1.553e-275 * 2^-106 = 1.914e-307 : t_0=3.980e-289 (z * 2^-45.15)
+        "25.0, 130.0, false, 250, 18, 54, 5.87", // (201.4685639548269, 33.13253012048165) = 4.234e-275 * 2^-106 = 5.219e-307 : t_0=1.615e-289 (z * 2^-47.90)
+        "25.0, 130.0, false, 250, 17, 55, 6.10", // (193.89624860931625, 39.75301204819237) = 6.322e-279 * 2^-106 = 7.793e-311 : t_0=3.238e-291 (z * 2^-40.83)
+        "25.0, 130.0, false, 250, 18, 55, 6.10", // (201.32469559214005, 33.76305220883505) = 1.575e-276 * 2^-106 = 1.942e-308 : t_0=3.362e-291 (z * 2^-48.73)
+        // Converge tail beyond 10-bits of the result ~ n=7
+        "25.0, 130.0, false, 250, 18, 63, 7.12", // (192.77329062798356, 39.75301204819237) = 3.954e-277 * 2^-106 = 4.873e-309 : t_0=6.439e-291 (z * 2^-45.80)
+        "25.0, 130.0, false, 250, 26, 63, 6.96", // (202.91004799242464, 31.77811244979907) = 1.297e-273 * 2^-106 = 1.599e-305 : t_0=3.389e-291 (z * 2^-58.41)
 
-        "25, 130, false, -250, 15, 53, 6",
-        "25, 130, false, -250, 26, 53, 6",
-        "25, 130, false, -250, 18, 54, 6",
-        "25, 130, false, -250, 26, 63, 6",
+        // double-double precision
+        // This is optimistic as the tail terms may become zero due to underflow.
+        // The DD implementation does not underflow.
+        "25.0, 130.0, false, 250, 26, 106, 12.47", // (182.8974681390024, 44.79718875501958) = 8.079e-271 * 2^-106 = 9.958e-303 : t_0=6.109e-291 (z * 2^-66.84)
+        "25.0, 130.0, false, 250, 53, 106, 11.70", // (197.23117481581144, 31.30522088353402) = 8.469e-264 * 2^-106 = 1.044e-295 : t_0=6.588e-291 (z * 2^-90.05)
+        "25.0, 130.0, false, 250, 26, 108, 12.86", // (179.34483214935423, 49.5261044176701) = 9.155e-273 * 2^-106 = 1.128e-304 : t_0=2.995e-291 (z * 2^-61.41)
+        "25.0, 130.0, false, 250, 53, 108, 11.90", // (195.92410211834715, 32.186746987951544) = 3.311e-264 * 2^-106 = 4.081e-296 : t_0=3.272e-291 (z * 2^-89.71)
     })
-    // TODO - Change testN to double
-    // when not reporting change epsilon to 1e-3
     void testTailConvergence2(double minA, double maxA, boolean uniform, int samples, int m,
-            int b, int testN) {
+            int b, double testN) {
         // Negative N for tests that should fail
         final boolean expectedToFail = testN < 0;
-        final int expectedN = Math.abs(testN);
+        final double expectedN = Math.abs(testN);
 
         Assertions.assertTrue(minA > 0x1p-53);
         Assertions.assertTrue(maxA > minA);
@@ -4771,27 +4743,15 @@ class HurwitzZetaTest {
         // The result is only required to find an integer so a few digits
         // is sufficient. When the result is close to an integer then the
         // tolerance can be raised to check to higher accuracy.
+
+        // when not reporting change epsilon to 1e-3
         final double relativeTolerance = 1e-15;
         final BrentOptimizer optimizer = new BrentOptimizer(relativeTolerance, Math.ulp(1.0));
 
-        // TODO
-        // Change this. The maximum n is always at the upper limit of a.
+        // The maximum n is always at the upper limit of a.
         // So run in ascending order. When there is nothing to optimise then stop.
-        // Note negative samples will enumerate and this RNG may not be used.
-        final SplittableRandom rng = new SplittableRandom();
-        DoubleSupplier nextA;
-        if (samples < 0) {
-            nextA = createRange(samples, minA, maxA, uniform);
-        } else {
-            nextA = createSampler(rng, minA, maxA, uniform);
-        }
-        PowOperator powScaled = (x, y, z) -> {
-            final double p = Context.extPow(x, y, z * 0.5);
-            return p * UPSCALE_1022 * p;
-        };
-
-        final int inc = samples < 0 ? 1 : -1;
-        for (int i = samples; i != 0; i += inc) {
+        final DoubleSupplier nextA = createRange(samples, minA, maxA, uniform);
+        for (int i = 0; i < samples; i++) {
             final double a = nextA.getAsDouble();
 
             // Find the largest n for (a+n) used in tail convergence at point a.
@@ -4856,15 +4816,15 @@ class HurwitzZetaTest {
             while (n0 < 1.1) {
                 startS += 1;
                 if (startS > maxS) {
-                    // TODO remove
-//                    report("Nothing to optimize: M=%d, a=%s%n", m, a);
+                    Assertions.assertNotEquals(0, n,
+                        () -> String.format("Nothing to optimize at min a: M=%d, a=%s%n", m, minA));
                     break;
                 }
                 n0 = fun.applyAsDouble(startS);
             }
             if (startS > maxS) {
-                // TODO: Should this stop?
-                continue;
+                // Reached the upper limit
+                break;
             }
 
             // TODO - Investigate this
@@ -4895,7 +4855,16 @@ class HurwitzZetaTest {
             if (n < n0) {
                 n = n0;
                 max = new double[] {s, a, z, n0};
+                if (n > expectedN) {
+                    if (expectedToFail) {
+                        return;
+                    }
+                    Assertions.fail(
+                        String.format("A=[%s, %s) M=%d : Exceeded expected N=%s < %s at zeta(%s, %s)",
+                            minA, maxA, m, expectedN, n, s, a));
+                }
             }
+            // TODO - remove this
 //            report("%25s  %25s, %25s + %25s = %s * 2^106 = %s%n", startS, s, a, n0, z * DOWNSCALE_106, z);
         }
 
@@ -4909,13 +4878,15 @@ class HurwitzZetaTest {
             // log2(z) - log2(t_0)
             final double[] t = getScaledTailTerms(1, a + n, s);
             final double bits = (Math.log(z) - Math.log(t[0])) / Math.log(2);
-            report("%2d 2^-%-3d  %s @ zeta(%s, %s) = %s * 2^-106 = %s : t_0=%s (z * 2^-%.2f)%n",
-                m, b, n, s, a, z, z * DOWNSCALE_106,
-                t[0], bits);
+            // Print out the format for the arguments. Add 0.1 to the N so the test passes.
+            report("\"%s, %s, %b, %d, %d, %d, %.2f\", // (%s, %s) = %.4g * 2^-106 = %.4g : t_0=%.4g (z * 2^-%.2f)%n",
+                minA, maxA, uniform, samples, m, b, n + 0.1,
+                s, a, z, z * DOWNSCALE_106, t[0], bits);
         }
-        // TODO fix this
-//        Assertions.assertFalse(expectedToFail,
-//            () -> String.format("Should fail M=%d, A=[%s, %s), N=%d", m, minA, maxA, testN));
+        if (expectedToFail) {
+            Assertions.fail(String.format("A=[%s, %s) M=%d : Expected to fail N=%s > %s at zeta(%s, %s)",
+                    minA, maxA, m, expectedN, n, max[0], max[1]));
+        }
     }
 
     @Test
