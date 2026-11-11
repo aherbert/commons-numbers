@@ -1663,31 +1663,35 @@ class HurwitzZetaTest {
                 // the series is very strongly converging, or the zeta result is
                 // 0 after rescaling. Use a forward sum and return when it converges
                 // so saving on power terms.
-                // This path may not be possible given t1 is within eps of t0, and further
-                // terms will be successively closer in magnitude.
-                // Assertions have been added to check if this path occurs.
-                if (scaledSum) {
-                    Assertions.fail("Check if we can hit this path");
-                    // Add known terms in magnitude order.
-                    // p could be discarded for large N but is kept as context N may be 2.
-                    DD sum = DD.of(p);
-                    sum = add.apply(sum, t1);
-                    sum = add.apply(sum, t0);
-                    // Sum the converging series
-                    for (int k = 2; k < n; k++) {
-                        p = powS.apply(a, k, -s);
-                        sum = add.apply(sum, p);
-                        if (p < sum.hi() * c.getEps()) {
-                            // Expected to converge before k + 1 == n unless N=2
-                            return sum.hi() * resultScale;
-                        }
-                    }
-                    if (n == 2) {
-                        return sum.hi() * resultScale;
-                    }
-                    // the forward sum completed
-                    Assertions.fail("Check if we can hit this path");
-                }
+
+                // If the forward sum completes and the result is non-zero then
+                // the I and T terms are required. There is no support for this
+                // at present so the code is not used.
+
+//                if (scaledSum) {
+//                    // This path can be hit when n is large, e.g N=50
+//                    // Add known terms in magnitude order.
+//                    // p could be discarded for large N but is kept as context N may be 2.
+//                    DD sum = DD.of(p);
+//                    sum = add.apply(sum, t1);
+//                    sum = add.apply(sum, t0);
+//                    // Sum the converging series
+//                    for (int k = 2; k < n; k++) {
+//                        p = powS.apply(a, k, -s);
+//                        sum = add.apply(sum, p);
+//                        if (p < sum.hi() * c.getEps()) {
+//                            // Expected to converge before k + 1 == n unless N=2
+//                            return sum.hi() * (resultScale * Double.MIN_NORMAL);
+//                        }
+//                    }
+//                    final double result = sum.hi() * (resultScale * Double.MIN_NORMAL);
+//                    if (n == 2 || result == 0) {
+//                        return result;
+//                    }
+//                    Assertions.fail(
+//                        String.format("I and T terms still required: n=%d, m=%d, zeta(%s, %a) = %s",
+//                            n, c.getM(), s, a, result));
+//                }
                 // Activate scaling
                 t0 *= UPSCALE_1022;
                 t1 *= UPSCALE_1022;
