@@ -513,10 +513,7 @@ public final class HurwitzZeta {
                 return 0;
             }
             scaledSum = true;
-            powS = (x, n, z) -> {
-                final double p = pow.apply(x, n, z * 0.5);
-                return p * UPSCALE_1022 * p;
-            };
+            powS = createScaledPower(pow);
         }
 
         // Compute t1 = (a+1)^-s. This may be scaled or unscaled.
@@ -530,10 +527,7 @@ public final class HurwitzZeta {
             }
             t0 *= UPSCALE_1022;
             scaledSum = true;
-            powS = (x, n, z) -> {
-                final double p = pow.apply(x, n, z * 0.5);
-                return p * UPSCALE_1022 * p;
-            };
+            powS = createScaledPower(pow);
             t1 = powS.apply(a, 1, -s);
         }
 
@@ -542,7 +536,18 @@ public final class HurwitzZeta {
             return originalT0;
         }
 
+        // Here we compute the entire evaluation.
+        // Compute the final power term.
         double p = powS.apply(a, N, -s);
+
+        if (p < Double.MIN_NORMAL && !scaledSum) {
+            // Activate scaling
+            t0 *= UPSCALE_1022;
+            t1 *= UPSCALE_1022;
+            scaledSum = true;
+            powS = createScaledPower(pow);
+            p = powS.apply(a, N, -s);
+        }
 
         // Initialise sum with the first tail term
         DD sum = DD.of(0.5 * p);
@@ -656,6 +661,19 @@ public final class HurwitzZeta {
             k2 += 1.0;
         }
         return sum.add(tsum).hi() * DOWNSCALE_106;
+    }
+
+    /**
+     * Create a scaled power operator. The result is scaled by 2^1022.
+     *
+     * @param pow Original power operator
+     * @return scaled power operator.
+     */
+    private static PowOperator createScaledPower(final PowOperator pow) {
+        return (x, n, z) -> {
+            final double p = pow.apply(x, n, z * 0.5);
+            return p * UPSCALE_1022 * p;
+        };
     }
 
     /**
