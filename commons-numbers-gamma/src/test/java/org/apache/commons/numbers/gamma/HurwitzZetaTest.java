@@ -205,6 +205,8 @@ class HurwitzZetaTest {
     /** Upscale to use on the initial probability tail term (always below 1).
      * Multiplicative inverse of Double.MIN_NORMAL: 2^1022. */
     private static final double UPSCALE_1022 = 0x1.0p1022;
+    /** Upscale to use on asymptotic approximation. Equal to 2^916. */
+    private static final double UPSCALE_916 = 0x1.0p916;
     /** Upscale to use on the sum before scaled tail computation. Allows convergence
      * on a normal number using a sum of normal terms.
      * Multiplicative inverse of DOWNSCALE2: 2^106. */
@@ -1457,10 +1459,49 @@ class HurwitzZetaTest {
         // When a is large the series cannot use a+k.
         // This reduces to N=0 (no series sum S): the I term and the first term of T.
         // Threshold so (a+N) <= 2^53.
-        if (a > LARGE_APN - n) {
+        //
+        // Tiny s trap using N=0.
+        // zeta ~ a^(1-s) / (s-1) + a^-s / 2
+        //      = a*a^-s / (s-1) + a^s / 2
+        //      = a^s * (a / (s-1) + 0.5)
+        //      = a^(1-s) * (1 / (s-1) + 1 / 2a)
+        // When 0.5 cannot be added to a / (s-1) then N=0 is a good approximation.
+        // a / (s - 1) > 2^52 : a > 2^52 * (s - 1)
+        // As s -> 1 then a can reduce in magnitude until a ~ 1 and s ~ 1: a^-s -> 1 / a.
+        // TODO: Test which option is better?
+        // Relying on ti could be used before t0 is even computed.
+        if (a > LARGE_APN - n || a > 0x1p52 * (s - 1)) {
             // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
             // sub-normal as a is large. Compute using pow.
-            return (Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5) * resultScale;
+            double ti;
+            if (c.isSet(Context.SUB_NORMAL_SUM) && t0 < Double.MIN_NORMAL) {
+                // Large a. The tiny s trap cannot reach here as t0 -> 1/a.
+                // Avoid computing the division with a sub-normal term
+                if (t0 * a < Double.MIN_NORMAL) {
+                    ti = Math.pow(a, (1 - s) * 0.5);
+                    ti = 2 * ti * UPSCALE_916 * ti / (s - 1);
+                } else {
+                    ti = 2 * UPSCALE_916 * Math.pow(a, 1 - s) / (s - 1);
+                }
+                // Recompute t0. Is this worth the cost? The maximum overlap
+                // between ti and t0 * 0.5 is small.
+                t0 = Math.pow(a, -s * 0.5);
+                t0 = t0 * UPSCALE_916 * t0;
+                //t0 *= UPSCALE_916;
+                return (ti + t0) * 0.5 * (DOWNSCALE_916 * resultScale);
+
+//                // Do not recompute t0 and rely on ti having double precision
+//                if (t0 * a < Double.MIN_NORMAL) {
+//                    ti = Math.pow(a, (1 - s) * 0.5);
+//                    ti = ti * UPSCALE_1022 * ti;
+//                } else {
+//                    ti = UPSCALE_1022 * Math.pow(a, 1 - s);
+//                }
+//                return ti * (1 / (s - 1) + 1 / (2 * a)) * Double.MIN_NORMAL;
+            }
+            // Compute (2 * ti + t0) * 0.5 to avoid (ti + t0 * 0.5) losing a bit on sub-normal t0
+            ti = 2 * Math.pow(a, 1 - s) / (s - 1);
+            return (ti + t0) * 0.5 * resultScale;
         }
 
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow
@@ -4816,8 +4857,9 @@ class HurwitzZetaTest {
 //        double s = 1121.1037200772555, a = 9.007199254740992E15, expected = 0;
 //        double s = 1121.1037200772555, a = Math.nextUp(1.0), expected = 0.999999999999751064967395493924;
 //        double s=1501.7021967661672, a=1.535965979848382, expected =1.2892791106364060286402216376328398051685475849534E-280;
-        double s=798.4098080701187, a=2.44681658669993, expected =5.4552937300588262652119314762621199432693920384755E-311;
-
+//        double s=798.4098080701187, a=2.44681658669993, expected =5.4552937300588262652119314762621199432693920384755E-311;
+//        double  s=1.0046876033700256, a=2.774626370847173E13, expected=184.51544775024293707146458999993276990921062542111;
+        double s=20.23754877788927, a=9.134550490612894E15, expected=4.6919362125812846992028258016880507980787512899492E-309;
 
 //        double s = Math.nextUp(1.0), a = 9.007199254740992E15, expected = 4503599627370459.5;
 //        TestUtils.assertEquals(expected, zeta(s, a, Double.NaN, Context.DOUBLE), 0);

@@ -449,8 +449,33 @@ public final class HurwitzZeta {
         // https://dlmf.nist.gov/25.11#E43
         // When a is large the series cannot use a+k.
         // This reduces to N=0 (no series sum S): the I term and the first term of T.
-        if (a > LARGE_A) {
-            return Math.pow(a, 1 - s) / (s - 1) + t0 * 0.5;
+        // Tiny s trap using N=0.
+        // zeta ~ a^(1-s) / (s-1) + a^-s / 2
+        //      = a*a^-s / (s-1) + a^s / 2
+        //      = a^s * (a / (s-1) + 0.5)
+        // When 0.5 cannot be added to a / (s-1) then N=0 is a good approximation.
+        // a / (s - 1) > 2^52 : a > 2^52 * (s - 1)
+        // As s -> 1 then a can reduce in magnitude until a ~ 1 and s ~ 1: a^-s -> 1 / a.
+        if (a > LARGE_A || a > 0x1p52 * (s - 1)) {
+            // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
+            // sub-normal as a is large. Compute using pow.
+            // Avoid computing sub-normal terms.
+            double ti;
+            if (t0 < Double.MIN_NORMAL) {
+                // The tiny s trap cannot reach here as t0 -> 1/a.
+                // Avoid computing the division with a sub-normal term
+                if (t0 * a < Double.MIN_NORMAL) {
+                    ti = Math.pow(a, (1 - s) * 0.5);
+                    ti = ti * UPSCALE_1022 * ti;
+                } else {
+                    ti = UPSCALE_1022 * Math.pow(a, 1 - s);
+                }
+                // t0 was inexact. Rely on ti
+                return ti * (1 / (s - 1) + 1 / (2 * a)) * Double.MIN_NORMAL;
+            }
+            // Compute (2 * ti + t0) * 0.5 to avoid (ti + t0 * 0.5) losing a bit on t0
+            ti = 2 * Math.pow(a, 1 - s) / (s - 1);
+            return (ti + t0) * 0.5;
         }
 
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow
