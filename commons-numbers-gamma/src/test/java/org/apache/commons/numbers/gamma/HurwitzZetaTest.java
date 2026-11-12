@@ -4513,29 +4513,36 @@ class HurwitzZetaTest {
      * <p>Note that the highest (a+n) values are for large s when the zeta result is non-zero.
      * This can use s in (1, MAX_VALUE] but a more realistic range before the tail terms
      * are zero is 150 to 250. When the tail is zero the zeta result may not be zero, but
-     * tail divergence is not an issue So the test just evaluates the tail which is very fast.
+     * tail divergence is not an issue so the test just evaluates the tail which is very fast.
      */
     @ParameterizedTest
     @CsvSource({
         // A longer tail requires a higher (a+n) to ensure it never diverges.
 
+        // These parameters can be printed by this test when the reporting is on.
+        // The report add 0.1 to the maximum N.
+
         // For the minimum S this is the N required so that a tail of length M does not diverge.
         // It does not evaluate whether a short tail will be accurate.
-        "1.0000000000000002, 1.0000000000000002, false, 1, 53, 17",
-        "1.0000000000000002, 1.0000000000000002, false, 1, 26, 9",
-        "1.0000000000000002, 1.0000000000000002, false, 1, 13, 4",
+        "1.0000000000000002, 1.0000000000000002, false, 1, 53, 16.73", // s=1.0000000000000002
+        "1.0000000000000002, 1.0000000000000002, false, 1, 26, 8.14", // s=1.0000000000000002
+        "1.0000000000000002, 1.0000000000000002, false, 1, 18, 5.59", // s=1.0000000000000002
+        "1.0000000000000002, 1.0000000000000002, false, 1, 15, 4.64", // s=1.0000000000000002
+        "1.0000000000000002, 1.0000000000000002, false, 1, 12, 3.68", // s=1.0000000000000002
         // For the maximum S (found by search of large s where tail is supported)
         // this is the N required so that a tail of length M does not diverge.
         // Note that for M=53 the (a+n) < 49. Thus for the entire zeta domain from a=0
         // a tail of length 53 will never diverge using N=49.
         // Use of N=49, M=53 in the Context will not have large errors.
-        "150, 250, false, 250, 53, 50",
-        "150, 250, false, 250, 39, 46",
-        "150, 250, false, 250, 26, 43",
-        "150, 250, false, 250, 13, 40",
+        "150.0, 250.0, false, 2500, 53, 49.87", // s=209.18367346935452
+        "150.0, 250.0, false, 2500, 39, 46.10", // s=213.50540216082868
+        "150.0, 250.0, false, 2500, 26, 42.67", // s=217.94717887151046
+        "150.0, 250.0, false, 2500, 18, 40.59", // s=220.9083633452983
+        "150.0, 250.0, false, 2500, 15, 39.82", // s=222.06882753097193
+        "150.0, 250.0, false, 2500, 12, 39.06", // s=223.2693077230481
     })
     void testTailConvergenceLimit(double minS, double maxS, boolean uniform, int samples, int m,
-            int testN) {
+            double testN) {
         Assertions.assertTrue(minS > 1);
         Assertions.assertTrue(maxS >= minS);
         Assertions.assertTrue(m > 0);
@@ -4587,19 +4594,23 @@ class HurwitzZetaTest {
             // Instead we check if the tail terms can be used.
             if (t[0] == 0) {
                 // With ascending s no more tail computation is possible
-                // (all tail terms for larger s and (a+n) will also be zero)
+                // (all tail terms for larger s and (a+n) will also be zero).
+                // If the tail * 2^106 is zero then the zeta evaluation is
+                // zero.
                 break;
             }
 
             Assertions.assertTrue(testN > apn,
-                () -> String.format("M=%d, s=%s, (a+n)=%s, N=%d", m, s, apn, testN));
+                () -> String.format("M=%d, s=%s, (a+n)=%s, N=%s", m, s, apn, testN));
 
             if (maxapn < apn) {
                 maxapn = apn;
                 maxs = s;
             }
         }
-        report("Tail convergence: M=%d, s=%s, a+n=%s%n", m, maxs, maxapn);
+        // Print out the format for the arguments. Add 0.1 to the a+n so the test passes.
+        report("\"%s, %s, %b, %d, %d, %.2f\", // s=%s%n",
+            minS, maxS, uniform, samples, m, maxapn + 0.1, maxs);
     }
 
     // TODO:
@@ -4712,7 +4723,7 @@ class HurwitzZetaTest {
         "25.0, 130.0, false, 250, 26, 108, 12.86", // (179.34483214935423, 49.5261044176701) = 9.155e-273 * 2^-106 = 1.128e-304 : t_0=2.995e-291 (z * 2^-61.41)
         "25.0, 130.0, false, 250, 53, 108, 11.90", // (195.92410211834715, 32.186746987951544) = 3.311e-264 * 2^-106 = 4.081e-296 : t_0=3.272e-291 (z * 2^-89.71)
     })
-    void testTailConvergence2(double minA, double maxA, boolean uniform, int samples, int m,
+    void testTailConvergence(double minA, double maxA, boolean uniform, int samples, int m,
             int b, double testN) {
         // Negative N for tests that should fail
         final boolean expectedToFail = testN < 0;
