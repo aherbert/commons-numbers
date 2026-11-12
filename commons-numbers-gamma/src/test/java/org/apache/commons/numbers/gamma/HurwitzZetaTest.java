@@ -129,6 +129,8 @@ class HurwitzZetaTest {
     /** Table used to create a histogram of the number of steps to converge the tail series.
      * Used in the test zeta implementation. */
     private static final int[] M = new int[107];
+    /** Retain the number of terms used from the tail series in the test implementation. */
+    private static int lastM = 0;
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
         "hzeta_s1_4_a1_8.csv",
@@ -1456,6 +1458,7 @@ class HurwitzZetaTest {
     static double zeta(double s, double a, double a0, Context c) {
         // First term may be provided
         double t0 = Double.isNaN(a0) ? Math.pow(a, -s) : a0;
+        lastM = 0;
 
         // For testing the tail convergence this supports return of the result
         // using the scaling of the tail series
@@ -1818,6 +1821,7 @@ class HurwitzZetaTest {
             k2 += 1.0;
         }
         // Used to histogram convergence when testing
+        lastM = i;
         M[i]++;
         return add.apply(sum, tsum).hi() * downscale;
     }
@@ -3931,11 +3935,12 @@ class HurwitzZetaTest {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
         final boolean noSkips = !allowSkips || doReporting() || resultFilename != null;
         final BooleanSupplier skip = createSkipSupplier(noSkips, 7);
-        DoubleConsumer errorSink = stats::add;
         // Allow optional save of result to file
         try (PrintStream out = resultFilename == null ? null : getPrintStream(resultFilename)) {
-            // TODO:
-            // Update the errorSink with the record of the function
+            final StringBuilder sb = new StringBuilder(512);
+            if (out != null) {
+                out.println("s,a,z,error,m");
+            }
             long time = System.nanoTime();
             for (final String filename : tc.getFilenames()) {
                 try (DataReader in = new DataReader(filename)) {
@@ -3948,8 +3953,19 @@ class HurwitzZetaTest {
                             final double a = in.getDouble(1);
                             final double actual = tc.getFunction().applyAsDouble(s, a);
                             final BigDecimal expected = in.getBigDecimal(2);
-                            TestUtils.assertEquals(expected, actual, tc.getTolerance(), errorSink,
+                            double e = TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
                                 () -> tc + " s=" + s + ", a=" + a);
+                            if (out != null) {
+                                // No special formatting required.
+                                // Print the raw fields and the error.
+                                final String[] fields = in.getFields();
+                                sb.setLength(0);
+                                for (int i = 0; i < 3; i++) {
+                                    sb.append(fields[i]).append(',');
+                                }
+                                sb.append(e).append(',').append(lastM);
+                                out.println(sb.toString());
+                            }
                         } catch (final NumberFormatException ex) {
                             Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
                         }
