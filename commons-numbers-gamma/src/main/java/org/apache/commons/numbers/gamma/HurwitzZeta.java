@@ -522,7 +522,7 @@ public final class HurwitzZeta {
             // If t0 was sub-normal then return t0 as t1 cannot be added.
             // If t0 was normal check if a sub-normal term can be added
             // otherwise s is very large and the result is t0.
-            if (scaledSum || t1 < t0 * EPS) {
+            if (scaledSum) {
                 return originalT0;
             }
             t0 *= UPSCALE_1022;
@@ -531,32 +531,34 @@ public final class HurwitzZeta {
             t1 = powS.apply(a, 1, -s);
         }
 
-        // Exit early if t1 cannot be added to t0 (exponent s is too large)
-        if (t1 < t0 * EPS) {
-            return originalT0;
-        }
+        // If t1 cannot be added to t0 (exponent s is too large) reduce n.
+        // Continue so the I term is evaluated which dominates with small s.
+        final int n = t1 < t0 * EPS ? 2 : N;
 
         // Here we compute the entire evaluation.
         // Compute the final power term.
-        double p = powS.apply(a, N, -s);
+        double p = powS.apply(a, n, -s);
 
-        if (p < Double.MIN_NORMAL && !scaledSum) {
-            // Activate scaling
+        if (p < Double.MIN_NORMAL && !scaledSum && t0 < 1) {
+            // t0 and t1 are normal but some of the remaining terms in the summation are not.
+            // The p term is used for the tail and will be inaccurate.
+            // Activate scaling.
             t0 *= UPSCALE_1022;
             t1 *= UPSCALE_1022;
             scaledSum = true;
             powS = createScaledPower(pow);
-            p = powS.apply(a, N, -s);
+            p = powS.apply(a, n, -s);
         }
 
         // Initialise sum with the first tail term
         DD sum = DD.of(0.5 * p);
         // S : k in [0, n-1]
-        // Note k=0 already computed as t0
-        for (int k = N - 1; k > 0; k--) {
+        // Note k=0,1 already computed as t0,t1
+        for (int k = n - 1; k > 1; k--) {
             // Descending k sums in order of magnitude for increased precision
             sum = sum.add(powS.apply(a, k, -s));
         }
+        sum = sum.add(t1);
 
         // The dominant term may be t0 when a in [0, 1], or ti when s is small.
         // Adding in double-double precision handles either magnitude order.
@@ -570,17 +572,17 @@ public final class HurwitzZeta {
         double ti;
         if (scaledSum) {
             // Determine if (a+n)^(1-s) is sub-normal and compute in parts.
-            if (p * (a + N) < 1) {
-                ti = powS.apply(a, N, 1 - s);
+            if (p * (a + n) < 1) {
+                ti = powS.apply(a, n, 1 - s);
             } else {
-                ti = UPSCALE_1022 * pow.apply(a, N, 1 - s);
+                ti = UPSCALE_1022 * pow.apply(a, n, 1 - s);
             }
-            ti /= (s - 1);
+            ti /= s - 1;
             sum = sum.add(ti);
             // Partial downscale of the sum. The tail can use normal numbers.
             sum = DD.ofSum(sum.hi() * DOWNSCALE_916, sum.lo() * DOWNSCALE_916);
         } else {
-            ti = pow.apply(a, N, 1 - s) / (s - 1);
+            ti = pow.apply(a, n, 1 - s) / (s - 1);
             sum = sum.add(ti);
             // Upscale the sum so the tail can use normal numbers.
             sum = DD.ofSum(sum.hi() * UPSCALE_106, sum.lo() * UPSCALE_106);
@@ -623,20 +625,20 @@ public final class HurwitzZeta {
         double k2 = 1;
 
         // Use to divide by (a+n)^2
-        final double apn = DD.ofSum(a, N).square().hi();
+        final double apn = DD.ofSum(a, n).square().hi();
 
         // Scaled power term (a+n)^-(1+s).
         // The tail is expected to be a small contribution to the result.
         // This term is not required to high accuracy so compute as
         // (a+n)^-s / (a+n).
         if (scaledSum) {
-            p /= a + N;
+            p /= a + n;
         } else {
             // Power term was not scaled.
             // Note if p < MIN_NORMAL this is inexact. The smallest s for this to occur
             // is (2^-53)^-s < 2^-1022 : s = 1022/53 ~ 19.28. In this case the tail
             // is not required to high accuracy.
-            p = UPSCALE_1022 * p / (a + N);
+            p = UPSCALE_1022 * p / (a + n);
         }
 
         // Sum of an alternating series as each F changes sign.

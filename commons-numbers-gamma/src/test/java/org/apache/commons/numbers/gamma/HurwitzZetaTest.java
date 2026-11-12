@@ -32,6 +32,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleBinaryOperator;
+import java.util.function.DoubleConsumer;
 import java.util.function.DoublePredicate;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
@@ -1467,7 +1468,7 @@ class HurwitzZetaTest {
             return t0 * resultScale;
         }
 
-        final int n = c.getN();
+        int n = c.getN();
 
         // Asymptotic behavior as a -> inf
         // https://dlmf.nist.gov/25.11#E43
@@ -1588,7 +1589,7 @@ class HurwitzZetaTest {
                 // If t0 was sub-normal then return t0 as t1 cannot be added.
                 // If t0 was normal check if a sub-normal term can be added
                 // otherwise s is very large and the result is t0 to 1 ULP.
-                if (scaledSum || t1 < t0 * c.getEps()) {
+                if (scaledSum) {
                     // Ideally return originalT0. But we must support result scaling.
                     if (resultScale == 1) {
                         return originalT0;
@@ -1608,18 +1609,6 @@ class HurwitzZetaTest {
             }
         } else {
             t1 = powSeries.apply(a, 1, -s);
-        }
-
-        // Exit early if t1 cannot be added to t0 (exponent s is too large)
-        // Note: Early exit upscale can be 2^53. The result is t0 to 1 ULP.
-        if (t1 < t0 * c.getEps()) {
-            // Ideally return originalT0. But we must support result scaling.
-            if (resultScale == 1) {
-                return originalT0;
-            }
-            // Here we must return the best we can compute for t0 * 2^106.
-            // This trap can be used if scaled t1 was above MIN_NORMAL and missed the last trap.
-            return scaledSum ? t0 * DOWNSCALE_916 : originalT0 * UPSCALE_106;
         }
 
 //        // TODO - Remove original
@@ -1645,8 +1634,12 @@ class HurwitzZetaTest {
 //            powS = powSeries;
 //        }
 
-        // Here we compute the entire evaluation.
-        // Compute the final power term.
+        // Here we compute the entire evaluation of the series N terms.
+        // If t1 cannot be added to t0 reduce n.
+        if (t1 < t0 * c.getEps()) {
+            // This still requires evaluation of the I term which may dominate with small s
+            n = 2;
+        }
         double p = powS.apply(a, n, -s);
 
         // We always use a DD sum. If not using extended precision
@@ -1657,63 +1650,38 @@ class HurwitzZetaTest {
 
         // Continue optional sub-normal support
         if (c.isSet(Context.SUB_NORMAL_SUM)) {
-            if (p < Double.MIN_NORMAL) {
+            if (p < Double.MIN_NORMAL && !scaledSum) {
                 // The final term is sub-normal.
-                // If this occurs when the scaled sum has been activated then
-                // the series is very strongly converging, or the zeta result is
-                // 0 after rescaling. Use a forward sum and return when it converges
-                // so saving on power terms.
-
-                // If the forward sum completes and the result is non-zero then
-                // the I and T terms are required. There is no support for this
-                // at present so the code is not used.
-
-//                if (scaledSum) {
-//                    // This path can be hit when n is large, e.g N=50
-//                    // Add known terms in magnitude order.
-//                    // p could be discarded for large N but is kept as context N may be 2.
-//                    DD sum = DD.of(p);
-//                    sum = add.apply(sum, t1);
-//                    sum = add.apply(sum, t0);
-//                    // Sum the converging series
-//                    for (int k = 2; k < n; k++) {
-//                        p = powS.apply(a, k, -s);
-//                        sum = add.apply(sum, p);
-//                        if (p < sum.hi() * c.getEps()) {
-//                            // Expected to converge before k + 1 == n unless N=2
-//                            return sum.hi() * (resultScale * Double.MIN_NORMAL);
-//                        }
-//                    }
-//                    final double result = sum.hi() * (resultScale * Double.MIN_NORMAL);
-//                    if (n == 2 || result == 0) {
-//                        return result;
-//                    }
-//                    Assertions.fail(
-//                        String.format("I and T terms still required: n=%d, m=%d, zeta(%s, %a) = %s",
-//                            n, c.getM(), s, a, result));
-//                }
-                // Activate scaling
-                t0 *= UPSCALE_1022;
-                t1 *= UPSCALE_1022;
-                scaledSum = true;
-                // Redefine the series power function
-                PowOperator originalPowSeries = powSeries;
-                powS = (x, y, z) -> {
-                    final double pp = originalPowSeries.apply(x, y, z * 0.5);
-                    return pp * UPSCALE_1022 * pp;
-                };
-                p = powS.apply(a, n, -s);
+                // If this occurs when the scaled sum has been activated then:
+                // - the series is very strongly converging and the result is t0
+                // - the zeta result is dominated by the I term for small s
+                //   after summing many sub-normal terms and the full
+                //   evaluation is required.
+                // Activate scaling when possible. Very strongly converging series use n=2.
+                if (t0 < 1) {
+                    t0 *= UPSCALE_1022;
+                    t1 *= UPSCALE_1022;
+                    scaledSum = true;
+                    // Redefine the series power function
+                    PowOperator originalPowSeries = powSeries;
+                    powS = (x, y, z) -> {
+                        final double pp = originalPowSeries.apply(x, y, z * 0.5);
+                        return pp * UPSCALE_1022 * pp;
+                    };
+                    p = powS.apply(a, n, -s);
+                }
             }
         }
 
         // Initialise sum with the first tail term
         DD sum = DD.of(0.5 * p);
         // S : k in [0, n-1]
-        // Note k=0 already computed as t0
-        for (int k = n - 1; k > 0; k--) {
+        // Note k=0,1 already computed as t0,t1
+        for (int k = n - 1; k > 1; k--) {
             // Descending k sums in order of magnitude for increased precision
             sum = add.apply(sum, powS.apply(a, k, -s));
         }
+        sum = add.apply(sum, t1);
 
         // I: (a+n)^(1-s) / (s-1) = (a+n)^-s * (a+n) / (s-1)
         // Note: This term represents the sum of the remaining terms to infinity.
@@ -3048,44 +3016,47 @@ class HurwitzZetaTest {
         // Without this option the tail cannot be computed when
         // the power terms -> 0.
 
-        // Extended precision power function (big improvement if used for all terms)
-        "7, 15, 15, -53, 256, false",
-        "7, 15, 15, -53, 257, false",
-        "7, 15, 15, -53, 259, false",
-        // With extended precision sum: +4
-        // Difference is not visible due to other errors.
-        "7, 15, 15, -53, 260, false",
-        "7, 15, 15, -53, 262, false",
-        "7, 15, 15, -53, 263, false",
+//        // Extended precision power function (big improvement if used for all terms)
+//        "7, 15, 15, -53, 256, false",
+//        "7, 15, 15, -53, 257, false",
+//        "7, 15, 15, -53, 259, false",
+//        // With extended precision sum: +4
+//        // Difference is not visible due to other errors.
+//        "7, 15, 15, -53, 260, false",
+//        "7, 15, 15, -53, 262, false",
+//        "7, 15, 15, -53, 263, false",
+//
+//        // Sub-normal term: +512. Large drop in max error.
+//        "7, 12, 15, -53, 771, false",
+//        "7, 12, 26, -53, 771, false",
+//        "7, 12, 53, -53, 771, false",
+//        // With extended precision sum: +4
+//        // The extended precision sum makes a small difference only when
+//        // the major errors have been removed.
+//        // RMS drops as N increases. Max error is variable.
+//        "7, 12, 15, -53, 775, false",
+//        "7, 12, 26, -53, 775, false",
+//        "7, 12, 53, -53, 775, false",
+//
+//        // M convergence
+//        // Negligible error change unless too high (> -53) where the
+//        // tail may have remaining terms that can be added to the sum.
+//        // If set much lower than 53-bits then N and M must be increased
+//        // or tail divergence is observed.
+//        "7, 10, 15, -50, 775, false", // Worse due to truncated tail
+//        "8, 10, 15, -63, 775, false",
+//        "7, 10, 26, -63, 775, false",
+//
+//        // Sub-normal zeta result and/or terms.
+//        // Requires scaling of the tail series terms (option 256).
+//        "7, 12, 15, -53, 263, true", // 7 + 256
+//        // Using summation of sub-normal terms to prevent underflow.
+//        "7, 12, 15, -53, 775, true", // 7 + 256 + 512
+//        // Using summation of sub-normal terms to prevent underflow.
+//        "7, 12, 18, -63, 775, true", // 7 + 256 + 512
 
-        // Sub-normal term: +512. Large drop in max error.
-        "7, 12, 15, -53, 771, false",
-        "7, 12, 26, -53, 771, false",
-        "7, 12, 53, -53, 771, false",
-        // With extended precision sum: +4
-        // The extended precision sum makes a small difference only when
-        // the major errors have been removed.
-        // RMS drops as N increases. Max error is variable.
+        // Match the final implementation here
         "7, 12, 15, -53, 775, false",
-        "7, 12, 26, -53, 775, false",
-        "7, 12, 53, -53, 775, false",
-
-        // M convergence
-        // Negligible error change unless too high (> -53) where the
-        // tail may have remaining terms that can be added to the sum.
-        // If set much lower than 53-bits then N and M must be increased
-        // or tail divergence is observed.
-        "7, 10, 15, -50, 775, false", // Worse due to truncated tail
-        "8, 10, 15, -63, 775, false",
-        "7, 10, 26, -63, 775, false",
-
-        // Sub-normal zeta result and/or terms.
-        // Requires scaling of the tail series terms (option 256).
-        "7, 12, 15, -53, 263, true", // 7 + 256
-        // Using summation of sub-normal terms to prevent underflow.
-        "7, 12, 15, -53, 775, true", // 7 + 256 + 512
-        // Using summation of sub-normal terms to prevent underflow.
-        "7, 12, 18, -63, 775, true", // 7 + 256 + 512
     })
     void testPrecisionDouble(int ln, int un, int maxM, int bt, int options, boolean subNormal)
         throws IOException {
@@ -3102,6 +3073,11 @@ class HurwitzZetaTest {
             // Reset
             Arrays.fill(N, 0);
             Arrays.fill(M, 0);
+            String resultFilename = null;
+            if (doReporting()) {
+                resultFilename = String.format("zeta_n%d_m%d_b%d_options%d.csv",
+                    n, maxM, -bt, options);
+            }
 
             final Context c = Context.of(n, maxM)
                 .withEpsilon(eps)
@@ -3135,7 +3111,7 @@ class HurwitzZetaTest {
                         zetaName(c.getN()), bt, options);
                 }
             };
-            assertFunction(test, true);
+            assertFunction(test, true, resultFilename);
             // When not reporting cut the test short
             if (!doReporting()) {
                 break;
@@ -3917,7 +3893,7 @@ class HurwitzZetaTest {
     void testZeta(ZetaTestCase tc) {
         // Cases starting with T_ are for testing code.
         // This can be configured to skip most cases to reduce runtime.
-        assertFunction(tc, tc.name().startsWith("T_"));
+        assertFunction(tc, tc.name().startsWith("T_"), null);
     }
 
     // TODO - Test this ...
@@ -3948,34 +3924,45 @@ class HurwitzZetaTest {
      *
      * @param tc Test case
      * @param allowSkips Allow skipping cases when not reporting
+     * @param resultFilename The name of a result file to record the error
      */
-    private static void assertFunction(DoublePrecisionTestCase tc, boolean allowSkips) {
+    private static void assertFunction(DoublePrecisionTestCase tc, boolean allowSkips,
+        String resultFilename) {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
-        final boolean noSkips = !allowSkips || doReporting();
+        final boolean noSkips = !allowSkips || doReporting() || resultFilename != null;
         final BooleanSupplier skip = createSkipSupplier(noSkips, 7);
-        final long start = System.nanoTime();
-        for (final String filename : tc.getFilenames()) {
-            try (DataReader in = new DataReader(filename)) {
-                while (in.next()) {
-                    if (skip.getAsBoolean()) {
-                        continue;
+        DoubleConsumer errorSink = stats::add;
+        // Allow optional save of result to file
+        try (PrintStream out = resultFilename == null ? null : getPrintStream(resultFilename)) {
+            // TODO:
+            // Update the errorSink with the record of the function
+            long time = System.nanoTime();
+            for (final String filename : tc.getFilenames()) {
+                try (DataReader in = new DataReader(filename)) {
+                    while (in.next()) {
+                        if (skip.getAsBoolean()) {
+                            continue;
+                        }
+                        try {
+                            final double s = in.getDouble(0);
+                            final double a = in.getDouble(1);
+                            final double actual = tc.getFunction().applyAsDouble(s, a);
+                            final BigDecimal expected = in.getBigDecimal(2);
+                            TestUtils.assertEquals(expected, actual, tc.getTolerance(), errorSink,
+                                () -> tc + " s=" + s + ", a=" + a);
+                        } catch (final NumberFormatException ex) {
+                            Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
+                        }
                     }
-                    try {
-                        final double s = in.getDouble(0);
-                        final double a = in.getDouble(1);
-                        final double actual = tc.getFunction().applyAsDouble(s, a);
-                        final BigDecimal expected = in.getBigDecimal(2);
-                        TestUtils.assertEquals(expected, actual, tc.getTolerance(), stats::add,
-                            () -> tc + " s=" + s + ", a=" + a);
-                    } catch (final NumberFormatException ex) {
-                        Assertions.fail("Failed to load data: " + Arrays.toString(in.getFields()), ex);
-                    }
+                } catch (final IOException ex) {
+                    Assertions.fail("Failed to load data: " + filename, ex);
                 }
-            } catch (final IOException ex) {
-                Assertions.fail("Failed to load data: " + filename, ex);
             }
+            time = System.nanoTime() - time;
+            assertRms(tc, stats, time);
+        } catch (IOException e) {
+            Assertions.fail("Failed to write to result file: " + resultFilename, e);
         }
-        assertRms(tc, stats, System.nanoTime() - start);
     }
 
     /**
@@ -4902,13 +4889,18 @@ class HurwitzZetaTest {
 
     @Test
     void test() {
+        // TODO - add these to spot checks
 //        double s = 1121.1037200772555, a = 9.007199254740992E15, expected = 0;
 //        double s = 1121.1037200772555, a = Math.nextUp(1.0), expected = 0.999999999999751064967395493924;
 //        double s=1501.7021967661672, a=1.535965979848382, expected =1.2892791106364060286402216376328398051685475849534E-280;
 //        double s=798.4098080701187, a=2.44681658669993, expected =5.4552937300588262652119314762621199432693920384755E-311;
 //        double  s=1.0046876033700256, a=2.774626370847173E13, expected=184.51544775024293707146458999993276990921062542111;
 //        double s=20.23754877788927, a=9.134550490612894E15, expected=4.6919362125812846992028258016880507980787512899492E-309;
-          double s=180.26951483738634, a=48.74884443673853, expected=5.2823717105788599902950123870564151804047370926344E-305;
+//          double s=180.26951483738634, a=48.74884443673853, expected=5.2823717105788599902950123870564151804047370926344E-305;
+//          double  s=1.0427289765022538, a=3.94996781319737E-16, expected=11523336262829300.1663588738791442776;
+
+          double s=27316.932399926933, a=1.000594477194544, expected=8.9014344678386187888608455646373495579064616407205E-8;
+
 
 //        double s = Math.nextUp(1.0), a = 9.007199254740992E15, expected = 4503599627370459.5;
 //        TestUtils.assertEquals(expected, zeta(s, a, Context.DOUBLE), 0);
@@ -6237,8 +6229,8 @@ class HurwitzZetaTest {
      * @param filename the filename
      * @return the stream
      */
-    private PrintStream getPrintStream(String filename) throws IOException {
-        return getPrintStream(filename, getClass().getSimpleName());
+    private static PrintStream getPrintStream(String filename) throws IOException {
+        return getPrintStream(filename, HurwitzZetaTest.class.getSimpleName());
     }
 
     /**
