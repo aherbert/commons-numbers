@@ -522,7 +522,7 @@ public final class HurwitzZeta {
             // If t0 was sub-normal then return t0 as t1 cannot be added.
             // If t0 was normal check if a sub-normal term can be added
             // otherwise s is very large and the result is t0.
-            if (scaledSum || t0 > UPSCALE_106 * Double.MIN_NORMAL) {
+            if (scaledSum || t1 < t0 * EPS) {
                 return originalT0;
             }
             t0 *= UPSCALE_1022;
@@ -532,7 +532,7 @@ public final class HurwitzZeta {
         }
 
         // Exit early if t1 cannot be added to t0 (exponent s is too large)
-        if (t1 * UPSCALE_106 < t0) {
+        if (t1 < t0 * EPS) {
             return originalT0;
         }
 

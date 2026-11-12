@@ -1588,7 +1588,7 @@ class HurwitzZetaTest {
                 // If t0 was sub-normal then return t0 as t1 cannot be added.
                 // If t0 was normal check if a sub-normal term can be added
                 // otherwise s is very large and the result is t0 to 1 ULP.
-                if (scaledSum || t0 * c.getEps() > Double.MIN_NORMAL) {
+                if (scaledSum || t1 < t0 * c.getEps()) {
                     // Ideally return originalT0. But we must support result scaling.
                     if (resultScale == 1) {
                         return originalT0;
