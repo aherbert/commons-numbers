@@ -32,15 +32,14 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleBinaryOperator;
-import java.util.function.DoubleConsumer;
 import java.util.function.DoublePredicate;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
-import org.apache.commons.math3.optim.univariate.BrentOptimizer;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
+import org.apache.commons.math3.optim.univariate.BrentOptimizer;
 import org.apache.commons.math3.optim.univariate.SearchInterval;
 import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction;
 import org.apache.commons.math3.optim.univariate.UnivariatePointValuePair;
@@ -185,6 +184,12 @@ class HurwitzZetaTest {
         // This tests scaling of terms S and I. The tail is not used
         // as the result values only have 10-bits.
         "hzeta_2p-1065.csv",
+    };
+    /** Filenames of resources used for zeta function using the regions of the
+     * domain (s, a). */
+    private static final String[] DOMAIN_RESOURCES = {
+        "hzeta_domain_2p-1022.csv",
+        "hzeta_domain_2p-1075.csv",
     };
 
     // For the configurable double implementation these constants are from the main class
@@ -1172,7 +1177,7 @@ class HurwitzZetaTest {
         ZETA_2_POW_N1065(HurwitzZeta::value, "hzeta_2p-1065.csv", 0.6, 0.1),
         ZETA_2_POW_N1075(HurwitzZeta::value, "hzeta_2p-1075.csv", 0.6, 0.1),
         // Random samples from the domain
-        ZETA_DOMAIN(HurwitzZeta::value, "hzeta_domain_2p-1022.csv", 2.0, 0.5),
+        ZETA_DOMAIN(HurwitzZeta::value, DOMAIN_RESOURCES, 2.0, 0.5),
         // Negative a
         ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -1305,11 +1310,21 @@ class HurwitzZetaTest {
         // Prefix T_ for test code in this class.
 
         T_DD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, DD.of(a), Context.DD_DOUBLE_DOUBLE),
-            "hzeta_is_2p-1075.csv", 1.5, 0.75, 106),
+            "hzeta_is_2p-1075.csv", 20, 1.5, 106),
+        T_DD_ZETA_2_POW_N1075_SERIES((s, a) -> HurwitzZetaTest.zeta(s, DD.of(a),
+            Context.DD_DOUBLE_DOUBLE.addOptions(Context.EXT_POW_SERIES)),
+            "hzeta_is_2p-1075.csv", 2, 0.25, 106),
+        T_DD_ZETA_2_POW_N1075_AA((s, a) -> HurwitzZetaTest.zeta(s, DD.of(a),
+            Context.DD_DOUBLE_DOUBLE.addOptions(Context.EXT_POW_SERIES | Context.AA_SERIES | Context.AA_TERMS)),
+            "hzeta_is_2p-1075.csv", 0.7, 0.2, 106),
         T_BD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, new BigDecimal(a), null, Context.BD_DOUBLE_DOUBLE),
-            "hzeta_is_2p-1075.csv", 1.5, 0.75, 106);
+            "hzeta_is_2p-1075.csv", 0.001, 0.0005, 106);
 
-        // TODO - Example output
+//        JDK Temurin 25.492-b09
+//        T_DD_ZETA_2_POW_N1075                    max        19.9135   RMS        1.25660   mean       0.161528  n  1836  (320ms)
+//        T_DD_ZETA_2_POW_N1075_SERIES             max        1.51680   RMS       0.210924   mean    -0.00947771  n  1836  (112ms)
+//        T_DD_ZETA_2_POW_N1075_AA                 max       0.655684   RMS       0.171493   mean    -0.00829713  n  1836  (97.6ms)
+//        T_BD_ZETA_2_POW_N1075                    max    0.000575613   RMS    0.000118868   mean    3.64535e-06  n  1836  (642ms)
 
         /** The function. */
         private final BiFunction<Integer, Double, BigDecimal> fun;
@@ -3899,7 +3914,6 @@ class HurwitzZetaTest {
         assertFunction(tc, tc.name().startsWith("T_"), null);
     }
 
-    // TODO - Test this ...
     @ParameterizedTest
     @EnumSource(value = ExtZetaTestCase.class)
     void testZeta(ExtZetaTestCase tc) {
@@ -3995,7 +4009,7 @@ class HurwitzZetaTest {
         final TestUtils.ErrorStatistics stats = new TestUtils.ErrorStatistics();
         BigDecimal ignore = BigDecimal.ZERO;
         if (ignoreB < 0) {
-            ignore = BigDecimal.valueOf(2).pow(ignoreB, MathContext.DECIMAL64);
+            ignore = BigDecimal.ONE.divide(new BigDecimal(BigInteger.ONE.shiftLeft(-ignoreB)), MathContext.DECIMAL64);
         }
         final boolean noSkips = !allowSkips || doReporting();
         final BooleanSupplier skip = createSkipSupplier(noSkips, 7);
@@ -5645,13 +5659,25 @@ class HurwitzZetaTest {
      */
     @ParameterizedTest
     @CsvSource({
-        "hzeta_2p-1022.csv, -1022, 1e-6, 50000, 0, 0, 0, 0",
+        // "hzeta_2p-1022.csv, -1022, 1e-6, 50000, 0, 0, 0, 0",
+        "hzeta_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 0, 0",
     })
     @Disabled("Used to generate test data")
     void testDataWithinDomain(String filename, int b, double eps, int samples,
         double minS, double maxS, double minA, double maxA) throws IOException {
-        final double t = Math.scalb(1.0, b);
-        Assertions.assertTrue(t > 0);
+        // Compute the filtering of values using normal numbers
+        int offset = Double.MIN_EXPONENT + 53 - b;
+        final boolean scaled = offset > 0;
+        double t;
+        BigDecimal scale = null;
+        if (scaled) {
+            // Scale back to within a normal number
+            t = Math.scalb(1.0, b + offset);
+            scale = new BigDecimal(BigInteger.ONE.shiftLeft(offset));
+        } else {
+            t = Math.scalb(1.0, b);
+        }
+        Assertions.assertTrue(t > 0, "Outside the scaling range of a double");
         Assertions.assertTrue(eps >= 0);
         final DoublePredicate filterS = minS < maxS ? s -> s < minS || s > maxS : s -> false;
         final DoublePredicate filterA = minA < maxA ? a -> a < minA || a > maxA : a -> false;
@@ -5661,7 +5687,12 @@ class HurwitzZetaTest {
         try (DataReader in = new DataReader(filename)) {
             while (in.next()) {
                 try {
-                    final double z = in.getDouble(2);
+                    double z;
+                    if (scaled) {
+                        z = in.getBigDecimal(2).multiply(scale, MathContext.DECIMAL64).doubleValue();
+                    } else {
+                        z = in.getDouble(2);
+                    }
                     // Ignore z not close to the target
                     if (Math.abs(z - t) > delta) {
                         removed++;
@@ -5778,6 +5809,8 @@ class HurwitzZetaTest {
         // For convenience the data are sorted by a to allow slicing the
         // data to domains supported by reference implementations.
         final ArrayList<double[]> data = new ArrayList<>(samples);
+        final int ilogb0 = ilogb(0);
+        final int[] values = doReporting() ? new int[ilogb(Double.POSITIVE_INFINITY) - ilogb0 + 1] : null;
         for (int n = 0; n < samples; n++) {
             final int i = sampler.sample();
             final long h1 = h[i];
@@ -5809,8 +5842,21 @@ class HurwitzZetaTest {
                 break;
             }
             // Map the raw bits back to double values
-            data.add(new double[] {Double.longBitsToDouble(bitsS + s),
-                Double.longBitsToDouble(w[i] + a)});
+            final double[] x = {Double.longBitsToDouble(bitsS + s),
+                                Double.longBitsToDouble(w[i] + a)};
+            data.add(x);
+            if (values != null) {
+                // Get the value
+                final double z = zeta(x[0], x[1], Context.DOUBLE_REF);
+                values[ilogb(z) - ilogb0]++;
+            }
+        }
+        if (values != null) {
+            for (int i = 0; i < values.length; i++) {
+                if (values[i] != 0) {
+                    report("2^%d = %d%n", i + ilogb0, values[i]);
+                }
+            }
         }
         data.sort(ca.thenComparing(cs));
         // Write the data directly to file. Name the file using range filters and the target power.
@@ -5843,6 +5889,57 @@ class HurwitzZetaTest {
             out.printf("# Rejection rate: %.5g%n", (double) rejects / samples);
             data.forEach(x -> out.printf("%s, %s%n", x[0], x[1]));
         }
+    }
+
+    /**
+     * Get integer exponent of a floating-point value.
+     *
+     * <p>In contrast to {@link Math#getExponent(double)} this handles
+     * sub-normal numbers by computing the number of leading zeros in the mantissa
+     * and shifting the unbiased exponent. The result is that for all finite, non-zero,
+     * numbers {@code x}, the magnitude of {@code scalb(x, -ilogb(x))} is
+     * always in the range {@code [1, 2)}.
+     *
+     * <p>This method is a functional equivalent of the c function ilogb(double)
+     * modified to not raise exceptions for special cases of numbers that are not
+     * finite non-zero.
+     *
+     * <p>Special cases:
+     *
+     * <ul>
+     * <li>If the argument is NaN or infinite, then the result is
+     * {@link Double#MAX_EXPONENT} + 1 = 1024.</li>
+     * <li>If the argument is zero, then the result is
+     * {@link Double#MIN_EXPONENT} - 53 = -1075.</li>
+     * </ul>
+     *
+     * @param x the value
+     * @return The unbiased exponent of the value to be used for scaling
+     * @see Math#getExponent(double)
+     * @see Math#scalb(double, int)
+     * @see <a href="https://www.cplusplus.com/reference/cmath/ilogb/">ilogb</a>
+     */
+    private static int ilogb(double x) {
+        // Only interested in the exponent and mantissa so remove the sign bit
+        final long bits = Double.doubleToRawLongBits(x) & Long.MAX_VALUE;
+        // Get the unbiased exponent
+        int exp = (int) (bits >>> 52) - 1023;
+
+        // No case to distinguish nan/inf
+        // Handle sub-normal numbers
+        if (exp == Double.MIN_EXPONENT - 1) {
+            // Special case for zero
+            if (bits == 0) {
+                return Double.MIN_EXPONENT - 53;
+            }
+            // A sub-normal number has an exponent below -1022. The amount below
+            // is defined by the number of shifts of the most significant bit in
+            // the mantissa that is required to get a 1 at position 53 (i.e. as
+            // if it were a normal number with assumed leading bit)
+            final long mantissa = bits & 0x000f_ffff_ffff_ffffL;
+            exp -= Long.numberOfLeadingZeros(mantissa << 12);
+        }
+        return exp;
     }
 
     /**
