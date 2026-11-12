@@ -456,7 +456,7 @@ public final class HurwitzZeta {
         // When 0.5 cannot be added to a / (s-1) then N=0 is a good approximation.
         // a / (s - 1) > 2^52 : a > 2^52 * (s - 1)
         // As s -> 1 then a can reduce in magnitude until a ~ 1 and s ~ 1: a^-s -> 1 / a.
-        if (a > LARGE_A || a > 0x1p52 * (s - 1)) {
+        if (a > LARGE_A || a * EPS > s - 1) {
             // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
             // sub-normal as a is large. Compute using pow.
             // Avoid computing sub-normal terms.

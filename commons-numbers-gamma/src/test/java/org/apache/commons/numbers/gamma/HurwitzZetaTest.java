@@ -226,7 +226,7 @@ class HurwitzZetaTest {
      * is configured then the test will still run but with a subset of the
      * cases. This ensures test code is asserted but without excessive runtimes.
      */
-    private static int reporting = 0;
+    private static int reporting = -1;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}.
@@ -1304,9 +1304,9 @@ class HurwitzZetaTest {
         // Prefix T_ for test code in this class.
 
         T_DD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, DD.of(a), Context.DD_DOUBLE_DOUBLE),
-            "hzeta_is_2p-1022.csv", 1.5, 0.75, 106),
+            "hzeta_is_2p-1075.csv", 1.5, 0.75, 106),
         T_BD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, new BigDecimal(a), null, Context.BD_DOUBLE_DOUBLE),
-            "hzeta_is_2p-1022.csv", 1.5, 0.75, 106);
+            "hzeta_is_2p-1075.csv", 1.5, 0.75, 106);
 
         // TODO - Example output
 
@@ -1489,7 +1489,7 @@ class HurwitzZetaTest {
         // As s -> 1 then a can reduce in magnitude until a ~ 1 and s ~ 1: a^-s -> 1 / a.
         // TODO: Test which option is better?
         // Relying on ti could be used before t0 is even computed.
-        if (a > LARGE_APN - n || a > 0x1p52 * (s - 1)) {
+        if (a > LARGE_APN - n || a * c.getEps() > s - 1) {
             // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
             // sub-normal as a is large. Compute using pow.
             double ti;
@@ -3172,7 +3172,6 @@ class HurwitzZetaTest {
                 .withMathContext(new MathContext(digits))
                 .withOptions(options);
             final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
-
                 @Override
                 public double getTolerance() {
                     // Do not fail individual cases
@@ -3308,7 +3307,6 @@ class HurwitzZetaTest {
                 .withEpsilon(eps)
                 .withOptions(options);
             final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
-
                 @Override
                 public double getTolerance() {
                     // Do not fail individual cases
@@ -5845,12 +5843,6 @@ class HurwitzZetaTest {
             data.forEach(x -> out.printf("%s, %s%n", x[0], x[1]));
         }
     }
-
-    // TODO
-    // Generate data within the valid space: 50,000 points.
-    // Get reference result.
-    // Get M and error for all points and plot a density of the data.
-    // Try using claude for help with the plot
 
     /**
      * Create a line in the zeta domain for (s, a) where the result is sub-normal.
