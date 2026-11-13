@@ -140,6 +140,7 @@ class HurwitzZetaTest {
         "hzeta_s4_32_a1_8.csv",
         "hzeta_s1_19_a2147483648_10000000000000000.csv",
         "hzeta_domain_2p-1022.csv",
+        "hzeta_domain_2p-1075.csv",
     };
     /** Filenames of resources used for the extended precision zeta function using integer s
      * and a in the expected range for the negative a use case. This requires {@code 0 < a < 1}
@@ -3952,7 +3953,7 @@ class HurwitzZetaTest {
         try (PrintStream out = resultFilename == null ? null : getPrintStream(resultFilename)) {
             final StringBuilder sb = new StringBuilder(512);
             if (out != null) {
-                out.println("s,a,z,error,m");
+                out.println("s,a,z,ulp_error,m");
             }
             long time = System.nanoTime();
             for (final String filename : tc.getFilenames()) {
