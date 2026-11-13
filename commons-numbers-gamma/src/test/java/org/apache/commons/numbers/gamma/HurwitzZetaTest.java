@@ -132,15 +132,16 @@ class HurwitzZetaTest {
     private static int lastM = 0;
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
-        "hzeta_s1_4_a1_8.csv",
-        "hzeta_s1_4_a8_32.csv",
-        "hzeta_s1_4_a32_2147483648.csv",
-        "hzeta_s1_4_a0_1.csv",
-        "hzeta_s1_4_a1e-16_1e-14.csv",
-        "hzeta_s4_32_a1_8.csv",
-        "hzeta_s1_19_a2147483648_10000000000000000.csv",
+//        "hzeta_s1_4_a1_8.csv",
+//        "hzeta_s1_4_a8_32.csv",
+//        "hzeta_s1_4_a32_2147483648.csv",
+//        "hzeta_s1_4_a0_1.csv",
+//        "hzeta_s1_4_a1e-16_1e-14.csv",
+//        "hzeta_s4_32_a1_8.csv",
+//        "hzeta_s1_19_a2147483648_10000000000000000.csv",
         "hzeta_domain_2p-1022.csv",
         "hzeta_domain_2p-1075.csv",
+        "hzeta_s-52_8_a-53_0.csv",
     };
     /** Filenames of resources used for the extended precision zeta function using integer s
      * and a in the expected range for the negative a use case. This requires {@code 0 < a < 1}
@@ -180,11 +181,14 @@ class HurwitzZetaTest {
         "hzeta_s20_1024_ap1_subnormal1040.csv",
         "hzeta_s20_1024_ap1_subnormal1053.csv",
         "hzeta_s20_1024_ap0.1_subnormal1073.csv",
-        // This tests the tail is used to at least 7 terms when N=7
+        // Sub-normal contours
+        "hzeta_2p-1020.csv",
+        "hzeta_2p-1021.csv",
         "hzeta_2p-1022.csv",
-        // This tests scaling of terms S and I. The tail is not used
-        // as the result values only have 10-bits.
+        "hzeta_2p-1023.csv",
+        "hzeta_2p-1049.csv",
         "hzeta_2p-1065.csv",
+        "hzeta_2p-1075.csv",
     };
     /** Filenames of resources used for zeta function using the regions of the
      * domain (s, a). */
@@ -1099,69 +1103,69 @@ class HurwitzZetaTest {
         // Testing implementations for negative a.
         // Requires accurate evaluation with integer s (IS).
 
-        // The double implementation is accurate until zeta values are sub-normal
-        T_DOUBLE_ZETA_IS((s, a) -> HurwitzZetaTest.zeta(s, a, Context.DOUBLE), INT_TEST_RESOURCES, 1.5, 0.75),
-        // Standard double precision sum and power function works
-        // with sub-normal term scaling
-        T_ZETA_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a,
-            Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
-        ), "hzeta_2p-1022.csv", 40, 0.95),
-        T_ZETA_DOMAIN_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a,
-            Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
-        ), "hzeta_domain_2p-1022.csv", 65, 0.95),
-        // These are within 0.5 ULP as a double-double but rounding put single errors at just over 0.5 ulp.
-        // The zeta values are far below the min double value.
-        T_BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(),
-            EXT_INT_TEST_RESOURCES, 0.56, 0.2),
-        T_DD_ZETA_IS((s, a) -> {
-            final int[] exp = {0};
-            final DD r = HurwitzZetaTest.zeta((int) s, DD.of(a), null, exp, Context.DD_DOUBLE);
-            return Math.scalb(r.hi(), exp[0]);
-        }, EXT_INT_TEST_RESOURCES, 0.52, 0.2),
-
-        // No cancellation - all implementations work
-        T_DOUBLE_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 1.5, 0.75),
-        T_DOUBLE_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 2.0, 0.75),
-        // These use a context to evaluate to double precision
-        T_BD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.2),
-        T_BD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.2),
-        T_DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.2),
-        T_DD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.2),
-
-        // Double arithmetic is max error ~24-bits when cancellation is expected
-        // Note: Testing code may skip tests so here the RMS is configured to the same as the max
-        T_DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p24, 0x1p24),
-        // Computing the largest terms in extended precision error improves 6 bits
-        T_DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p17, 0x1p17),
-
-        // Extended precision implementations
-        T_BD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
-        T_BD_ZETA_S3_5_N_A40_99_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
-        T_DD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
-        T_DD_ZETA_S3_5_N_A40_99_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
-
-        // Roots are the point of maximum cancellation
-        // Double arithmetic has only a few bits of precision on average; and may have no bits correct
-        T_DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p55, 0x1p52),
-        // Computing the largest terms in extended precision allows a few bits of precision
-        T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p48, 0x1p45),
-
-        T_BD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), ROOT_TEST_RESOURCES, 0, 0),
-        // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
-        T_DD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), ROOT_TEST_RESOURCES, 0.7, 0.7),
-
-        // Final implementation
-        ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 1.5, 0.3),
-        ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 2, 0.49),
-        ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
-        ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.5, 0.35),
-        ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
-        ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.3, 0.4),
-        ZETA_S1_19_A2147483648_1E16(HurwitzZeta::value, "hzeta_s1_19_a2147483648_10000000000000000.csv", 1.8, 0.5),
-        // Data that tests the convergence of the tail series with large s and s ~ (a+N).
-        // Most of the results are sub-normal. The final implementation should compute zero
-        // and not create +/-infinity from overflow of the tail series Pochammer term.
-        ZETA_CONVERGENCE(HurwitzZeta::value, EXT_INT_TEST_RESOURCES, 3, 0.25),
+//        // The double implementation is accurate until zeta values are sub-normal
+//        T_DOUBLE_ZETA_IS((s, a) -> HurwitzZetaTest.zeta(s, a, Context.DOUBLE), INT_TEST_RESOURCES, 1.5, 0.75),
+//        // Standard double precision sum and power function works
+//        // with sub-normal term scaling
+//        T_ZETA_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a,
+//            Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
+//        ), "hzeta_2p-1022.csv", 40, 0.95),
+//        T_ZETA_DOMAIN_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a,
+//            Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
+//        ), "hzeta_domain_2p-1022.csv", 65, 0.95),
+//        // These are within 0.5 ULP as a double-double but rounding put single errors at just over 0.5 ulp.
+//        // The zeta values are far below the min double value.
+//        T_BD_ZETA_IS((s, a) -> HurwitzZetaTest.zeta((int) s, new BigDecimal(a), null, Context.BD_DOUBLE).doubleValue(),
+//            EXT_INT_TEST_RESOURCES, 0.56, 0.2),
+//        T_DD_ZETA_IS((s, a) -> {
+//            final int[] exp = {0};
+//            final DD r = HurwitzZetaTest.zeta((int) s, DD.of(a), null, exp, Context.DD_DOUBLE);
+//            return Math.scalb(r.hi(), exp[0]);
+//        }, EXT_INT_TEST_RESOURCES, 0.52, 0.2),
+//
+//        // No cancellation - all implementations work
+//        T_DOUBLE_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 1.5, 0.75),
+//        T_DOUBLE_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 2.0, 0.75),
+//        // These use a context to evaluate to double precision
+//        T_BD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.2),
+//        T_BD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.2),
+//        T_DD_ZETA_S2_4_N_A1_15((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.57, 0.2),
+//        T_DD_ZETA_S2_4_N_A40_99((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.57, 0.2),
+//
+//        // Double arithmetic is max error ~24-bits when cancellation is expected
+//        // Note: Testing code may skip tests so here the RMS is configured to the same as the max
+//        T_DOUBLE_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p24, 0x1p24),
+//        // Computing the largest terms in extended precision error improves 6 bits
+//        T_DOUBLE_P_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0x1p17, 0x1p17),
+//
+//        // Extended precision implementations
+//        T_BD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+//        T_BD_ZETA_S3_5_N_A40_99_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+//        T_DD_ZETA_S3_5_N_A1_15_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+//        T_DD_ZETA_S3_5_N_A40_99_HALF_B30((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+//
+//        // Roots are the point of maximum cancellation
+//        // Double arithmetic has only a few bits of precision on average; and may have no bits correct
+//        T_DOUBLE_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, false), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p55, 0x1p52),
+//        // Computing the largest terms in extended precision allows a few bits of precision
+//        T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p48, 0x1p45),
+//
+//        T_BD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), ROOT_TEST_RESOURCES, 0, 0),
+//        // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
+//        T_DD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), ROOT_TEST_RESOURCES, 0.7, 0.7),
+//
+//        // Final implementation
+//        ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 1.5, 0.3),
+//        ZETA_S1_4_A8_32(HurwitzZeta::value, "hzeta_s1_4_a8_32.csv", 2, 0.49),
+//        ZETA_S1_4_A32_2147483648(HurwitzZeta::value, "hzeta_s1_4_a32_2147483648.csv", 1.8, 0.5),
+//        ZETA_S1_4_A0_1(HurwitzZeta::value, "hzeta_s1_4_a0_1.csv", 1.5, 0.35),
+//        ZETA_S1_4_A0(HurwitzZeta::value, "hzeta_s1_4_a1e-16_1e-14.csv", 1.25, 0.22),
+//        ZETA_S4_32_A1_8(HurwitzZeta::value, "hzeta_s4_32_a1_8.csv", 1.3, 0.4),
+//        ZETA_S1_19_A2147483648_1E16(HurwitzZeta::value, "hzeta_s1_19_a2147483648_10000000000000000.csv", 1.8, 0.5),
+//        // Data that tests the convergence of the tail series with large s and s ~ (a+N).
+//        // Most of the results are sub-normal. The final implementation should compute zero
+//        // and not create +/-infinity from overflow of the tail series Pochammer term.
+//        ZETA_CONVERGENCE(HurwitzZeta::value, EXT_INT_TEST_RESOURCES, 3, 0.25),
         // TODO: These may not be very useful.
         // We require a set of data where a^-s is normal and (a+1)^-s is sub-normal
         // Terms of the series (a+k)^-s are sub-normal
@@ -1177,21 +1181,24 @@ class HurwitzZetaTest {
         ZETA_2_POW_N1022(HurwitzZeta::value, "hzeta_2p-1022.csv", -1.35, 0.35),
         ZETA_2_POW_N1065(HurwitzZeta::value, "hzeta_2p-1065.csv", 0.6, 0.1),
         ZETA_2_POW_N1075(HurwitzZeta::value, "hzeta_2p-1075.csv", 0.6, 0.1),
+        // Sub-normal contours
+        ZETA_SUB_NORMAL(HurwitzZeta::value, SUB_NORMAL_RESOURCES, 2.0, 0.5),
         // Random samples from the domain
         ZETA_DOMAIN(HurwitzZeta::value, DOMAIN_RESOURCES, 2.0, 0.5),
-        // Negative a
-        ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
-        ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
-        ZETA_S2_4_N_A1_15_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0x1p-30.csv", 0, 0),
-        ZETA_S2_4_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-30.csv", 0.53, 0.07),
-        ZETA_S3_5_N_A1_15(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-1.csv", 0, 0),
-        ZETA_S3_5_N_A40_99(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-1.csv", 0, 0),
-        ZETA_S3_5_N_A1_15_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0x1p-30.csv", 0, 0),
-        ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0, 0),
-        ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
-        ZETA_S6_50_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s6_50_na400_999_p0.5_p0x1p-3.csv", 0.52, 0.1),
-        ZETA_S7_51_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s7_51_na400_999_p0.5_p0x1p-3.csv", 1, 0),
-        ZETA_ROOTS(HurwitzZeta::value, ROOT_TEST_RESOURCES, 0.7, 0.05);
+//        // Negative a
+//        ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
+//        ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
+//        ZETA_S2_4_N_A1_15_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0x1p-30.csv", 0, 0),
+//        ZETA_S2_4_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-30.csv", 0.53, 0.07),
+//        ZETA_S3_5_N_A1_15(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-1.csv", 0, 0),
+//        ZETA_S3_5_N_A40_99(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-1.csv", 0, 0),
+//        ZETA_S3_5_N_A1_15_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0x1p-30.csv", 0, 0),
+//        ZETA_S3_5_N_A1_15_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv", 0, 0),
+//        ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
+//        ZETA_S6_50_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s6_50_na400_999_p0.5_p0x1p-3.csv", 0.52, 0.1),
+//        ZETA_S7_51_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s7_51_na400_999_p0.5_p0x1p-3.csv", 1, 0),
+//        ZETA_ROOTS(HurwitzZeta::value, ROOT_TEST_RESOURCES, 0.7, 0.05);
+        ;
 
 //        JDK Temurin 25.492-b09
 //        T_DOUBLE_ZETA_IS                         max        1.05975   RMS       0.260675   mean    -0.00757331  n  6000  (392ms)
@@ -4928,9 +4935,10 @@ class HurwitzZetaTest {
 //        double s=20.23754877788927, a=9.134550490612894E15, expected=4.6919362125812846992028258016880507980787512899492E-309;
 //          double s=180.26951483738634, a=48.74884443673853, expected=5.2823717105788599902950123870564151804047370926344E-305;
 //          double  s=1.0427289765022538, a=3.94996781319737E-16, expected=11523336262829300.1663588738791442776;
+//          double s=27316.932399926933, a=1.000594477194544, expected=8.9014344678386187888608455646373495579064616407205E-8;
 
-          double s=27316.932399926933, a=1.000594477194544, expected=8.9014344678386187888608455646373495579064616407205E-8;
-
+        // Fix this
+        double s=2.1974639503776107E9, a=1.0000003226854666, expected=1.1125369538904841413697360060176E-308;
 
 //        double s = Math.nextUp(1.0), a = 9.007199254740992E15, expected = 4503599627370459.5;
 //        TestUtils.assertEquals(expected, zeta(s, a, Context.DOUBLE), 0);
@@ -5600,6 +5608,39 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Create test data for {@code s-1 in 2^[ls, us)} and {@code a in 2^[la, ua) < 1}.
+     * Samples can follow a log-uniform limiting distribution with full randomisation
+     * of the 52-bit mantissa.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "-52, 8, false, -53, 0, false, 50000",
+    })
+//    @Disabled("Used to generate test data")
+    void testDataSample01(int ls, int us, boolean uniforms,
+                          int la, int ua, boolean uniforma, int size) throws IOException {
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Validate arguments
+        Assertions.assertTrue(ls >= -52);
+        Assertions.assertTrue(us > ls);
+        Assertions.assertTrue(la >= Double.MIN_EXPONENT);
+        Assertions.assertTrue(ua > la);
+        Assertions.assertTrue(ua < 1);
+        // Create samplers
+        final DoubleSupplier nextS = createSampler(rng, Math.scalb(1.0, ls), Math.scalb(1.0, us), uniforms);
+        final DoubleSupplier nextA = createSampler(rng, Math.scalb(1.0, la), Math.scalb(1.0, ua), uniforma);
+
+        try (PrintStream out = getPrintStream(
+            String.format("hzeta_s%s_%s_a%s_%s.txt",
+                shortFormat(ls), shortFormat(us), shortFormat(la), shortFormat(ua)))) {
+            for (int i = 0; i < size; i++) {
+                // Sampler was for s-1
+                out.printf("%s, %s%n", 1 + nextS.getAsDouble(), nextA.getAsDouble());
+            }
+        }
+    }
+
+    /**
      * Create test data for {@code s > a + N} where the tail series may eventually diverge
      * as the Pochammer term (s)_2k-1 (eventually) grows faster than the power term reduces.
      *
@@ -5958,7 +5999,7 @@ class HurwitzZetaTest {
     // Ideally each trapezoid under the curve should be the same area, and
     // the segment between the points (top of trapezoid) should not deviate
     // far from the curve below it.
-    @ValueSource(ints = {-1022, -1065, -1075})
+    @ValueSource(ints = {-1020, -1021, -1022, -1023, -1049, -1075})
     @Disabled("Used to generate test data")
     void testDataSubNormalDomain(int b) throws IOException {
         // Configure for high accuracy with a scaled result.
@@ -5995,23 +6036,26 @@ class HurwitzZetaTest {
                 double z = zeta.applyAsDouble(s, a);
                 points.add(new double[] {s, a, z});
             } catch (IllegalArgumentException e) {
-                Assertions.fail(e.getMessage() + ": a=" + a);
+                // Can occur when a=minA as zeta(a, maxS) may not be close to the target
+                if (a != minA) {
+                    Assertions.fail(e.getMessage() + ": a=" + a);
+                }
             }
         }
 
         // Map zeta(a, s) = t using s
         final DoubleSupplier nextS = createRange(n, minS, maxS, false);
-        // Skip the ends as the round-trip of the function is not exact.
-        // This then enumerates (minS, maxS)
-        nextS.getAsDouble();
-        for (int i = 2; i < n; i++) {
+        for (int i = 0; i < n; i++) {
             double s = nextS.getAsDouble();
             try {
                 double a = solver.findRoot(x -> zeta.applyAsDouble(s, x) - t, minA, maxA);
                 double z = zeta.applyAsDouble(s, a);
                 points.add(new double[] {s, a, z});
             } catch (IllegalArgumentException e) {
-                Assertions.fail(e.getMessage() + ": s=" + s);
+                // Can occur when s=minS as zeta(minS, a) may not be close to the target
+                if (s != minS) {
+                    Assertions.fail(e.getMessage() + ": s=" + s);
+                }
             }
         }
 

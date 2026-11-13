@@ -34,12 +34,13 @@ function hzeta(filename)
     s = str2double(extractBefore(l,','));
     a = str2double(extractAfter(l,','));
     % Matlab can have out-of-memory errors for large symbolic expansions.
-    % This typically occurs for large a and s so may require skipping.
+    % This typically occurs for large s when s is an integer as it uses
+    % the polygamma expansion; or large a for any s.
     % Use this to show the arguments:
     % disp([s, a])
     % Skip large a to avoid out-of-memory errors.
-    % Skip tiny a where MATLAB generates NaN.
-    % This was used on the zeta(s, a) = 2^-1022 double data.
+    % Skip tiny a where MATLAB generates NaN for large integer s.
+    % This was used on the zeta(s, a) contour data with extreme arguments.
     % if a > 1e12 || a < 1.0000000000002
     %   continue
     % end
