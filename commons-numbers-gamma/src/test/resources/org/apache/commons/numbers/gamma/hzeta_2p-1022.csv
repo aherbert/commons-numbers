@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# zeta(s, a) ~ Double.MIN_NORMAL = 2^-1022
+# zeta(s, a) ~ 2^-1022
 # Note:
 # This contains data evaluated by both mpmath and MATLAB.
 # MATLAB symbolic math generates out-of-memory errors at large a and NaN at tiny a.
