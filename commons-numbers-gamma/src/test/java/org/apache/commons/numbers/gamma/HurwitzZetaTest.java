@@ -1484,6 +1484,60 @@ class HurwitzZetaTest {
         double t0 = Double.isNaN(a0) ? Math.pow(a, -s) : a0;
         lastM = 0;
 
+        // ------
+        // Notes:
+        // There are issues with the current implementation where it may compute
+        // too many calls to power. This is the main overhead of the function
+        // and ideally should be minimised if there is no loss of precision.
+        // Target precision is 1 ULP when the result is dominated by
+        // a converging series as this is the limit of Math.pow.
+        // If the result is defined by small s then the I term (a+n)^(1-s) / (s-1)
+        // dominates and the target precision is 2 ULP due to the divide
+        // on a 1 ULP accurate power function.
+        //
+        // zeta(s, a) = a^-s + zeta(s, a+1)
+        //
+        // power term a^-s for a < 1 can be so large that it is the zeta result.
+        // power term (a+1)^-s can never overflow and can be used to determine
+        // the scale of the function. The current implementation does not use this
+        // fact. It could compute (a+1)^-s and enable scaling only if both
+        // a^-s and (a+1)^-s are required to compute the result and the later
+        // is sub-normal.
+        //
+        // The scaled power is used if x^-y is < 2^-1022. But if it is larger
+        // than 2^-1023 it may be consistently more accurate than the split power
+        // which has a naive ulp of 4.5 to the true result (this may be lower at ~3.3).
+        //
+        // if a^-s > (a+1)^-s * 2^53 then the series has converged to 1 ULP
+        // and we can use n=1 and evaluate the rest of the terms I and T.
+        // If we add them in double-double precision and evaluate the rest using n=2
+        // this requires another call to power which does not make sense to
+        // gain 1 ULP.
+        //
+        // The extended power is used for very large s. When a = 1 the limit of
+        // support is only required to be s=1075. If sub-normal support is required
+        // then this limit extends to whatever the scaled tail is using, e.g. 1075 + 53.
+        // When a<1 then the term a^s dominates and a+1^-s will not be used at s=1075.
+        // So it should be optimised for maximum accuracy with small s and note used
+        // when s > 1075 + 106 (or whatever support is used for the scaled tail).
+        //
+        // The limit for the asymptotic threshold is simple. The approximation
+        // may work at lower a. Current tests fail at 1e8 but not 1e9 (> sqrt(2^53))
+        // for the standard precision power.
+        //
+        // Decision to recompute scaled a^-s or (a+1)^-s if they are sub-normal
+        // may be deferred until the terms are known to be required for the result.
+        // In the asymptotic route a^-s may be sub normal but a^-(1+s) may not be
+        // so can be computed and a^-s ignored rather than recomputed.
+        //
+        // If the power term is sub-normal with small s then the split power
+        // has high error which is magnified by the division.
+        // (a+n)^(1-s) / (s-1)
+        // exp((1-s)*log(a+n) - log(s-1))  # 4 ulp
+        // n=1 can use log1p. Only matters when a < 0 and here a^s dominates the result.
+        // exp((1-s)*log1p(a) - log(s-1))
+        // ------
+
         // For testing the tail convergence this supports return of the result
         // using the scaling of the tail series
         final double resultScale = c.isSet(Context.SCALED_RESULT | Context.TAIL_SCALING) ?
@@ -4938,6 +4992,7 @@ class HurwitzZetaTest {
 //          double s=27316.932399926933, a=1.000594477194544, expected=8.9014344678386187888608455646373495579064616407205E-8;
 
         // Fix this
+        doReporting();
         double s=2.1974639503776107E9, a=1.0000003226854666, expected=1.1125369538904841413697360060176E-308;
 
 //        double s = Math.nextUp(1.0), a = 9.007199254740992E15, expected = 4503599627370459.5;
