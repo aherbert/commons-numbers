@@ -227,6 +227,22 @@ class HurwitzZetaTest {
     /** Threshold for z in the Taylor series approximation of (1 + t)^z.
      * Set where |z * t| < 2^-26  =>  z < 2^-26 / 2^-52 = 2^26. */
     private static final double Z_LIMIT = 0x1p26;
+    /** Threshold for large {@code s} where {@code zeta(s, a) = a^-s} in double precision
+     * for all {@code a > 0}.
+     *
+     * <p>The remainder of the series after the first term is bounded:
+     * <pre>
+     * sum_{k>=1} (a+k)^-s <= (a+1)^-s * (1 + (a+1) / (s-1))
+     * </pre>
+     * <p>Relative to {@code a^-s} this is largest for the largest {@code a} with a
+     * non-zero result, {@code a^-s >= 2^-1074}: {@code a = 2^(1074/s)}. Smaller {@code a}
+     * (including {@code a <= 1}) have a smaller relative remainder. Solving for a
+     * remainder below {@code 2^-54 * a^-s} (half an ulp) gives {@code s >= 344.17}.
+     * A value of 350 has a remainder below {@code 2^-56.8 * a^-s} (maximum
+     * {@code a = 8.39}). If {@code a^-s} underflows to zero ({@code a^-s < 2^-1075})
+     * the same bound limits the remainder to below {@code 2^-1131} for {@code s >= 350},
+     * so zero is also the correctly rounded result. */
+    private static final double SINGLE_TERM_S = 350;
 
     /**
      * Flag set when reporting to the console. Used for testing.
@@ -1174,7 +1190,7 @@ class HurwitzZetaTest {
         // 38.4% of results are sub-normal
         ZETA_S20_1024_AP1_SUB_NORMAL_1040(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1040.csv", 1.55, 0.2),
         // 48.3% of results are sub-normal
-        ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1, 0.15),
+        ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1.2, 0.15),
         // 100% of results are sub-normal
         ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.6, 0.1),
         // Full domain range that evaluates at 2^-1022 and 2^-1065
@@ -1542,9 +1558,16 @@ class HurwitzZetaTest {
         final double resultScale = c.isSet(Context.SCALED_RESULT | Context.TAIL_SCALING) ?
             UPSCALE_106 : 1;
 
-        // Can overflow if 0 <= a < 1
-        if (t0 >= LARGE_T0) {
-            // Nothing can be added in double-double precision
+        // The remaining terms cannot be added to a^-s when:
+        // - a^-s is very large (can overflow if 0 <= a < 1). Nothing can be added in
+        //   double-double precision, see LARGE_T0
+        // - s is large, see SINGLE_TERM_S
+        if (t0 >= LARGE_T0 || s >= SINGLE_TERM_S) {
+            if (resultScale != 1 && t0 < Double.MIN_NORMAL) {
+                // Scaled result requested: recompute to avoid the sub-normal precision of t0
+                final double p = Math.pow(a, -s * 0.5);
+                return p * UPSCALE_106 * p;
+            }
             return t0 * resultScale;
         }
 
