@@ -224,9 +224,6 @@ class HurwitzZetaTest {
      * on a normal number using a sum of normal terms.
      * Multiplicative inverse of DOWNSCALE2: 2^106. */
     private static final double UPSCALE_106 = 0x1.0p106;
-    /** Threshold for z in the Taylor series approximation of (1 + t)^z.
-     * Set where |z * t| < 2^-26  =>  z < 2^-26 / 2^-52 = 2^26. */
-    private static final double Z_LIMIT = 0x1p26;
     /** Threshold for large {@code s} where {@code zeta(s, a) = a^-s} in double precision
      * for all {@code a > 0}.
      *
@@ -985,6 +982,33 @@ class HurwitzZetaTest {
         }
 
         /**
+         * Extended precision power function {@code (x+n)^z} for the zeta series terms
+         * when {@code a > 0}. Mirrors {@link HurwitzZeta#extPowxpn(double, int, double)}.
+         *
+         * <p>The domain is limited by the single-term trap for large {@code s}
+         * ({@link #SINGLE_TERM_S}): the exponent is {@code -s}, {@code 1-s}, or half of
+         * these for a scaled power, so {@code |z| < 350}. For the wider domain
+         * including {@code x + n < 1} see {@link #extPow(double, int, double)}.
+         *
+         * @param x the argument x ({@code 0 < x < 2^53})
+         * @param n the argument n ({@code >= 1})
+         * @param z the exponent z ({@code -350 < z < 0})
+         * @return the result
+         */
+        static double extPowxpn(double x, int n, double z) {
+            // (s+ss)^z = s^z * (1+t)^z with t = ss/s and |t| <= 2^-53.
+            // Taylor series: (1+t)^z - 1 = zt + z(z-1)t^2/2! + ...
+            // For |z| < 350 the second term is below (350 * 2^-53)^2 / 2 < 2^-90 relative
+            // to the result and is ignored. The sign of ss is not changed: the
+            // correction can be in either direction.
+            final DD d = DD.ofSum(x, n);
+            final double s = d.hi();
+            final double ss = d.lo();
+            final double r = Math.pow(s, z);
+            return r + r * (z * ss / s);
+        }
+
+        /**
          * Standard precision {@code (x+y)^z}.
          *
          * @param x the argument x.
@@ -1644,13 +1668,14 @@ class HurwitzZetaTest {
         // and histogram the N required for convergence compared to the N used by the
         // current implementation.
 
-        PowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? Context::extPow : Context::stdPow;
+        // Note: s < SINGLE_TERM_S so the extended precision power can be limited to |z| < 350.
+        PowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? Context::extPowxpn : Context::stdPow;
         // Power function for the series (allows switching to a faster pow)
-        PowOperator powSeries = c.isSet(Context.EXT_POW_SERIES) ? Context::extPow : Context::stdPow;
+        PowOperator powSeries = c.isSet(Context.EXT_POW_SERIES) ? Context::extPowxpn : Context::stdPow;
 
         // Check the extended precision power can be used.
-        // If s is large or there is no round-off from (a+n) use standard precision.
-        if (s >= Z_LIMIT || DD.ofSum(a, n).lo() == 0) {
+        // If there is no round-off from (a+n) use standard precision.
+        if (DD.ofSum(a, n).lo() == 0) {
             pow = powSeries = Context::stdPow;
         }
 

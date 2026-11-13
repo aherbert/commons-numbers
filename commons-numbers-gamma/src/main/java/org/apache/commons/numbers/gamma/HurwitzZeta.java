@@ -160,9 +160,6 @@ public final class HurwitzZeta {
      * on a normal number using a sum of normal terms.
      * Multiplicative inverse of DOWNSCALE2: 2^106. */
     private static final double UPSCALE_106 = 0x1.0p106;
-    /** Threshold for z in the Taylor series approximation of (1 + t)^z.
-     * Set where |z * t| < 2^-26  =>  z < 2^-26 / 2^-52 = 2^26. */
-    private static final double Z_LIMIT = 0x1p26;
     /** Threshold for large {@code s} where {@code zeta(s, a) = a^-s} in double precision
      * for all {@code a > 0}.
      *
@@ -506,8 +503,9 @@ public final class HurwitzZeta {
         // - Adding series terms in magnitude order (no cost)
 
         // Check the extended precision power can be used.
-        // If s is large or there is no round-off from (a+n) use standard precision.
-        final PowOperator pow = s >= Z_LIMIT || twoSumLow(a, N, a + N) == 0 ?
+        // If there is no round-off from (a+n) use standard precision.
+        // Note: s < SINGLE_TERM_S so the extended precision power is limited to |z| < 350.
+        final PowOperator pow = twoSumLow(a, N, a + N) == 0 ?
             HurwitzZeta::stdPowxpn :
             HurwitzZeta::extPowxpn;
 
@@ -1161,9 +1159,12 @@ public final class HurwitzZeta {
      * <ul>
      * <li>{@code x > 0}
      * <li>{@code n >= 1}
-     * <li>{@code x+n >= 1} and finite
-     * <li>{@code -(2^26) < z < -1} and finite
+     * <li>{@code x+n > 1} and finite
+     * <li>{@code -350 < z < 0}
      * </ul>
+     *
+     * <p>The exponent is {@code -s}, {@code 1-s}, or half of these for a scaled power.
+     * It is limited by the single-term trap for large {@code s} ({@link #SINGLE_TERM_S}).
      *
      * <p>This method has no advantage over {@code Math.pow(x+n, z)} when there is no
      * round-off component to (x+n). In the event that {@code (x+n)} is exact this method
@@ -1177,50 +1178,27 @@ public final class HurwitzZeta {
      *
      * @param x Argument x ({@code 0 < x < 2^53})
      * @param n Argument n ({@code > 0})
-     * @param z Exponent z ({@code -(2^26) < z < -1})
+     * @param z Exponent z ({@code -350 < z < 0})
      * @return the result
      */
     // package-private for testing
     static double extPowxpn(double x, int n, double z) {
-        // (s+ss)^z = s^z * (1+ss/s)^z
+        // (s+ss)^z = s^z * (1+t)^z with t = ss/s and |t| <= 2^-53.
         //
         // Taylor series:
         // (1 + t)^z = 1 + zt + z(z-1)t^2/2! + z(z-1)(z-2)t^3/3! + ...
         // for |t| < 1 and real z
+        //
+        // For |z| < 350 the second term is below (350 * 2^-53)^2 / 2 < 2^-90 relative
+        // to the result and is ignored. The sign of ss is not changed: the
+        // correction can be in either direction.
 
         // Compute the exact double-double sum.
         // Avoid generation of a DD intermediate by directly using twoSum.
-        double s = x + n;
-        double ss = twoSumLow(x, n, s);
-        double t;
-
-        // Result cases assuming (x+n) >= 1:
-        // s = 1 creates 1.0
-        // s > 1 can underflow to 0
-        // The correction must always be in the same direction, i.e. make the result smaller.
-        // Change a negative round-off to positive by moving 1 ulp from s to ss.
-        // This is an unpredictable 50:50 branch.
-        if (ss < 0) {
-            // x > 0, n >= 1 : if ss < 0 then s > 1
-            // Do not use Math.ulp. Here we know s is finite > 1. Use raw bits.
-            // These methods are intrinsic candidates.
-            t = Double.longBitsToDouble(Double.doubleToRawLongBits(s) - 1L);
-            // (s-t) = ulp(s). Addition to ss will be exact as the double+int was 84 bits maximum
-            ss += s - t;
-            s = t;
-        }
-
+        final double s = x + n;
+        final double ss = twoSumLow(x, n, s);
         final double r = Math.pow(s, z);
-
-        // 0 <= t <= 2^-52 (or <= 2^-53 if no bit was moved)
-        t = ss / s;
-
-        // Compute (1 + t)^z - 1 using a Taylor series of 2 terms with Horner's rule.
-        // Equivalent to expm1(z * log1p(t)). Accurate to z*t < 2^-26.
-        // Result is approximately [-1.5e-8, 0] correcting r towards zero.
-        t = z * t * (1 + (z - 1) * t * 0.5);
-
-        return r + r * t;
+        return r + r * (z * ss / s);
     }
 
     /**

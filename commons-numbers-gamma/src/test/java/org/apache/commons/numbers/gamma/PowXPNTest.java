@@ -34,12 +34,17 @@ import org.junit.jupiter.params.provider.CsvSource;
  * <p>This class contains a version of {@code powxpn} for a larger domain than the
  * implementation used in the zeta function. It handles {@code a+n < 1} which can
  * overflow. The final version in the {@link HurwitzZeta} class uses a different method
- * for negative {@code a} and so only supports {@code a + n > 1}.
+ * for negative {@code a} and so only supports {@code a + n > 1}. It is also limited to
+ * {@code |z| < 350} by the single-term threshold for large {@code s}.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class PowXPNTest {
     /** Threshold for z in the Taylor series approximation of expm1(z * t). */
     private static final double EXT_POW_LIMIT = 0x1p26;
+    /** Limit on |z| for the final implementation in the zeta function. This is the
+     * threshold for large s where only the first term is computed:
+     * {@code HurwitzZeta.SINGLE_TERM_S}. */
+    private static final double FINAL_Z_LIMIT = 350;
     /** ln(0.5). */
     private static final double LN_0_5 = Math.log(0.5);
     /** ln(1.5). */
@@ -297,6 +302,31 @@ class PowXPNTest {
         "0.4768905656467315, 7, -30.596639219471125, 1.84957967284753363187059400419e-27",
         "0.25493581216338623, 2, -28.58794856737284, 8.02819866165411541339754454829e-11",
         "0.9112765515000535, 6, -30.599996030403638, 2.03948364812262740818278983803e-26",
+        // Extend z towards the single-term limit for large s (|z| < 350).
+        // random.seed(350)
+        // for i in range(20):
+        //   x, y, z = random.random(), random.randint(1, 9), -random.uniform(32, 350)
+        //   print(f'"{x}, {y}, {z}, {mp.power(mpf(x) + mpf(y), z)}",')
+        "0.8899424699165775, 3, -159.690535850998, 6.18953067650371211007225612752e-95",
+        "0.6706891008699155, 6, -342.46196281798893, 5.66088531842778086939394694166e-283",
+        "0.7538950725754537, 3, -322.19791285379125, 7.99939224037509871975988181782e-186",
+        "0.4887759216822891, 3, -186.57626949336756, 5.62447336576363354787671050525e-102",
+        "0.2359912765811757, 4, -124.49338048561177, 8.87657716800067404121555858848e-79",
+        "0.3842014747342245, 8, -228.18132709819392, 1.91991677904368306223032270434e-211",
+        "0.4911099110934508, 3, -248.35294732370775, 1.42366899322263206419760452327e-135",
+        "0.42901245307222735, 9, -152.9296007657407, 9.4465156679949021663401950873e-150",
+        "0.6076964972365018, 3, -317.78024675400206, 8.38136532383834988693989935937e-178",
+        "0.3024274066269538, 6, -149.86180548917642, 1.5286560916979251135577504454e-120",
+        "0.6882584608515814, 7, -329.67043131560206, 9.30485180609484547257068386424e-293",
+        "0.18893271486628482, 3, -319.6933660592587, 9.72570000114462260110958160245e-162",
+        "0.14460337894717423, 4, -49.57802215111951, 2.43453096060627421004603947947e-31",
+        "0.6591636106133928, 9, -279.21340049395167, 9.81039912465679374649731847506e-276",
+        "0.23965604612893254, 7, -47.1826217191897, 2.73057405285488804546975667773e-41",
+        "0.4222598253557711, 5, -46.83488411435409, 4.11859974525833698062847549977e-35",
+        "0.2962190174692687, 8, -254.6651328027855, 9.84576815891320419217572667386e-235",
+        "0.6836471555057574, 6, -213.4774650848922, 7.55450950469950132385985886267e-177",
+        "0.0854164175879909, 7, -115.36738399353565, 7.86268274792312743878786336704e-99",
+        "0.7948373516842757, 7, -202.4934672243211, 2.5995418840369890552010715721e-181",
         // for b in [0, 1, 2, 3, 4]:
         //   for i in range(10):
         //     x, y, z = -random.random(), random.randint(1, 9), -random.uniform(1, 2)*2**b
@@ -563,14 +593,14 @@ class PowXPNTest {
             ERROR_POW_XPN1.add(extUlp);
         }
 
-        // Ensure the final implementation in the HurwitzZeta function is the same when
-        // the domain is applicable. Collect error statistics to compare to Math.pow.
+        // Check the final implementation in the HurwitzZeta function when the domain is
+        // applicable. This uses a smaller domain for z than powxpn so the result can differ.
+        // Collect error statistics to compare to Math.pow.
         // Ignore edge case where x+1 == 1 with round-off.
-        if (x > 0 && n >= 1 && z >= -EXT_POW_LIMIT && stdUlp != Long.MAX_VALUE) {
-            Assertions.assertEquals(actual, HurwitzZeta.extPowxpn(x, n, z),
-                () -> String.format("final pow(%s + %d, %s)", x, n, z));
+        if (x > 0 && n >= 1 && z > -FINAL_Z_LIMIT && stdUlp != Long.MAX_VALUE) {
+            TestUtils.assertEquals(expected, HurwitzZeta.extPowxpn(x, n, z), 1,
+                ERROR_FINAL_EXT::add, () -> String.format("final pow(%s + %d, %s)", x, n, z));
             ERROR_FINAL_STD.add(stdUlp);
-            ERROR_FINAL_EXT.add(extUlp);
         }
     }
 
@@ -581,7 +611,8 @@ class PowXPNTest {
         Assertions.assertTrue(ERROR_POW.getRMS() < 0.25, () -> formatError(ERROR_POW));
         // Some cases are very wrong using Math.pow(x+n, z) when there is round-off
         Assertions.assertTrue(ERROR_POWP.getRMS() > 1e6, () -> formatError(ERROR_POWP));
-        Assertions.assertTrue(ERROR_FINAL_STD.getRMS() > 1e6, () -> formatError(ERROR_FINAL_STD));
+        // The final implementation domain is limited to |z| < 350 where Math.pow errors are smaller
+        Assertions.assertTrue(ERROR_FINAL_STD.getRMS() > 2, () -> formatError(ERROR_FINAL_STD));
 
         // Extended precision is ulp accurate for all x+n cases
         Assertions.assertTrue(ERROR_POW_XPN.getRMS() < 0.5, () -> formatError(ERROR_POW_XPN));
