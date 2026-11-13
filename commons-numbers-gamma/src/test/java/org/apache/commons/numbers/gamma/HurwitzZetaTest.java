@@ -240,6 +240,20 @@ class HurwitzZetaTest {
      * the same bound limits the remainder to below {@code 2^-1131} for {@code s >= 350},
      * so zero is also the correctly rounded result. */
     private static final double SINGLE_TERM_S = 350;
+    /** Threshold below which a power term is computed using a split power to avoid
+     * sub-normal loss of precision: {@code x^y = x^(y/2) * 2^1022 * x^(y/2)}. The
+     * zeta sum is then scaled by 2^1022. Equal to 2^-1022 ({@link Double#MIN_NORMAL}).
+     *
+     * <p>A single {@code Math.pow} is accurate to 1 ulp but in the sub-normal range the
+     * ulp is fixed at 2^-1074: relative precision halves for each binade below 2^-1022.
+     * The split power has the error of two pow calls and a multiply but no loss of
+     * precision. For a single term the crossover is between 2^-1024 and 2^-1022.
+     * However this threshold also decides if the entire sum (later terms, I and the tail)
+     * is scaled. A lower threshold leaves smaller terms in sub-normal precision.
+     * Testing on the reference data (2^-1022, 2^-1023 and 2^-1024) found 2^-1022
+     * equal or better in all cases; lower thresholds increased the max error
+     * (e.g. 1.26 to 1.68 ulp on results ~2^-1022). */
+    private static final double SCALED_SUM_THRESHOLD = Double.MIN_NORMAL;
 
     /**
      * Flag set when reporting to the console. Used for testing.
@@ -1617,10 +1631,10 @@ class HurwitzZetaTest {
             // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
             // sub-normal as a is large. Compute using pow.
             double ti;
-            if (c.isSet(Context.SUB_NORMAL_SUM) && t0 < Double.MIN_NORMAL) {
+            if (c.isSet(Context.SUB_NORMAL_SUM) && t0 < SCALED_SUM_THRESHOLD) {
                 // Large a. The tiny s trap cannot reach here as t0 -> 1/a.
                 // Avoid computing the division with a sub-normal term
-                if (t0 * a < Double.MIN_NORMAL) {
+                if (t0 * a < SCALED_SUM_THRESHOLD) {
                     ti = Math.pow(a, (1 - s) * 0.5);
                     ti = 2 * ti * UPSCALE_916 * ti / (s - 1);
                 } else {
@@ -1692,7 +1706,7 @@ class HurwitzZetaTest {
         if (c.isSet(Context.SUB_NORMAL_SUM)) {
             // Check t0
             // Recompute scaled t0 if applicable.
-            if (t0 < Double.MIN_NORMAL) {
+            if (t0 < SCALED_SUM_THRESHOLD) {
                 t0 = Math.pow(a, -s * 0.5);
                 t0 = t0 * UPSCALE_1022 * t0;
                 if (t0 == 0) {
@@ -1778,7 +1792,7 @@ class HurwitzZetaTest {
 
         // Continue optional sub-normal support
         if (c.isSet(Context.SUB_NORMAL_SUM)) {
-            if (p < Double.MIN_NORMAL && !scaledSum) {
+            if (p < SCALED_SUM_THRESHOLD && !scaledSum) {
                 // The final term is sub-normal.
                 // If this occurs when the scaled sum has been activated then:
                 // - the series is very strongly converging and the result is t0
@@ -1819,7 +1833,8 @@ class HurwitzZetaTest {
         double ti;
         if (scaledSum) {
             // Determine if (a+n)^(1-s) is sub-normal and compute in parts.
-            if (p * (a + n) < 1) {
+            // p is scaled by 2^1022: compare with the scaled threshold (2^-1022 * 2^1022 = 1)
+            if (p * (a + n) < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
                 // Note: This must use the pow for the main terms and apply scaling
                 // as powS may be standard precision
                 ti = pow.apply(a, n, (1 - s) * 0.5);
