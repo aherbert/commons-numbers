@@ -2335,6 +2335,7 @@ class HurwitzZetaTest {
         // sub-normal power is not increased and no split power is required.
         final double p = Math.pow(a, 1 - s);
         forwardPowCount++;
+        forwardEm0P = p;
         // The double-double product is exact only if its low part is not sub-normal.
         // If the result is below ~2^-968 the low part loses precision and the high part
         // can be wrong by up to 1 ulp. Compute using p scaled by 2^106 (exact).
@@ -2382,6 +2383,18 @@ class HurwitzZetaTest {
     /** Term k at which the sum switched to scaling (split power) in the last call to the
      * dynamic zeta implementation; -1 if not scaled. Used for testing. */
     private static int dynamicSwitchK;
+    /** Number of Euler-Maclaurin correction terms used at a bracket exit of the last call
+     * to the dynamic zeta implementation; -1 for other exits. Used for testing. */
+    private static int dynamicEmTerms;
+    /** Share of the result from the tail {@code x^(1-s) * bracket} at a bracket exit of
+     * the last call to the dynamic zeta implementation. Used for testing. */
+    private static double dynamicTailShare;
+    /** Amplification of the ulp error of {@code x^(1-s)} in the result at a bracket exit
+     * of the last call to the dynamic zeta implementation: tail share * m(result) / m(p),
+     * where m is the mantissa in [1, 2); NaN if the result is sub-normal. Used for testing. */
+    private static double dynamicAmp;
+    /** The power {@code a^(1-s)} of the last call to {@link #zetaEm0}. Used for testing. */
+    private static double forwardEm0P;
 
     /**
      * Options for the dynamic zeta implementation.
@@ -2389,10 +2402,15 @@ class HurwitzZetaTest {
     static final class DynamicContext {
         /** Default options. The direct power for {@code x^(1-s)} is more accurate than
          * {@code x^-s * x} when the term {@code x^(1-s) / (s-1)} dominates (s near 1). */
-        static final DynamicContext DEFAULT = new DynamicContext(16, FORWARD_N, true, true);
+        static final DynamicContext DEFAULT = new DynamicContext(16, 16, 0, FORWARD_N, true, true);
 
         /** Maximum number of terms M of the Euler-Maclaurin correction series. */
         private final int m;
+        /** Schedule: maximum number of correction terms at k=0. */
+        private final int m0;
+        /** Schedule: increase in the maximum number of correction terms per step k.
+         * The maximum at step k is {@code min(m, m0 + mStep * k)}. */
+        private final int mStep;
         /** Maximum N: the Euler-Maclaurin tail is used at x = a + N if not converged. */
         private final int maxN;
         /** Set to true to include the current sum in the convergence threshold of the
@@ -2404,12 +2422,16 @@ class HurwitzZetaTest {
 
         /**
          * @param m Maximum number of correction terms.
+         * @param m0 Maximum number of correction terms at k=0.
+         * @param mStep Increase in the maximum number of correction terms per step k.
          * @param maxN Maximum N.
          * @param useSum Include the current sum in the convergence threshold.
          * @param directPow Compute {@code x^(1-s)} with a power function.
          */
-        DynamicContext(int m, int maxN, boolean useSum, boolean directPow) {
+        DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow) {
             this.m = m;
+            this.m0 = m0;
+            this.mStep = mStep;
             this.maxN = maxN;
             this.useSum = useSum;
             this.directPow = directPow;
@@ -2420,7 +2442,27 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withM(int m) {
-            return new DynamicContext(m, maxN, useSum, directPow);
+            return new DynamicContext(m, m, 0, maxN, useSum, directPow);
+        }
+
+        /**
+         * Set the schedule for the maximum number of correction terms at step k:
+         * {@code min(m, m0 + step * k)}.
+         *
+         * @param start Maximum number of correction terms at k=0.
+         * @param step Increase per step k.
+         * @return a new instance
+         */
+        DynamicContext withSchedule(int start, int step) {
+            return new DynamicContext(m, start, step, maxN, useSum, directPow);
+        }
+
+        /**
+         * @param k Step k.
+         * @return the maximum number of correction terms at step k
+         */
+        int mk(int k) {
+            return (int) Math.min(m, m0 + (long) mStep * k);
         }
 
         /**
@@ -2428,7 +2470,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withMaxN(int n) {
-            return new DynamicContext(m, n, useSum, directPow);
+            return new DynamicContext(m, m0, mStep, n, useSum, directPow);
         }
 
         /**
@@ -2436,7 +2478,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withUseSum(boolean use) {
-            return new DynamicContext(m, maxN, use, directPow);
+            return new DynamicContext(m, m0, mStep, maxN, use, directPow);
         }
 
         /**
@@ -2444,12 +2486,13 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withDirectPow(boolean direct) {
-            return new DynamicContext(m, maxN, useSum, direct);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, direct);
         }
 
         @Override
         public String toString() {
-            return "M=" + m + " maxN=" + maxN + (useSum ? "" : " (tail only)") +
+            return (m0 == m && mStep == 0 ? "M=" + m : "M=min(" + m + "," + m0 + "+" + mStep + "k)") +
+                " maxN=" + maxN + (useSum ? "" : " (tail only)") +
                 (directPow ? "" : " (x^-s * x)");
         }
     }
@@ -2491,15 +2534,24 @@ class HurwitzZetaTest {
         dynamicWastedTerms = 0;
         dynamicSwitchK = -1;
         dynamicExitK = 0;
+        dynamicEmTerms = -1;
+        dynamicTailShare = Double.NaN;
+        dynamicAmp = Double.NaN;
         final int m = Math.min(Math.max(0, dc.m), F.length - 1);
 
         // k = 0 for a > 2: Euler-Maclaurin sum with N=0 (S_0 = 0).
         // This handles a zero result and very large a.
         final boolean em0 = a > 2;
         if (em0) {
-            final double z = zetaEm0(s, a, m, true);
+            final double z = zetaEm0(s, a, Math.max(0, dc.mk(0)), true);
             if (!Double.isNaN(z)) {
                 dynamicExit = forwardExitK == -3 ? DYN_EXIT_TRAP : DYN_EXIT_EM0;
+                if (dynamicExit == DYN_EXIT_EM0) {
+                    // forwardEm0Terms is the first term below the threshold
+                    dynamicEmTerms = forwardEm0Terms - 1;
+                    dynamicTailShare = 1;
+                    dynamicAmp = z < Double.MIN_NORMAL ? Double.NaN : mantissa(z) / mantissa(forwardEm0P);
+                }
                 return z;
             }
             dynamicWastedTerms = forwardEm0Terms;
@@ -2554,7 +2606,7 @@ class HurwitzZetaTest {
                 // x^(1-s), scaled if the sum is scaled
                 DD px = x.multiply(t);
                 final double extra = dc.useSum ? sum.hi() / px.hi() : 0;
-                final DD f = emBracket(s, x, extra, m, force);
+                final DD f = emBracket(s, x, extra, force ? m : Math.max(0, dc.mk(k)), force);
                 if (f != null) {
                     if (dc.directPow) {
                         // Note: s < 350 so no requirement for safePow
@@ -2571,6 +2623,12 @@ class HurwitzZetaTest {
                     }
                     dynamicExit = force ? DYN_EXIT_FORCED : DYN_EXIT_EM;
                     dynamicExitK = k;
+                    // Diagnostics (in the scaled frame if scaled)
+                    final DD tail = px.multiply(f);
+                    final double r = sum.add(tail).hi();
+                    dynamicTailShare = tail.hi() / r;
+                    dynamicAmp = !scaled && r < Double.MIN_NORMAL || scaled && r < 1 ? Double.NaN :
+                        dynamicTailShare * mantissa(r) / mantissa(px.hi());
                     if (scaled) {
                         // Scaled result is above 2^-53: the double-double product is exact.
                         return sum.add(px.multiply(f)).hi() * Double.MIN_NORMAL;
@@ -2591,6 +2649,16 @@ class HurwitzZetaTest {
                 return scaled ? sum.hi() * Double.MIN_NORMAL : sum.hi();
             }
         }
+    }
+
+    /**
+     * Get the mantissa of a normal number in [1, 2).
+     *
+     * @param v Value
+     * @return the mantissa
+     */
+    private static double mantissa(double v) {
+        return Math.scalb(v, -Math.getExponent(v));
     }
 
     /**
@@ -2641,6 +2709,7 @@ class HurwitzZetaTest {
             previous = c;
             g *= (s + 2 * j - 1) * (s + 2 * j) / x2;
         }
+        dynamicEmTerms = j - 1;
         DD f = DD.of(s - 1).reciprocal().add(x.reciprocal().multiply(0.5));
         // c_1 is included unless negligible (or truncated: j == 1 and c_1 >= stop)
         if (j > 1 || (c1 < stop && c1 >= stop * 0x1p-50)) {
@@ -2853,10 +2922,13 @@ class HurwitzZetaTest {
         final DynamicContext[] contexts = {
             null,
             DynamicContext.DEFAULT,
-            DynamicContext.DEFAULT.withUseSum(false),
             DynamicContext.DEFAULT.withM(8),
-            DynamicContext.DEFAULT.withMaxN(32),
-            DynamicContext.DEFAULT.withDirectPow(false),
+            DynamicContext.DEFAULT.withSchedule(0, 2),
+            DynamicContext.DEFAULT.withSchedule(4, 2),
+            DynamicContext.DEFAULT.withSchedule(4, 4),
+            DynamicContext.DEFAULT.withSchedule(8, 2),
+            DynamicContext.DEFAULT.withSchedule(8, 4),
+            DynamicContext.DEFAULT.withSchedule(12, 2),
         };
         final int nc = contexts.length;
         final TestUtils.ErrorStatistics[] all = new TestUtils.ErrorStatistics[nc];
@@ -2887,6 +2959,25 @@ class HurwitzZetaTest {
         for (int i = 0; i < 4; i++) {
             switchStats[i] = new TestUtils.ErrorStatistics();
             switchSub[i] = new TestUtils.ErrorStatistics();
+        }
+        // Default context: error at bracket exits by the number of correction terms used
+        // (k=0 and k>0), the tail share of the result, and the amplification of the
+        // x^(1-s) ulp error (tail share * m(result) / m(x^(1-s)))
+        final String[] termBins = {"0", "1", "2", "3-4", "5-8", "9-12", "13-16"};
+        final double[] shareLimits = {0.25, 0.5, 0.9, 0.99, Double.POSITIVE_INFINITY};
+        final double[] ampLimits = {0.75, 1, 1.25, 1.5, 1.75, Double.POSITIVE_INFINITY};
+        final TestUtils.ErrorStatistics[][] termStats = new TestUtils.ErrorStatistics[2][termBins.length];
+        final TestUtils.ErrorStatistics[] shareStats = new TestUtils.ErrorStatistics[shareLimits.length];
+        final TestUtils.ErrorStatistics[] ampStats = new TestUtils.ErrorStatistics[ampLimits.length];
+        for (int i = 0; i < termBins.length; i++) {
+            termStats[0][i] = new TestUtils.ErrorStatistics();
+            termStats[1][i] = new TestUtils.ErrorStatistics();
+        }
+        for (int i = 0; i < shareLimits.length; i++) {
+            shareStats[i] = new TestUtils.ErrorStatistics();
+        }
+        for (int i = 0; i < ampLimits.length; i++) {
+            ampStats[i] = new TestUtils.ErrorStatistics();
         }
         int n = 0;
         try (DataReader in = new DataReader(filename)) {
@@ -2931,6 +3022,23 @@ class HurwitzZetaTest {
                             switchSub[c].add(e);
                         }
                     }
+                    if (i == iDefault && dynamicEmTerms >= 0) {
+                        final int tm = dynamicEmTerms;
+                        final int tb = tm <= 2 ? tm : tm <= 4 ? 3 : tm <= 8 ? 4 : tm <= 12 ? 5 : 6;
+                        termStats[dynamicExit == DYN_EXIT_EM0 ? 0 : 1][tb].add(e);
+                        int b = 0;
+                        while (dynamicTailShare >= shareLimits[b]) {
+                            b++;
+                        }
+                        shareStats[b].add(e);
+                        if (!Double.isNaN(dynamicAmp)) {
+                            b = 0;
+                            while (dynamicAmp >= ampLimits[b]) {
+                                b++;
+                            }
+                            ampStats[b].add(e);
+                        }
+                    }
                     if (i == 1) {
                         histN[dynamicExit][Math.min(dynamicExitK, maxN + 1)]++;
                         bandN[ab][sb]++;
@@ -2966,6 +3074,18 @@ class HurwitzZetaTest {
                     switchStats[i].getRMS(), switchSub[i].size(), switchSub[i].getMaxAbs(), switchSub[i].getRMS());
             }
         }
+        // Machine readable diagnostic lines: DIAG,file,table,bin,n,max,rms
+        for (int k = 0; k < 2; k++) {
+            for (int i = 0; i < termBins.length; i++) {
+                diag(filename, k == 0 ? "terms k=0" : "terms k>0", termBins[i], termStats[k][i]);
+            }
+        }
+        for (int i = 0; i < shareLimits.length; i++) {
+            diag(filename, "share", "<" + shareLimits[i], shareStats[i]);
+        }
+        for (int i = 0; i < ampLimits.length; i++) {
+            diag(filename, "amp", "<" + ampLimits[i], ampStats[i]);
+        }
         final StringBuilder sb = new StringBuilder(256);
         sb.append(String.format("  mean pow dynamic/forward (rows)%n  %-8s", ""));
         for (final String b : sBands) {
@@ -2981,6 +3101,21 @@ class HurwitzZetaTest {
             }
         }
         report("%s%n", sb);
+    }
+
+    /**
+     * Report a diagnostic line of error statistics: {@code DIAG,file,table,bin,n,max,rms}.
+     *
+     * @param filename File name
+     * @param table Table name
+     * @param bin Bin name
+     * @param stats Error statistics
+     */
+    private static void diag(String filename, String table, String bin, TestUtils.ErrorStatistics stats) {
+        if (stats.size() != 0) {
+            report("DIAG,%s,%s,%s,%d,%.4f,%.5f%n", filename, table, bin, stats.size(),
+                stats.getMaxAbs(), stats.getRMS());
+        }
     }
 
     /**
