@@ -2387,8 +2387,9 @@ class HurwitzZetaTest {
      * Options for the dynamic zeta implementation.
      */
     static final class DynamicContext {
-        /** Default options. */
-        static final DynamicContext DEFAULT = new DynamicContext(16, FORWARD_N, true, false);
+        /** Default options. The direct power for {@code x^(1-s)} is more accurate than
+         * {@code x^-s * x} when the term {@code x^(1-s) / (s-1)} dominates (s near 1). */
+        static final DynamicContext DEFAULT = new DynamicContext(16, FORWARD_N, true, true);
 
         /** Maximum number of terms M of the Euler-Maclaurin correction series. */
         private final int m;
@@ -2449,7 +2450,7 @@ class HurwitzZetaTest {
         @Override
         public String toString() {
             return "M=" + m + " maxN=" + maxN + (useSum ? "" : " (tail only)") +
-                (directPow ? " (direct pow)" : "");
+                (directPow ? "" : " (x^-s * x)");
         }
     }
 
@@ -2465,11 +2466,13 @@ class HurwitzZetaTest {
      * c_j = B_2j / (2j)! * (s)_(2j-1) * x^-2j
      * </pre>
      *
-     * <p>The bracket does not require a power function and {@code x^(1-s) = t_k * x}
-     * where {@code t_k = x^-s} is the next term of the forward sum. The correction series
-     * is checked for convergence within M terms relative to the total
-     * {@code S_k + x^(1-s) / (s-1)}: {@code c_j < 2^-56 * (1/(s-1) + S_k / x^(1-s))}.
-     * If it converges the result is returned with no further power function evaluations.
+     * <p>The bracket does not require a power function. The convergence check uses the
+     * estimate {@code x^(1-s) = t_k * x} where {@code t_k = x^-s} is the next term of the
+     * forward sum. The correction series is checked for convergence within M terms
+     * relative to the total {@code S_k + x^(1-s) / (s-1)}:
+     * {@code c_j < 2^-56 * (1/(s-1) + S_k / x^(1-s))}. If it converges the result is
+     * returned using {@code x^(1-s)} computed with a power function (option directPow),
+     * or the estimate {@code t_k * x}.
      * Otherwise {@code t_k} is added to the sum and the forward sum remainder bound is
      * checked. At {@code k = maxN} the tail is used without a convergence requirement.
      *
@@ -2853,8 +2856,7 @@ class HurwitzZetaTest {
             DynamicContext.DEFAULT.withUseSum(false),
             DynamicContext.DEFAULT.withM(8),
             DynamicContext.DEFAULT.withMaxN(32),
-            DynamicContext.DEFAULT.withDirectPow(true),
-            DynamicContext.DEFAULT.withM(8).withDirectPow(true),
+            DynamicContext.DEFAULT.withDirectPow(false),
         };
         final int nc = contexts.length;
         final TestUtils.ErrorStatistics[] all = new TestUtils.ErrorStatistics[nc];
@@ -2876,9 +2878,9 @@ class HurwitzZetaTest {
         final long[][] bandN = new long[aBands.length][sBands.length];
         final long[][] bandPow = new long[aBands.length][sBands.length];
         final long[][] bandPow0 = new long[aBands.length][sBands.length];
-        // Direct pow context: error by exit relative to the switch to scaling.
+        // Default context: error by exit relative to the switch to scaling.
         // 0 = not scaled; 1 = scaled from t0; 2 = exit at the switch term; 3 = exit after it
-        final int iDirect = 5;
+        final int iDefault = 1;
         final String[] switchNames = {"not scaled", "scaled at t0", "exit at switch k", "exit after switch k"};
         final TestUtils.ErrorStatistics[] switchStats = new TestUtils.ErrorStatistics[4];
         final TestUtils.ErrorStatistics[] switchSub = new TestUtils.ErrorStatistics[4];
@@ -2918,7 +2920,7 @@ class HurwitzZetaTest {
                     }
                     exits[i][dynamicExit]++;
                     wasted[i] += dynamicWastedTerms;
-                    if (i == iDirect && (dynamicExit == DYN_EXIT_EM || dynamicExit == DYN_EXIT_REMAINDER ||
+                    if (i == iDefault && (dynamicExit == DYN_EXIT_EM || dynamicExit == DYN_EXIT_REMAINDER ||
                         dynamicExit == DYN_EXIT_FORCED)) {
                         // Last term used: EM exit at k uses t_k; remainder exit (k+1) added t_k
                         final int last = dynamicExit == DYN_EXIT_REMAINDER ? dynamicExitK - 1 : dynamicExitK;
@@ -2960,7 +2962,7 @@ class HurwitzZetaTest {
         for (int i = 0; i < 4; i++) {
             if (switchStats[i].size() != 0) {
                 report("  %s %-20s n=%6d max %.3f rms %.4f | sub-normal n=%6d max %.3f rms %.4f%n",
-                    contexts[iDirect], switchNames[i], switchStats[i].size(), switchStats[i].getMaxAbs(),
+                    contexts[iDefault], switchNames[i], switchStats[i].size(), switchStats[i].getMaxAbs(),
                     switchStats[i].getRMS(), switchSub[i].size(), switchSub[i].getMaxAbs(), switchSub[i].getRMS());
             }
         }
