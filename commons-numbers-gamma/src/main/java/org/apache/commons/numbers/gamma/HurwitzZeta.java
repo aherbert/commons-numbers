@@ -194,6 +194,21 @@ public final class HurwitzZeta {
      * Note 2^-1075 is the minimum non-zero double.
      * Equivalent to Double.MIN_EXPONENT - 53. */
     private static final int MIN_DOUBLE_EXPONENT = -1075;
+    /** The minimum deviation from {@code x=1} to use {@code Math.pow(x, y)} when
+     * {@code |y| > SAFE_POW_Y}. Below this threshold a helper function is used to
+     * compute {@code (1 + (x-1))^y}. The {@code Math.pow} error occurs for
+     * {@code ~1.65e-7 < |x-1| < 2^-20}. */
+    private static final double SAFE_DEVIATION_FROM_1 = 0x1.0p-20;
+    /** The maximum magnitude of {@code y} to use {@code Math.pow(x, y)} for any {@code x}.
+     * Above this threshold a helper function is used to compute {@code x^y} when
+     * {@code x} is close to 1. This is the threshold for the large {@code |y|}
+     * branch of the fdlibm pow algorithm that contains the error. */
+    private static final double SAFE_POW_Y = 0x1.0p31;
+    /** High part of ln(2) with 32 significant bits (fdlibm ln2_hi).
+     * {@code k * LN2_HI} is exact for {@code |k| < 2^21}. */
+    private static final double LN2_HI = 0x1.62e42feep-1;
+    /** Low part of ln(2) (fdlibm ln2_lo). {@code LN2_HI + LN2_LO} is ln(2) to ~2^-86. */
+    private static final double LN2_LO = 0x1.a39ef35793c76p-33;
 
     /**
      * Precomputed factors for {@code k}-th element of the tail function {@code T}
@@ -464,8 +479,9 @@ public final class HurwitzZeta {
      */
     // package-private for testing using a == 1 (Riemann zeta function)
     static double zetaImp(double s, double a) {
-        // First term
-        double t0 = Math.pow(a, -s);
+        // First term. safePow is only required here: after the single-term trap
+        // s < SINGLE_TERM_S and Math.pow is accurate for a close to 1.
+        double t0 = safePow(a, -s);
 
         // The remaining terms cannot be added to a^-s when:
         // - a^-s is very large (can overflow if 0 <= a < 1), see LARGE_T0
@@ -1212,6 +1228,8 @@ public final class HurwitzZeta {
         // Avoid generation of a DD intermediate by directly using twoSum.
         final double s = x + n;
         final double ss = twoSumLow(x, n, s);
+        // safePow is not required: the Math.pow error close to x=1 (see safePow)
+        // only occurs for |z| > 2^31. Here |z| < 350, e.g. (a+1)^-s for a -> 0.
         final double r = Math.pow(s, z);
         return r + r * (z * ss / s);
     }
@@ -1235,5 +1253,147 @@ public final class HurwitzZeta {
         // xx = aRoundoff + bRoundoff
         final double bVirtual = x - a;
         return (a - (x - bVirtual)) + (b - bVirtual);
+    }
+
+    /**
+     * Safe single term power function {@code x^y}.
+     *
+     * <p>This method is used to compute the power function accurately when
+     * {@code x -> 1} and {@code |y|} is large. It is limited to the expected arguments
+     * of the zeta function use case:
+     *
+     * <ul>
+     * <li>{@code x > 0} and finite
+     * <li>{@code y < 0}
+     * </ul>
+     *
+     * <p>This method has no advantage over {@code Math.pow(x, y)} when {@code x} is not
+     * close to 1 or {@code |y| <= 2^31}. The method exists to address
+     * <a href="https://bugs.openjdk.org/browse/JDK-8326547">JDK-8326547</a> where
+     * {@link Math#pow(double, double)} can be outside the 1 ULP specification for
+     * {@code |y| > 2^31} and {@code ~1.65e-7 < |1-x| < 2^-20}. The deviation can be
+     * over 700 ULP. The error is in the fdlibm pow algorithm used by
+     * {@link StrictMath#pow(double, double)} on all platforms, and by
+     * {@code Math.pow} on platforms with no pow intrinsic (e.g. AArch64), or on
+     * x86_64 in Java 8 for sub-normal results. This bug has been fixed in JDK 27 but no
+     * backport exists at the time of development (Nov 2026). This library supports
+     * Java 8 and must return an accurate zeta result for the entire domain
+     * {@code a > 0}.
+     *
+     * <p>Use of this helper function will be removed when backports exist on the minimum
+     * target Java version.
+     *
+     * @param x Argument x
+     * @param y Argument y
+     * @return the result
+     * @see <a href="https://bugs.openjdk.org/browse/JDK-8326547">JDK-8326547:
+     * StrictMath.pow returns results outside of a 1 ulp error bound</a>
+     */
+    // package-private for testing
+    static double safePow(double x, double y) {
+        // Exact for x in [0.5, 2]: |eps| is either 0 or >= 2^-53.
+        final double eps = x - 1;
+        // Note: x == 1 (eps == 0) uses Math.pow which is exact:
+        // 1 for any finite y; NaN for infinite y.
+        // NaN y uses Math.pow.
+        if (Math.abs(y) > SAFE_POW_Y && Math.abs(eps) < SAFE_DEVIATION_FROM_1 && eps != 0) {
+            return pow1p(eps, y);
+        }
+        return Math.pow(x, y);
+    }
+
+    /**
+     * Platform independent implementation of {@code (1+x)^y}.
+     *
+     * <p>This method is accurate as {@code x -> 0} for large {@code |y|}: the error
+     * bound is ~1.5 ULP (assuming {@link Math#exp(double)} is accurate to 1 ULP); the
+     * measured maximum error is ~1.25 ULP. It is limited to the expected arguments of the
+     * zeta function use case:
+     *
+     * <ul>
+     * <li>{@code x = a - 1} for a double {@code a}: {@code x} is exact and
+     * {@code 2^-53 <= |x| < 2^-20}. Either sign of {@code x} is supported.
+     * <li>{@code y} not NaN. Either sign of {@code y} is supported. Infinite {@code y}
+     * returns the limit 0 or infinity.
+     * </ul>
+     *
+     * <p><strong>Warning:</strong> This method does not expect to be called with
+     * {@code x=0} where the result for {@code Math.pow(1, y)} is 1 for any finite
+     * argument {@code y} and NaN otherwise. This argument is filtered in
+     * {@link #safePow(double, double)}.
+     *
+     * <p>Method: computes {@code z = y * ln(1 + x)} as a double-double {@code (zh + zl)}
+     * and returns {@code exp(zh) * (1 + zl)}. The exponent must be carried to ~70 bits
+     * because the absolute error in {@code z} becomes the relative error in the result,
+     * and {@code |z|} can be up to ~745 (underflow) or ~710 (overflow); a double
+     * {@code z} loses log2(745) ~ 9.5 bits. Note: {@code exp(y * log1p(x))} has errors
+     * of 100-1000 ULP.
+     *
+     * @param x Argument x
+     * @param y Argument y
+     * @return the result (1+x)^y
+     */
+    private static double pow1p(double x, double y) {
+        // z = y * ln(1+x) = p + t with p = y * x.
+        // |t| <= |p| * |x| / 2 + ulp(p) < 4e-4 here, so
+        // p < -746 gives z < -745.9 (result < 2^-1075 = e^-745.13: rounds to 0) and
+        // p > 710 gives z > 709.9 (result > MAX_VALUE = e^709.78: overflows).
+        // Every |y| > 2^996 exits here as |x| >= 2^-53 makes |p| >= 2^943.
+        final double p = y * x;
+        if (p < -746) {
+            return 0;
+        }
+        if (p > 710) {
+            return Double.POSITIVE_INFINITY;
+        }
+        // Here |y| <= 746 / |x| <= 746 * 2^53 < 2^63 so the split of y in the
+        // exact product cannot overflow.
+
+        // ln(1+x) = x + lo, lo = -x^2/2 + x^3/3 - x^4/4 + x^5/5
+        // Plain Horner evaluation is sufficient. lo only enters z as y*lo, with
+        // |y*lo| <= |p|*|x|/2 <= 746 * 2^-21 ~ 3.6e-4, so a few ulp of rounding error
+        // in lo is ~8e-20 absolute in z: < 0.001 ulp in the result.
+        // Term contributions to z are p * x^(k-1) / k (|p| <= 746, |x| < 2^-20):
+        //   x^4/4: up to ~1.6e-16 (~1.5 ulp) - required.
+        //   x^5/5: up to ~1.2e-22 (~1e-6 ulp) - kept as a margin.
+        //   x^6/6 (truncated): up to ~1e-28 absolute in z, < 2^-102 relative to ln(1+x).
+        final double lo = x * x * (-0.5 + x * (1.0 / 3 - x * (0.25 - x * 0.2)));
+        // Exact round-off of y*x. Exact unless |p| < ~2^-968 where any error
+        // is below 2^-1000 absolute in z and irrelevant to exp(z).
+        final double pe = DD.ofProduct(y, x).lo();
+        final double t = pe + y * lo;
+        double zh = p + t;
+        // fast two-sum, |p| >= |t|
+        double zl = t - (zh - p);
+        if (zh < -746) {
+            // result < 2^-1075: underflows to 0
+            return 0;
+        }
+        if (zh > 710) {
+            // result > MAX_VALUE: overflows
+            return Double.POSITIVE_INFINITY;
+        }
+        // Scale into [-700, 700] so exp(zh) neither overflows nor is sub-normal;
+        // the final scalb then rounds once.
+        int k = 0;
+        if (zh < -700) {
+            k = (int) Math.ceil((-700 - zh) / LN2_HI);
+        } else if (zh > 700) {
+            k = -(int) Math.ceil((zh - 700) / LN2_HI);
+        }
+        if (k != 0) {
+            // (zh + zl) + k * ln2, renormalised so |zl| <= ulp(zh)/2.
+            // zh + k * LN2_HI is exact: k * LN2_HI (|k| <= 68) is a multiple of 2^-32
+            // with at most 39 significant bits; zh (|zh| <= 746) is a multiple of 2^-43;
+            // and the sum (|sum| <= 700) is representable on that grid.
+            final double h = zh + k * LN2_HI;
+            final double l = zl + k * LN2_LO;
+            zh = h + l;
+            zl = l - (zh - h);
+        }
+        double r = Math.exp(zh);
+        // exp(zh + zl) ~ exp(zh) * (1 + zl), |zl| < ~2^-43
+        r += r * zl;
+        return k == 0 ? r : Math.scalb(r, -k);
     }
 }

@@ -1534,7 +1534,7 @@ class HurwitzZetaTest {
      */
     static double zeta(double s, double a, double a0, Context c) {
         // First term may be provided
-        double t0 = Double.isNaN(a0) ? Math.pow(a, -s) : a0;
+        double t0 = Double.isNaN(a0) ? HurwitzZeta.safePow(a, -s) : a0;
         lastM = 0;
 
         // ------
@@ -1603,7 +1603,7 @@ class HurwitzZetaTest {
         if (t0 >= LARGE_T0 || s >= SINGLE_TERM_S) {
             if (resultScale != 1 && t0 < Double.MIN_NORMAL) {
                 // Scaled result requested: recompute to avoid the sub-normal precision of t0
-                final double p = Math.pow(a, -s * 0.5);
+                final double p = HurwitzZeta.safePow(a, -s * 0.5);
                 return p * UPSCALE_106 * p;
             }
             return t0 * resultScale;
@@ -2007,7 +2007,7 @@ class HurwitzZetaTest {
      */
     static double zetaForward(double s, double a) {
         // First term
-        double t0 = Math.pow(a, -s);
+        double t0 = HurwitzZeta.safePow(a, -s);
         forwardPowCount = 1;
         forwardExitK = 0;
 
@@ -3196,6 +3196,121 @@ class HurwitzZetaTest {
         return DD.ofSum(za, zb).add(z).hi();
     }
 
+    @ParameterizedTest
+    @MethodSource()
+    void testSafePow(double x, double y, BigDecimal expected, double ulps) {
+        final double actual = HurwitzZeta.safePow(x, y);
+        TestUtils.assertEquals(expected, actual, ulps, null, () -> x + ", " + y);
+    }
+
+    static Stream<Arguments> testSafePow() {
+        final Stream.Builder<Arguments> builder = Stream.builder();
+        final SplittableRandom rng = new SplittableRandom(0x6a7f3c19e2d5b801L);
+
+        // [1] safePow equals Math.pow outside the region (|x-1| < 2^-20 and |y| > 2^31).
+        // The result is targeted to 2^e where e is in the finite (non-zero) range.
+        for (int i = 0; i < 20; i++) {
+            // |x-1| in [2^-20, 1)
+            final double eps = Math.scalb(1 + rng.nextDouble(), -rng.nextInt(1, 21));
+            final boolean above = rng.nextBoolean();
+            final double x = above ? 1 + eps : 1 - eps;
+            final int e = above ? -rng.nextInt(1, 1075) : rng.nextInt(1, 1021);
+            final double y = e * Math.log(2) / Math.log(x);
+            builder.add(Arguments.of(x, y, new BigDecimal(Math.pow(x, y)), 0.0));
+        }
+        for (int i = 0; i < 10; i++) {
+            // |x-1| in [2^-53, 2^-20) and |y| <= 2^31
+            final double eps = Math.scalb(1 + rng.nextDouble(), -rng.nextInt(21, 53));
+            final double x = rng.nextBoolean() ? 1 + eps : 1 - eps;
+            final double y = -rng.nextDouble() * 0x1.0p31;
+            builder.add(Arguments.of(x, y, new BigDecimal(Math.pow(x, y)), 0.0));
+        }
+
+        // [2] Reference data (mpmath, 25 digits) for (1+eps)^y with |eps| < 2^-20.
+        // For |y| > 2^31 and ~1.65e-7 < |1-x| < 2^-20 the fdlibm pow algorithm has errors
+        // of up to ~700 ulp (JDK-8326547).
+        // The error bound of the pow1p method is ~1.5 ulp.
+        final double tol = 1.5;
+        Stream.of(
+            // Failures from the zeta test data (s, a) = (-y, x)
+            "1.0000003227675152, -2194757834.781836, 2.225074184198986633183406e-308",
+            "1.0000003057825648, -2312133893.9828777, 8.900294963086566956773313e-308",
+            "1.0000001654292612, -4282171556.307094, 2.22507458660884096252401e-308",
+            "1.0000001653721486, -4279459002.547016, 4.450145909582948640722375e-308",
+            // x > 1: x^y ~ 2^e for e in {-100, -900, -1020, -1023, -1030, -1074}
+            "1.0000000322394043, -2150000000.0, 7.888609210358299400587122e-31",
+            "1.0000002901546758, -2150000000.0, 1.183052125212324789055485e-271",
+            "1.0000003288419723, -2150000000.0, 8.900294832473877392941063e-308",
+            "1.0000003298091547, -2150000000.0, 1.112537085373975559680715e-308",
+            "1.0000003320659137, -2150000000.0, 8.691696114761528201819074e-311",
+            "1.0000003462512561, -2150000000.0, 4.940657265989543985391232e-324",
+            "1.0000000231049062, -3000000000.0, 7.888610829315991693591556e-31",
+            "1.0000002079441759, -3000000000.0, 1.18305186650262727018166e-271",
+            "1.0000002356700692, -3000000000.0, 8.9002933821479750305992e-308",
+            "1.0000002363632166, -3000000000.0, 1.112536762327078002648335e-308",
+            "1.0000002379805604, -3000000000.0, 8.691693207034904219578968e-311",
+            "1.0000002481467214, -3000000000.0, 4.940656985628598726227791e-324",
+            "1.0000000161950278, -4280000000.0, 7.888607398738291657356261e-31",
+            "1.000000145755259, -4280000000.0, 1.183051666958879627888823e-271",
+            "1.000000165189295, -4280000000.0, 8.900298582533360771283194e-308",
+            "1.0000001656751458, -4280000000.0, 1.112537288606614118165554e-308",
+            "1.000000166808798, -4280000000.0, 8.69169147099544735286331e-311",
+            "1.0000001739346114, -4280000000.0, 4.940656235272423474816602e-324",
+            // x < 1: x^y ~ 2^e for e in {100, 900, 1020, 1023}
+            "0.9999999684933105, -2200000000.0, 1.267650462132827721792021e+30",
+            "0.99999971643983, -2200000000.0, 8.452712227095812838726936e+270",
+            "0.9999996786318134, -2200000000.0, 1.123558201403959183716814e+307",
+            "0.999999677686613, -2200000000.0, 8.988464936202302661895132e+307",
+            "0.9999999768950942, -3000000000.0, 1.267650655963665098558789e+30",
+            "0.9999997920558674, -3000000000.0, 8.452713313205760052201532e+270",
+            "0.9999997643299864, -3000000000.0, 1.123558192576534053651432e+307",
+            "0.9999997636368394, -3000000000.0, 8.98846465853198825215162e+307",
+            // Very large |y| (tiny |x-1|): x^y ~ 2^e for e in {-1020, 1020}
+            "1.0000000007070102, -1000000000000.0, 8.899372349738193952191792e-308",
+            "0.9999999992929899, -1000000000000.0, 1.123550565560633819108738e+307",
+            "1.000000000000707, -1000000000000000.0, 9.081020363335436062073694e-308",
+            "0.999999999999293, -1000000000000000.0, 1.101197839548217236787208e+307",
+            "1.0000000000000007, -1e+18, 5.032224803489411482371937e-290",
+            "0.9999999999999993, -1e+18, 1.9871926216551980330655e+289",
+            // |y| at the threshold 2^31 (uses Math.pow) and above (uses pow1p)
+            "1.0000003227718606, -2147483648.0, 9.332634413312831999551369e-302",
+            "0.9999996772282437, -2147483648.0, 1.071508653437426160626654e+301",
+            "1.0000003227717835, -2147484160.0, 9.332636310768226013597287e-302",
+            "0.9999996772283206, -2147484160.0, 1.071508690937945323861027e+301"
+        ).map(s -> s.split(", ")).forEach(v -> builder.add(Arguments.of(
+            Double.parseDouble(v[0]), Double.parseDouble(v[1]), new BigDecimal(v[2]), tol)));
+
+        // Limits: underflow to 0 and overflow to infinity.
+        // An expected value above Double.MAX_VALUE is infinite as a double.
+        final BigDecimal inf = new BigDecimal("1e400");
+        final double eps = 0x1.0p-52;
+        final double epsm = 0x1.0p-53;
+        builder.add(Arguments.of(1 + eps, -1e301, BigDecimal.ZERO, 0.0));
+        builder.add(Arguments.of(1 - epsm, -1e301, inf, 0.0));
+        builder.add(Arguments.of(1 + eps, Double.NEGATIVE_INFINITY, BigDecimal.ZERO, 0.0));
+        builder.add(Arguments.of(1 - epsm, Double.NEGATIVE_INFINITY, inf, 0.0));
+        builder.add(Arguments.of(1 + 0x1.0p-21, -0x1.0p40, BigDecimal.ZERO, 0.0));
+        builder.add(Arguments.of(1 - 0x1.0p-21, -0x1.0p40, inf, 0.0));
+
+        // [3] x = 1 is not reachable from zeta (a = 1 uses the Riemann zeta function).
+        // Math.pow(1, y) is exact: 1 for finite y (see also testSafePowAtOne).
+        for (final double y : new double[] {-1, -0x1.0p31, -0x1.0p32, -1e300, -Double.MAX_VALUE}) {
+            builder.add(Arguments.of(1.0, y, BigDecimal.ONE, 0.0));
+        }
+        return builder.build();
+    }
+
+    @Test
+    void testSafePowAtOne() {
+        // Not reachable from zeta. Same result as Math.pow (NaN for infinite y).
+        for (final double y : new double[] {Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY,
+            Double.NaN}) {
+            Assertions.assertEquals(Math.pow(1, y), HurwitzZeta.safePow(1, y), () -> "y=" + y);
+        }
+        // NaN y is not supported by zeta. Same result as Math.pow.
+        Assertions.assertEquals(Double.NaN, HurwitzZeta.safePow(1 + 0x1.0p-30, Double.NaN));
+    }
+
     /**
      * Test the factors required for the tail sum. These are computed from the numerator
      * and denominator of the Bernoulli numbers, and the factorial of 2k. The test asserts
@@ -3998,7 +4113,8 @@ class HurwitzZetaTest {
             Arguments.of(1001, 3, 0, 0),
 
             Arguments.of(26783400000000.0, 1.0000000000000002, 0.994070539579705196633883729806, 0),
-            Arguments.of(26783400000000.0, 1.0000000000002, 0.00470868956401873280652247209542, 0),
+            // a^-s computed using HurwitzZeta.safePow (-0.73 ulp)
+            Arguments.of(26783400000000.0, 1.0000000000002, 0.00470868956401873280652247209542, 1),
             Arguments.of(26783400000000.0, 1.0000000002, 0, 0),
 
             Arguments.of(1e+18, 1, 1.0, 0),
