@@ -224,6 +224,10 @@ class HurwitzZetaTest {
      * on a normal number using a sum of normal terms.
      * Multiplicative inverse of DOWNSCALE2: 2^106. */
     private static final double UPSCALE_106 = 0x1.0p106;
+    /** Threshold below which a double-double product with a double result is computed
+     * using scaling. The low part of the product must not be sub-normal: the result must
+     * be above approximately 2^-1074 * 2^106 = 2^-968. Equal to 2^-958 (a margin of 2^10). */
+    private static final double DD_PRODUCT_THRESHOLD = 0x1.0p-958;
     /** Threshold for large {@code s} where {@code zeta(s, a) = a^-s} in double precision
      * for all {@code a > 0}.
      *
@@ -2176,7 +2180,15 @@ class HurwitzZetaTest {
         final double p = Math.pow(a, 1 - s);
         forwardPowCount++;
         // s - 1 is exact (s < 22 after the zero test). The factor is accurate to ~2^-100.
-        return DD.of(s - 1).reciprocal().add(0.5 / a).multiply(p).hi();
+        final DD f = DD.of(s - 1).reciprocal().add(0.5 / a);
+        // The double-double product is exact only if its low part is not sub-normal.
+        // If the result is below ~2^-968 the low part loses precision and the high part
+        // can be wrong by up to 1 ulp. Compute using p scaled by 2^106 (exact).
+        // The final scaling rounds once if the result is sub-normal.
+        if (p * f.hi() < DD_PRODUCT_THRESHOLD) {
+            return f.multiply(p * UPSCALE_106).hi() * DOWNSCALE_106;
+        }
+        return f.multiply(p).hi();
     }
 
     /**
@@ -4466,7 +4478,10 @@ class HurwitzZetaTest {
             Arguments.of(2.1974639503776107E9, 1.0000003226854666, 1.11253695389048414136973600602e-308, 1),
             Arguments.of(Math.nextUp(1.0), 9.007199254740992E15, 4503599627370459.26319943032305, 0),
             // Overflow in the asymptotic route for a > 2^1022 and s close to 1
-            Arguments.of(1.002044817372783, 2.4556476451709237E307, 115.024067724309762755075135287, 0)
+            Arguments.of(1.002044817372783, 2.4556476451709237E307, 115.024067724309762755075135287, 0),
+            // Double-double product underflow in the asymptotic route for results below 2^-968
+            Arguments.of(2.1096221839493223, 9.091266420109529e+276, 4.31907967478574634904584890711e-308, 1),
+            Arguments.of(2.542275862431792, 1.4853749225771663e+199, 4.30449952640673410172013808583e-308, 1)
         );
     }
 

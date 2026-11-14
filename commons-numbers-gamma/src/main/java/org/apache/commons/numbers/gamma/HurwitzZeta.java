@@ -160,6 +160,10 @@ public final class HurwitzZeta {
      * on a normal number using a sum of normal terms.
      * Multiplicative inverse of DOWNSCALE2: 2^106. */
     private static final double UPSCALE_106 = 0x1.0p106;
+    /** Threshold below which a double-double product with a double result is computed
+     * using scaling. The low part of the product must not be sub-normal: the result must
+     * be above approximately 2^-1074 * 2^106 = 2^-968. Equal to 2^-958 (a margin of 2^10). */
+    private static final double DD_PRODUCT_THRESHOLD = 0x1.0p-958;
     /** Threshold for large {@code s} where {@code zeta(s, a) = a^-s} in double precision
      * for all {@code a > 0}.
      *
@@ -1179,7 +1183,15 @@ public final class HurwitzZeta {
         // increased and no split power is required.
         final double p = Math.pow(a, 1 - s);
         // s - 1 is exact (s < 22 after the zero test). The factor is accurate to ~2^-100.
-        return DD.of(s - 1).reciprocal().add(0.5 / a).multiply(p).hi();
+        final DD f = DD.of(s - 1).reciprocal().add(0.5 / a);
+        // The double-double product is exact only if its low part is not sub-normal.
+        // If the result is below ~2^-968 the low part loses precision and the high part
+        // can be wrong by up to 1 ulp. Compute using p scaled by 2^106 (exact).
+        // The final scaling rounds once if the result is sub-normal.
+        if (p * f.hi() < DD_PRODUCT_THRESHOLD) {
+            return f.multiply(p * UPSCALE_106).hi() * DOWNSCALE_106;
+        }
+        return f.multiply(p).hi();
     }
 
     /**
