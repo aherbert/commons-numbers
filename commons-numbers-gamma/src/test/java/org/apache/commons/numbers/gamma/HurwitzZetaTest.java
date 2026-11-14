@@ -1230,7 +1230,8 @@ class HurwitzZetaTest {
         // 48.3% of results are sub-normal
         ZETA_S20_1024_AP1_SUB_NORMAL_1053(HurwitzZeta::value, "hzeta_s20_1024_ap1_subnormal1053.csv", 1.2, 0.15),
         // 100% of results are sub-normal
-        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.6, 0.1),
+        // Max: asymptotic route with a sub-normal result (s=20.24, a=9.13e15)
+        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073(HurwitzZeta::value, "hzeta_s20_1024_ap0.1_subnormal1073.csv", 0.8, 0.1),
         // Full domain range that evaluates at 2^-1022 and 2^-1065
         ZETA_2_POW_N1022(HurwitzZeta::value, "hzeta_2p-1022.csv", -1.35, 0.35),
         ZETA_2_POW_N1065(HurwitzZeta::value, "hzeta_2p-1065.csv", 0.6, 0.1),
@@ -1992,7 +1993,9 @@ class HurwitzZetaTest {
      * zeta implementation. A split power counts as 2. Used for testing. */
     private static int forwardPowCount;
     /** Number of series terms summed (k) in the last call to the forward summation
-     * zeta implementation, or -1 if the I and T terms were computed. Used for testing. */
+     * zeta implementation; -1 if the I and T terms were computed; -2 for the asymptotic
+     * approximation; -3 if the asymptotic result is zero; 0 for a single term trap.
+     * Used for testing. */
     private static int forwardExitK;
 
     /**
@@ -2006,6 +2009,16 @@ class HurwitzZetaTest {
      * @return zeta(s, a)
      */
     static double zetaForward(double s, double a) {
+        forwardPowCount = 0;
+
+        // Asymptotic behavior as a -> inf, or tiny s:
+        // zeta ~ a^(1-s) / (s-1) + a^-s / 2 = a^(1-s) * (1 / (s-1) + 1 / (2a))
+        // Here a > 2 (tiny s: s - 1 >= 2^-52 so a > (s - 1) * 2^53 >= 2).
+        if (a > LARGE_APN - FORWARD_N || a * FORWARD_TAIL_EPS > s - 1) {
+            forwardExitK = -2;
+            return zetaAsymptotic(s, a);
+        }
+
         // First term
         double t0 = HurwitzZeta.safePow(a, -s);
         forwardPowCount = 1;
@@ -2016,30 +2029,6 @@ class HurwitzZetaTest {
         // - s is large, see SINGLE_TERM_S
         if (t0 >= LARGE_T0 || s >= SINGLE_TERM_S) {
             return t0;
-        }
-
-        // Asymptotic behavior as a -> inf, or tiny s (see zeta(s, a, a0, Context)):
-        // zeta ~ a^(1-s) / (s-1) + a^-s / 2
-        if (a > LARGE_APN - FORWARD_N || a * FORWARD_TAIL_EPS > s - 1) {
-            forwardExitK = -2;
-            double ti;
-            if (t0 < SCALED_SUM_THRESHOLD) {
-                // Avoid computing the division with a sub-normal term
-                if (t0 * a < SCALED_SUM_THRESHOLD) {
-                    ti = Math.pow(a, (1 - s) * 0.5);
-                    ti = 2 * ti * UPSCALE_916 * ti / (s - 1);
-                } else {
-                    ti = 2 * UPSCALE_916 * Math.pow(a, 1 - s) / (s - 1);
-                }
-                t0 = Math.pow(a, -s * 0.5);
-                t0 = t0 * UPSCALE_916 * t0;
-                forwardPowCount += 4;
-                return (ti + t0) * 0.5 * DOWNSCALE_916;
-            }
-            // Compute (2 * ti + t0) * 0.5 to avoid (ti + t0 * 0.5) losing a bit on sub-normal t0
-            ti = 2 * Math.pow(a, 1 - s) / (s - 1);
-            forwardPowCount++;
-            return (ti + t0) * 0.5;
         }
 
         // Now any (a+k)^-s cannot overflow and the sum cannot overflow.
@@ -2154,6 +2143,40 @@ class HurwitzZetaTest {
             k2 += 1.0;
         }
         return sum.add(tsum).hi() * DOWNSCALE_106;
+    }
+
+    /**
+     * Compute the asymptotic approximation of the Hurwitz zeta function for large
+     * {@code a}, or tiny {@code s}: {@code zeta(s, a) ~ a^(1-s) * (1 / (s-1) + 1 / (2a))}.
+     * Mirrors {@link HurwitzZeta}.
+     *
+     * <p>Requires {@code a > 2}. Uses a single power function call. The factor is
+     * computed in double-double precision and the product is rounded once: the error
+     * is the power function error plus 0.5 ulp.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 2}
+     * @return zeta(s, a)
+     */
+    private static double zetaAsymptotic(double s, double a) {
+        // Zero result:
+        // a^(1-s) <= 2^(-e * (s-1)) with e = exponent(a) (a >= 2^e, e >= 1)
+        // 1 / (s-1) + 1 / (2a) < 2^(1-g) with g = exponent(s-1)
+        // The result is below 2^-1075 (rounds to 0) when e * (s-1) > 1076 - g.
+        // A margin of 2 allows for rounding of the product.
+        // This includes all s >= SINGLE_TERM_S as a > 2^53 or s < 2.
+        if ((s - 1) * Math.getExponent(a) > 1078 - Math.getExponent(s - 1)) {
+            forwardExitK = -3;
+            return 0;
+        }
+        // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
+        // If a^(1-s) is sub-normal then (s-1) * log2(a) > 1022 so s - 1 > 0.998 and the
+        // factor is <= ~1.002: the absolute error of the sub-normal power is not
+        // increased and no split power is required.
+        final double p = Math.pow(a, 1 - s);
+        forwardPowCount++;
+        // s - 1 is exact (s < 22 after the zero test). The factor is accurate to ~2^-100.
+        return DD.of(s - 1).reciprocal().add(0.5 / a).multiply(p).hi();
     }
 
     /**
@@ -4435,13 +4458,15 @@ class HurwitzZetaTest {
             Arguments.of(1501.7021967661672, 1.535965979848382, 1.28927911063640602864022163763e-280, 0),
             Arguments.of(798.4098080701187, 2.44681658669993, 5.45529373005882626521193147626e-311, 1),
             Arguments.of(1.0046876033700256, 2.774626370847173E13, 184.515447750242937071464589999, 1),
-            Arguments.of(20.23754877788927, 9.134550490612894E15, 4.69193621258128469920282580169e-309, 0),
+            Arguments.of(20.23754877788927, 9.134550490612894E15, 4.69193621258128469920282580169e-309, 1),
             Arguments.of(180.26951483738634, 48.74884443673853, 5.28237171057885999029501238706e-305, 1),
             Arguments.of(1.0427289765022538, 3.94996781319737E-16, 11523336262829300.1663588738791, 0),
             Arguments.of(27316.932399926933, 1.000594477194544, 8.90143446783861878886084556464e-8, 0),
             // Math.pow error for a close to 1 (JDK-8326547)
             Arguments.of(2.1974639503776107E9, 1.0000003226854666, 1.11253695389048414136973600602e-308, 1),
-            Arguments.of(Math.nextUp(1.0), 9.007199254740992E15, 4503599627370459.26319943032305, 0)
+            Arguments.of(Math.nextUp(1.0), 9.007199254740992E15, 4503599627370459.26319943032305, 0),
+            // Overflow in the asymptotic route for a > 2^1022 and s close to 1
+            Arguments.of(1.002044817372783, 2.4556476451709237E307, 115.024067724309762755075135287, 0)
         );
     }
 

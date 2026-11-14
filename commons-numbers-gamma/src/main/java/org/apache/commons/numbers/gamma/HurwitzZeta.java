@@ -479,8 +479,23 @@ public final class HurwitzZeta {
      */
     // package-private for testing using a == 1 (Riemann zeta function)
     static double zetaImp(double s, double a) {
+        // Asymptotic behavior as a -> inf
+        // https://dlmf.nist.gov/25.11#E43
+        // When a is large the series cannot use a+k.
+        // This reduces to N=0 (no series sum S): the I term and the first term of T.
+        // Tiny s trap using N=0.
+        // zeta ~ a^(1-s) / (s-1) + a^-s / 2
+        //      = a^(1-s) * (1 / (s-1) + 1 / (2a))
+        // When 0.5 cannot be added to a / (s-1) then N=0 is a good approximation.
+        // a / (s - 1) > 2^52 : a > 2^52 * (s - 1)
+        // Here a > 2: for tiny s, s - 1 >= 2^-52 so a > (s - 1) * 2^53 >= 2.
+        if (a > LARGE_A || a * EPS > s - 1) {
+            return zetaAsymptotic(s, a);
+        }
+
         // First term. safePow is only required here: after the single-term trap
-        // s < SINGLE_TERM_S and Math.pow is accurate for a close to 1.
+        // (s < SINGLE_TERM_S) the exponent is small (|y| < 2^31) and calls to Math.pow
+        // are accurate for a base close to 1. The asymptotic route uses a > 2.
         double t0 = safePow(a, -s);
 
         // The remaining terms cannot be added to a^-s when:
@@ -488,39 +503,6 @@ public final class HurwitzZeta {
         // - s is large, see SINGLE_TERM_S
         if (t0 >= LARGE_T0 || s >= SINGLE_TERM_S) {
             return t0;
-        }
-
-        // Asymptotic behavior as a -> inf
-        // https://dlmf.nist.gov/25.11#E43
-        // When a is large the series cannot use a+k.
-        // This reduces to N=0 (no series sum S): the I term and the first term of T.
-        // Tiny s trap using N=0.
-        // zeta ~ a^(1-s) / (s-1) + a^-s / 2
-        //      = a*a^-s / (s-1) + a^s / 2
-        //      = a^s * (a / (s-1) + 0.5)
-        // When 0.5 cannot be added to a / (s-1) then N=0 is a good approximation.
-        // a / (s - 1) > 2^52 : a > 2^52 * (s - 1)
-        // As s -> 1 then a can reduce in magnitude until a ~ 1 and s ~ 1: a^-s -> 1 / a.
-        if (a > LARGE_A || a * EPS > s - 1) {
-            // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
-            // sub-normal as a is large. Compute using pow.
-            // Avoid computing sub-normal terms.
-            double ti;
-            if (t0 < SCALED_SUM_THRESHOLD) {
-                // The tiny s trap cannot reach here as t0 -> 1/a.
-                // Avoid computing the division with a sub-normal term
-                if (t0 * a < SCALED_SUM_THRESHOLD) {
-                    ti = Math.pow(a, (1 - s) * 0.5);
-                    ti = ti * UPSCALE_1022 * ti;
-                } else {
-                    ti = UPSCALE_1022 * Math.pow(a, 1 - s);
-                }
-                // t0 was inexact. Rely on ti
-                return ti * (1 / (s - 1) + 1 / (2 * a)) * Double.MIN_NORMAL;
-            }
-            // Compute (2 * ti + t0) * 0.5 to avoid (ti + t0 * 0.5) losing a bit on t0
-            ti = 2 * Math.pow(a, 1 - s) / (s - 1);
-            return (ti + t0) * 0.5;
         }
 
         // Now any (a+n)^-s cannot overflow and the sum cannot overflow
@@ -1166,6 +1148,37 @@ public final class HurwitzZeta {
      */
     private static int intExponent(long e) {
         return SpecialMath.toInt(e);
+    }
+
+    /**
+     * Compute the asymptotic approximation of the Hurwitz zeta function for large
+     * {@code a}, or tiny {@code s}: {@code zeta(s, a) ~ a^(1-s) * (1 / (s-1) + 1 / (2a))}.
+     *
+     * <p>Requires {@code a > 2}. Uses a single power function call. The factor is
+     * computed in double-double precision and the product is rounded once: the error
+     * is the power function error plus 0.5 ulp.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 2}
+     * @return zeta(s, a)
+     */
+    private static double zetaAsymptotic(double s, double a) {
+        // Zero result:
+        // a^(1-s) <= 2^(-e * (s-1)) with e = exponent(a) (a >= 2^e, e >= 1)
+        // 1 / (s-1) + 1 / (2a) < 2^(1-g) with g = exponent(s-1)
+        // The result is below 2^-1075 (rounds to 0) when e * (s-1) > 1076 - g.
+        // A margin of 2 allows for rounding of the product.
+        // This includes all s >= SINGLE_TERM_S as a > 2^53 or s < 2.
+        if ((s - 1) * Math.getExponent(a) > 1078 - Math.getExponent(s - 1)) {
+            return 0;
+        }
+        // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
+        // If a^(1-s) is sub-normal then (s-1) * log2(a) > 1022 so s - 1 > 0.998 and the
+        // factor is <= ~1.002: the absolute error of the sub-normal power is not
+        // increased and no split power is required.
+        final double p = Math.pow(a, 1 - s);
+        // s - 1 is exact (s < 22 after the zero test). The factor is accurate to ~2^-100.
+        return DD.of(s - 1).reciprocal().add(0.5 / a).multiply(p).hi();
     }
 
     /**
