@@ -698,14 +698,15 @@ public final class HurwitzZeta {
         // double-double operations on a could overflow.
         if (k == 1 && c1 < stop * NEGLIGIBLE_C1) {
             // No corrections: asymptotic approximation. a may be very large.
-            f = DD.of(s - 1).reciprocal().add(HALF / a);
+            f = DD.fromQuotient(1, s - 1).add(HALF / a);
         } else {
             // Bracket: 1/(s-1) + 1/(2a) + s / (12 a^2) in double-double, then the corrections.
             // Here c_1 >= 2^-50 * stop so a < ~2^66 and the double-double operations are safe.
-            final DD aa = DD.of(a);
-            f = DD.of(s - 1).reciprocal()
-                .add(aa.reciprocal().multiply(HALF))
-                .add(DD.of(s).divide(aa.square()).divide(12))
+            // Avoid double-double division: a and s - 1 are exact.
+            final DD ra = DD.fromQuotient(1, a);
+            f = DD.fromQuotient(1, s - 1)
+                .add(ra.multiply(HALF))
+                .add(ra.square().multiply(DD.fromQuotient(s, 12)))
                 .add(sum);
         }
         // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
@@ -780,12 +781,35 @@ public final class HurwitzZeta {
             previous = c;
             g *= (s + 2 * j - 1) * (s + 2 * j) / x2;
         }
-        DD f = DD.of(s - 1).reciprocal().add(x.reciprocal().multiply(HALF));
+        // Avoid double-double division: s - 1 is exact
+        final DD rx = reciprocal(x);
+        DD f = DD.fromQuotient(1, s - 1).add(rx.multiply(HALF));
         // c_1 is included unless negligible (or truncated: j == 1 and c_1 >= stop)
         if (j > 1 || (c1 < stop && c1 >= stop * NEGLIGIBLE_C1)) {
-            f = f.add(DD.of(s).divide(x.square()).divide(12)).add(sum);
+            f = f.add(rx.square().multiply(DD.fromQuotient(s, 12))).add(sum);
         }
         return f;
+    }
+
+    /**
+     * Compute the reciprocal of {@code x = xh + xl} where {@code |xl| <= ulp(xh) / 2}.
+     *
+     * <p>Uses {@code 1 / (xh + xl) = (1 / xh) * (1 - xl / xh + ...)}: the quotient
+     * {@code 1 / xh} in double-double precision with a first order correction for the
+     * low part. The omitted terms are below {@code 2^-106} relative. This avoids a
+     * double-double division.
+     *
+     * @param x Value
+     * @return 1 / x
+     */
+    private static DD reciprocal(DD x) {
+        final double xh = x.hi();
+        final double xl = x.lo();
+        final DD r = DD.fromQuotient(1, xh);
+        if (xl == 0) {
+            return r;
+        }
+        return DD.ofSum(r.hi(), r.lo() - r.hi() * (xl / xh));
     }
 
     /**
