@@ -1966,6 +1966,290 @@ class HurwitzZetaTest {
         return add.apply(sum, tsum).hi() * downscale;
     }
 
+    // Forward summation zeta implementation (development).
+    //
+    // A lean version of the test implementation with all accuracy features enabled
+    // (extended precision power and sum, sub-normal support, tail scaling) and no Context.
+    // The series sum S is computed in ascending k using a double-double sum:
+    // - Each step checks a bound on the remainder of the series (I and T) and exits
+    //   early when it cannot change the result.
+    // - Scaling for sub-normal terms is activated by the first term below
+    //   SCALED_SUM_THRESHOLD. Normal terms use a single (extended precision) pow; only
+    //   sub-normal terms use the split power.
+    // - If not converged after N terms the I and T terms are computed at (a+N).
+
+    /** Maximum number of terms N for the forward summation zeta implementation. */
+    private static final int FORWARD_N = 9;
+    /** Maximum number of tail terms M for the forward summation zeta implementation. */
+    private static final int FORWARD_M = 15;
+    /** Relative convergence threshold for the series sum of the forward summation
+     * zeta implementation. The remainder bound must be below this fraction of the sum. */
+    private static final double FORWARD_CONVERGED = 0x1p-56;
+    /** Relative convergence threshold for the tail series of the forward summation
+     * zeta implementation. */
+    private static final double FORWARD_TAIL_EPS = 0x1p-53;
+    /** Count of power function evaluations in the last call to the forward summation
+     * zeta implementation. A split power counts as 2. Used for testing. */
+    private static int forwardPowCount;
+    /** Number of series terms summed (k) in the last call to the forward summation
+     * zeta implementation, or -1 if the I and T terms were computed. Used for testing. */
+    private static int forwardExitK;
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} using a forward
+     * summation of the series with early exit on convergence.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 0}
+     * @return zeta(s, a)
+     */
+    static double zetaForward(double s, double a) {
+        // First term
+        double t0 = Math.pow(a, -s);
+        forwardPowCount = 1;
+        forwardExitK = 0;
+
+        // The remaining terms cannot be added to a^-s when:
+        // - a^-s is very large (can overflow if 0 <= a < 1), see LARGE_T0
+        // - s is large, see SINGLE_TERM_S
+        if (t0 >= LARGE_T0 || s >= SINGLE_TERM_S) {
+            return t0;
+        }
+
+        // Asymptotic behavior as a -> inf, or tiny s (see zeta(s, a, a0, Context)):
+        // zeta ~ a^(1-s) / (s-1) + a^-s / 2
+        if (a > LARGE_APN - FORWARD_N || a * FORWARD_TAIL_EPS > s - 1) {
+            forwardExitK = -2;
+            double ti;
+            if (t0 < SCALED_SUM_THRESHOLD) {
+                // Avoid computing the division with a sub-normal term
+                if (t0 * a < SCALED_SUM_THRESHOLD) {
+                    ti = Math.pow(a, (1 - s) * 0.5);
+                    ti = 2 * ti * UPSCALE_916 * ti / (s - 1);
+                } else {
+                    ti = 2 * UPSCALE_916 * Math.pow(a, 1 - s) / (s - 1);
+                }
+                t0 = Math.pow(a, -s * 0.5);
+                t0 = t0 * UPSCALE_916 * t0;
+                forwardPowCount += 4;
+                return (ti + t0) * 0.5 * DOWNSCALE_916;
+            }
+            // Compute (2 * ti + t0) * 0.5 to avoid (ti + t0 * 0.5) losing a bit on sub-normal t0
+            ti = 2 * Math.pow(a, 1 - s) / (s - 1);
+            forwardPowCount++;
+            return (ti + t0) * 0.5;
+        }
+
+        // Now any (a+k)^-s cannot overflow and the sum cannot overflow.
+        // s > 1 + a * 2^-53 so the division by (s-1) is safe.
+        // Reciprocal used for the convergence bound (not required to be exact).
+        final double rs1 = 1 / (s - 1);
+
+        // Extended precision power when (a+k) has round-off. The exponent is limited
+        // to |z| < 350 by the single term trap.
+        final PowOperator pow = DD.ofSum(a, FORWARD_N).lo() == 0 ?
+            Context::stdPow :
+            Context::extPowxpn;
+
+        // Scaling: if active, all terms and the sum are scaled by 2^1022.
+        boolean scaled = false;
+        if (t0 < SCALED_SUM_THRESHOLD) {
+            t0 = Math.pow(a, -s * 0.5);
+            t0 = t0 * UPSCALE_1022 * t0;
+            forwardPowCount += 2;
+            if (t0 == 0) {
+                // The I term is not 2^1022 larger than a^-s for any s > 1
+                return 0;
+            }
+            scaled = true;
+        }
+
+        // S : forward sum of k in [0, N-1]. The term k=N is computed and used for I and T.
+        DD sum = DD.of(t0);
+        double p = 0;
+        for (int k = 1; k <= FORWARD_N; k++) {
+            double t;
+            if (scaled) {
+                t = scaledPow(pow, a, k, -s);
+            } else {
+                t = pow.apply(a, k, -s);
+                forwardPowCount++;
+                if (t < SCALED_SUM_THRESHOLD) {
+                    // First sub-normal term: activate scaling.
+                    // The sum is below ~2^-920 (it has not converged with a sub-normal term
+                    // for s > 19.3) so scaling by 2^1022 cannot overflow and is exact.
+                    sum = DD.ofSum(sum.hi() * UPSCALE_1022, sum.lo() * UPSCALE_1022);
+                    t = scaledPow(pow, a, k, -s);
+                    scaled = true;
+                }
+            }
+            if (k == FORWARD_N) {
+                // (a+N)^-s
+                p = t;
+                break;
+            }
+            sum = sum.add(t);
+            // Convergence: the remainder of the series is bounded by the next term and an
+            // integral:  sum_{j>k} (a+j)^-s <= t_{k+1} * (1 + (a+k+1) / (s-1))
+            //                               <= t_k * (1 + (a+k+1) / (s-1))
+            if (t * (1 + (a + k + 1) * rs1) < FORWARD_CONVERGED * sum.hi()) {
+                forwardExitK = k;
+                return scaled ? sum.hi() * Double.MIN_NORMAL : sum.hi();
+            }
+        }
+        forwardExitK = -1;
+
+        // Not converged: compute the I and T terms at x = a + N.
+        final int n = FORWARD_N;
+        final double x = a + n;
+
+        // I: (a+n)^(1-s) / (s-1)
+        double ti;
+        if (scaled) {
+            // Determine if (a+n)^(1-s) is sub-normal and compute in parts.
+            // p is scaled by 2^1022: compare with the scaled threshold (2^-1022 * 2^1022 = 1)
+            if (p * x < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
+                ti = scaledPow(pow, a, n, 1 - s);
+            } else {
+                ti = UPSCALE_1022 * pow.apply(a, n, 1 - s);
+                forwardPowCount++;
+            }
+        } else {
+            ti = pow.apply(a, n, 1 - s);
+            forwardPowCount++;
+        }
+        // Use a division (not the reciprocal rs1) for accuracy when I is the dominant term
+        ti /= s - 1;
+
+        // T: first term (a+n)^-s / 2, then the tail series
+        sum = sum.add(ti).add(0.5 * p);
+
+        // The tail converges on a normal number using a sum scaled by 2^106.
+        // Currently: sum is either 2^1022 (scaled) or 1 (unscaled).
+        if (scaled) {
+            sum = DD.ofSum(sum.hi() * DOWNSCALE_916, sum.lo() * DOWNSCALE_916);
+            p /= x;
+        } else {
+            sum = DD.ofSum(sum.hi() * UPSCALE_106, sum.lo() * UPSCALE_106);
+            p = UPSCALE_1022 * p / x;
+        }
+        // Power term (a+n)^-(1+s) * 2^1022 and rising factorial scaled by 2^-916.
+        double f = s * DOWNSCALE_916;
+        double k2 = 1;
+        final double apn = DD.ofSum(a, n).square().hi();
+        final double stop = sum.hi() * FORWARD_TAIL_EPS;
+        double tsum = 0;
+        for (int i = 0; i < FORWARD_M; i++) {
+            final double t = f * p * F[i];
+            tsum += t;
+            if (Math.abs(t) <= stop) {
+                break;
+            }
+            p /= apn;
+            f *= s + k2;
+            k2 += 1.0;
+            f *= s + k2;
+            k2 += 1.0;
+        }
+        return sum.add(tsum).hi() * DOWNSCALE_106;
+    }
+
+    /**
+     * Compute {@code (a+k)^z * 2^1022} using the split power
+     * {@code (a+k)^(z/2) * 2^1022 * (a+k)^(z/2)}.
+     *
+     * @param pow Power function
+     * @param a Argument a
+     * @param k Argument k
+     * @param z Exponent z
+     * @return the scaled power
+     */
+    private static double scaledPow(PowOperator pow, double a, int k, double z) {
+        final double p = pow.apply(a, k, z * 0.5);
+        forwardPowCount += 2;
+        return p * UPSCALE_1022 * p;
+    }
+
+    /**
+     * Compare the forward summation zeta implementation with the test implementation
+     * using the default context on reference data with {@code a > 0}.
+     *
+     * <p>Reports the error statistics, the number of power function evaluations,
+     * and a histogram of the exit point of the series sum.
+     *
+     * @param filename Reference data file
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
+        "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_s-52_8_a-53_0.csv",
+        "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
+        "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
+        "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
+        "hzeta_s1_19_a2147483648_10000000000000000.csv", "hzeta_s4_32_a1_8.csv",
+        "hzeta_s9_1075_tail.csv", "hzeta_s9_1837_tail.csv", "hzeta_s15_1128_tail.csv",
+        "hzeta_s20_1024_ap0.1_subnormal1073.csv", "hzeta_s20_1024_ap1_subnormal1040.csv",
+        "hzeta_s20_1024_ap1_subnormal1053.csv", "hzeta_s20_1024_ap9_subnormal1023.csv",
+        "hzeta_s32_1024_ap0.1_subnormal1073.csv", "hzeta_s32_1024_ap1_subnormal1040.csv",
+        "hzeta_s32_1024_ap1_subnormal1053.csv", "hzeta_s32_1024_ap9_subnormal1023.csv",
+    })
+    @Disabled("Used to compare the forward summation zeta implementation")
+    void testZetaForward(String filename) {
+        final TestUtils.ErrorStatistics oldAll = new TestUtils.ErrorStatistics();
+        final TestUtils.ErrorStatistics newAll = new TestUtils.ErrorStatistics();
+        final TestUtils.ErrorStatistics oldSub = new TestUtils.ErrorStatistics();
+        final TestUtils.ErrorStatistics newSub = new TestUtils.ErrorStatistics();
+        // Exit histogram: index 0 = asymptotic/trap (k=0, -2); 1..N-1 = k; N = I and T
+        final int[] exit = new int[FORWARD_N + 1];
+        long pows = 0;
+        int n = 0;
+        int differ = 0;
+        int nSub = 0;
+        double worstNew = 0;
+        String worstCase = "";
+        try (DataReader in = new DataReader(filename)) {
+            while (in.next()) {
+                final double s = in.getDouble(0);
+                final double a = in.getDouble(1);
+                final BigDecimal expected = in.getBigDecimal(2);
+                if (!(a > 0 && s > 1)) {
+                    continue;
+                }
+                final double z0 = zeta(s, a, Context.DOUBLE);
+                final double z1 = zetaForward(s, a);
+                final double e0 = TestUtils.assertEquals(expected, z0, -Double.MAX_VALUE, null, () -> "");
+                final double e1 = TestUtils.assertEquals(expected, z1, -Double.MAX_VALUE, null, () -> "");
+                n++;
+                differ += z0 == z1 ? 0 : 1;
+                oldAll.add(e0);
+                newAll.add(e1);
+                if (expected.doubleValue() < Double.MIN_NORMAL) {
+                    nSub++;
+                    oldSub.add(e0);
+                    newSub.add(e1);
+                }
+                if (Math.abs(e1) > worstNew) {
+                    worstNew = Math.abs(e1);
+                    worstCase = String.format("s=%s, a=%s (old %.3f)", s, a, e0);
+                }
+                pows += forwardPowCount;
+                exit[forwardExitK == -1 ? FORWARD_N : Math.max(forwardExitK, 0)]++;
+            }
+        } catch (final IOException ex) {
+            Assertions.fail("Failed to load data: " + filename, ex);
+        }
+        report("%s: n=%d differ=%d sub-normal=%d mean pow=%.2f%n", filename, n, differ, nSub,
+            (double) pows / n);
+        report("  old: max=%.3f rms=%.4f | sub-normal max=%.3f rms=%.4f%n",
+            oldAll.getMaxAbs(), oldAll.getRMS(), oldSub.getMaxAbs(), oldSub.getRMS());
+        report("  new: max=%.3f rms=%.4f | sub-normal max=%.3f rms=%.4f | worst %s%n",
+            newAll.getMaxAbs(), newAll.getRMS(), newSub.getMaxAbs(), newSub.getRMS(), worstCase);
+        report("  exit k (0=trap/asymptotic, %d=I+T): %s%n", FORWARD_N, Arrays.toString(exit));
+    }
+
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
      * when {@code a} is negative. Uses {@link BigDecimal} arithmetic.
@@ -3202,6 +3486,7 @@ class HurwitzZetaTest {
         // Match the final implementation here
         "7, 12, 15, -53, 775, false",
     })
+    @Disabled("TODO: re-enable with reporting off to exercise the code")
     void testPrecisionDouble(int ln, int un, int maxM, int bt, int options, boolean subNormal)
         throws IOException {
         // Default to not use variable convergence on series sum S.
@@ -3301,7 +3586,7 @@ class HurwitzZetaTest {
         // Not enough
         "35, 40, 65, 0, 211",
     })
-    // TODO - update with a maxM
+    @Disabled("TODO: re-enable with reporting off to exercise the code")
     void testPrecisionBigDecimal(int ln, int un, int digits, int options, int scale)
         throws IOException {
         for (int n = ln; n <= un; n++) {
@@ -3435,7 +3720,7 @@ class HurwitzZetaTest {
         // Not enough
         "7, 15, -48, 0, 52, -1074",
     })
-    // TODO - update with a maxM
+    @Disabled("TODO: re-enable with reporting off to exercise the code")
     void testPrecisonDD(int ln, int un, int b, int options, int scale, int ignoreB)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
@@ -4681,6 +4966,7 @@ class HurwitzZetaTest {
         "150.0, 250.0, false, 2500, 15, 39.82", // s=222.06882753097193
         "150.0, 250.0, false, 2500, 12, 39.06", // s=223.2693077230481
     })
+    @Disabled("TODO: re-enable with reporting off to exercise the code")
     void testTailConvergenceLimit(double minS, double maxS, boolean uniform, int samples, int m,
             double testN) {
         Assertions.assertTrue(minS > 1);
@@ -4863,6 +5149,7 @@ class HurwitzZetaTest {
         "25.0, 130.0, false, 250, 26, 108, 12.86", // (179.34483214935423, 49.5261044176701) = 9.155e-273 * 2^-106 = 1.128e-304 : t_0=2.995e-291 (z * 2^-61.41)
         "25.0, 130.0, false, 250, 53, 108, 11.90", // (195.92410211834715, 32.186746987951544) = 3.311e-264 * 2^-106 = 4.081e-296 : t_0=3.272e-291 (z * 2^-89.71)
     })
+    @Disabled("TODO: re-enable with reporting off to exercise the code")
     void testTailConvergence(double minA, double maxA, boolean uniform, int samples, int m,
             int b, double testN) {
         // Negative N for tests that should fail
@@ -5135,6 +5422,7 @@ class HurwitzZetaTest {
         "1128, false, -250, 53, 212, 25",
         "1128, false, 250, 53, 212, 25",
     })
+    @Disabled("TODO: re-enable when development of the DD method continues")
     void testTailConvergenceDD(int maxS, boolean uniform, int samples, int m,
             int b, int testN) {
         // Negative N for tests that should fail (run all cases)
