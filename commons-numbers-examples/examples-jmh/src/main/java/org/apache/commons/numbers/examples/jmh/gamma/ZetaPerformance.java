@@ -177,14 +177,14 @@ public class ZetaPerformance {
      *
      * @param rng the source of randomness
      * @param n the number
-     * @param minMax the range as "min,max"
+     * @param minMax the range as "min:max"
      * @param integers the flag to return integer values
      * @param negative the flag to return negative values
      * @return the doubles
      */
     private static double[] doubles(SplittableRandom rng, int n, String minMax,
         boolean integers, boolean negative) {
-        final int index = minMax.indexOf(',');
+        final int index = minMax.indexOf(':');
         final double min = Double.parseDouble(minMax.substring(0, index));
         final double max = Double.parseDouble(minMax.substring(index + 1));
         DoubleStream s = integers ?
@@ -205,19 +205,19 @@ public class ZetaPerformance {
         @Param({"1000"})
         private int size;
         /** The range for s. */
-        @Param({"1,4"})
+        @Param({"1:4"})
         private String rangeS;
         /** The range for a. */
         @Param({
             // When a in [0, 1] the term a^-s dominates and any further terms
             // do not significantly impact the result
-            "0,1",
+            "0:1",
             // When a in [1,16] the term (a+N) is inexact and an extended
             // precision power function can be used
-            "1,16",
+            "1:16",
             // Avoid the asymptotic approximation at ~2^53 = 9007199254740992
             // This uses 1e12 which is 3/4 of the limit
-            "16,1000000000000",
+            "16:1000000000000",
         })
         private String rangeA;
 
@@ -273,16 +273,16 @@ public class ZetaPerformance {
         @Param({"1000"})
         private int size;
         /** The range for s (upper bound inclusive). */
-        @Param({"2,5", "6,35"})
+        @Param({"2:5", "6:35"})
         private String rangeS;
         /** The range for a. */
         @Param({
             // When |a| is small the terms (a+k)^-s for negative (a+k) can be computed
             // as a series sum
-            "0,10",
+            "0:10",
             // When |a| is large the series sum is expensive and can be computed
             // using a difference of zeta functions
-            "100,10000",
+            "100:10000",
         })
         private String rangeA;
 
@@ -349,10 +349,10 @@ public class ZetaPerformance {
          * above s=53 the function is ~1.0.
          */
         @Param({
-            "0,4",
-            "4,36",
-            "36,53",
-            "0,53",
+            "0:4",
+            "4:36",
+            "36:53",
+            "0:53",
             })
         private String rangeS;
 
