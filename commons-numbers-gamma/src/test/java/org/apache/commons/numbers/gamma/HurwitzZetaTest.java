@@ -1994,13 +1994,71 @@ class HurwitzZetaTest {
      * zeta implementation. */
     private static final double FORWARD_TAIL_EPS = 0x1p-53;
     /** Count of power function evaluations in the last call to the forward summation
-     * zeta implementation. A split power counts as 2. Used for testing. */
+     * zeta implementation. A split power is one evaluation (the half power is squared by
+     * multiplication); a term recomputed as a split power after a sub-normal result
+     * counts 2. Used for testing. */
     private static int forwardPowCount;
     /** Number of series terms summed (k) in the last call to the forward summation
      * zeta implementation; -1 if the I and T terms were computed; -2 for the asymptotic
-     * approximation; -3 if the asymptotic result is zero; 0 for a single term trap.
-     * Used for testing. */
+     * approximation; -3 if the asymptotic result is zero; -4 for the Euler-Maclaurin
+     * sum with N=0; 0 for a single term trap. Used for testing. */
     private static int forwardExitK;
+    /** Number of terms of the Euler-Maclaurin correction series (N=0) evaluated in the
+     * last call to the forward summation zeta implementation; 0 if not attempted.
+     * Used for testing. */
+    private static int forwardEm0Terms;
+    /** Relative convergence threshold for the Euler-Maclaurin correction series (N=0).
+     * Terms are compared to {@code 1 / (s-1)} which is a lower bound for the sum. */
+    private static final double EM0_CONVERGED = 0x1p-56;
+
+    /**
+     * Options for the forward summation zeta implementation.
+     */
+    static final class ForwardContext {
+        /** Default options. */
+        static final ForwardContext DEFAULT = new ForwardContext(16, true);
+        /** Options with the Euler-Maclaurin sum with N=0 disabled. The legacy asymptotic
+         * route is used: {@code a > 2^53 - N} or {@code a * 2^-53 > s - 1}. */
+        static final ForwardContext NO_EM0 = new ForwardContext(-1, true);
+
+        /** Maximum number of terms M of the Euler-Maclaurin correction series with N=0.
+         * Use 0 for no correction terms (the asymptotic approximation when the B2 term is
+         * negligible). Use a negative value for the legacy asymptotic route. */
+        private final int m;
+        /** Set to true to stop the correction series when the terms stop decreasing.
+         * The series is asymptotic: once the terms increase it cannot converge. */
+        private final boolean divergenceExit;
+
+        /**
+         * @param m Maximum number of terms (negative for the legacy asymptotic route).
+         * @param divergenceExit Stop when the terms stop decreasing.
+         */
+        ForwardContext(int m, boolean divergenceExit) {
+            this.m = m;
+            this.divergenceExit = divergenceExit;
+        }
+
+        /**
+         * @param m Maximum number of terms (negative for the legacy asymptotic route).
+         * @return a new instance
+         */
+        ForwardContext withM(int m) {
+            return new ForwardContext(m, divergenceExit);
+        }
+
+        /**
+         * @param exit Stop when the terms stop decreasing.
+         * @return a new instance
+         */
+        ForwardContext withDivergenceExit(boolean exit) {
+            return new ForwardContext(m, exit);
+        }
+
+        @Override
+        public String toString() {
+            return (m < 0 ? "legacy" : "M=" + m) + (divergenceExit ? "" : " (no divergence exit)");
+        }
+    }
 
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} using a forward
@@ -2013,14 +2071,36 @@ class HurwitzZetaTest {
      * @return zeta(s, a)
      */
     static double zetaForward(double s, double a) {
-        forwardPowCount = 0;
+        return zetaForward(s, a, ForwardContext.DEFAULT);
+    }
 
-        // Asymptotic behavior as a -> inf, or tiny s:
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} using a forward
+     * summation of the series with early exit on convergence.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 0}
+     * @param fc Options.
+     * @return zeta(s, a)
+     */
+    static double zetaForward(double s, double a, ForwardContext fc) {
+        forwardPowCount = 0;
+        forwardEm0Terms = 0;
+
+        // Euler-Maclaurin sum with N=0 if the correction series converges.
+        // This includes the asymptotic behaviour as a -> inf, or tiny s:
         // zeta ~ a^(1-s) / (s-1) + a^-s / 2 = a^(1-s) * (1 / (s-1) + 1 / (2a))
-        // Here a > 2 (tiny s: s - 1 >= 2^-52 so a > (s - 1) * 2^53 >= 2).
-        if (a > LARGE_APN - FORWARD_N || a * FORWARD_TAIL_EPS > s - 1) {
-            forwardExitK = -2;
-            return zetaAsymptotic(s, a);
+        // Requires a > 2 so a^(1-s) is not close to 1 (Math.pow is accurate).
+        // Legacy route: a > 2^53 - N, or tiny s (s - 1 >= 2^-52 so a > (s - 1) * 2^53 >= 2).
+        if (fc.m < 0 ? a > LARGE_APN - FORWARD_N || a * FORWARD_TAIL_EPS > s - 1 : a > 2) {
+            // Limit M to the table of factors (term M+1 is checked for convergence)
+            final int m = Math.min(Math.max(0, fc.m), F.length - 1);
+            final double z = zetaEm0(s, a, m, fc.divergenceExit);
+            if (!Double.isNaN(z)) {
+                return z;
+            }
         }
 
         // First term
@@ -2041,7 +2121,7 @@ class HurwitzZetaTest {
         final double rs1 = 1 / (s - 1);
 
         // Extended precision power when (a+k) has round-off. The exponent is limited
-        // to |z| < 350 by the single term trap.
+        // to |z| < 350 by the single term trap. This avoids any requirement for safePow.
         final PowOperator pow = DD.ofSum(a, FORWARD_N).lo() == 0 ?
             Context::stdPow :
             Context::extPowxpn;
@@ -2051,7 +2131,7 @@ class HurwitzZetaTest {
         if (t0 < SCALED_SUM_THRESHOLD) {
             t0 = Math.pow(a, -s * 0.5);
             t0 = t0 * UPSCALE_1022 * t0;
-            forwardPowCount += 2;
+            forwardPowCount++;
             if (t0 == 0) {
                 // The I term is not 2^1022 larger than a^-s for any s > 1
                 return 0;
@@ -2150,37 +2230,111 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Compute the asymptotic approximation of the Hurwitz zeta function for large
-     * {@code a}, or tiny {@code s}: {@code zeta(s, a) ~ a^(1-s) * (1 / (s-1) + 1 / (2a))}.
-     * Mirrors {@link HurwitzZeta}.
+     * Compute the Hurwitz zeta function using the Euler-Maclaurin sum with N=0 (no
+     * series terms):
      *
-     * <p>Requires {@code a > 2}. Uses a single power function call. The factor is
-     * computed in double-double precision and the product is rounded once: the error
-     * is the power function error plus 0.5 ulp.
+     * <pre>
+     * zeta(s, a) = a^(1-s) * [1 / (s-1) + 1 / (2a) + sum_{k>=1} c_k]
+     * c_k = B_2k / (2k)! * (s)_(2k-1) * a^-2k
+     * </pre>
+     *
+     * <p>The bracket does not require a power function. It is evaluated first and the
+     * single power {@code a^(1-s)} is computed only if the correction series converges.
+     * The remainder after a term is bounded by 2 times the first omitted term.
+     * If the first correction term {@code c_1} is negligible this is the asymptotic
+     * approximation for large {@code a}, or tiny {@code s}.
+     *
+     * <p>With corrections the terms {@code 1/(s-1)}, {@code 1/(2a)} and {@code c_1} are
+     * summed in double-double precision; the remaining correction terms in double
+     * precision. The product with the power is rounded once.
+     *
+     * <p>Overflow and underflow: after the zero test {@code s < 2^53} ({@code s - 1} is
+     * exact) and {@code (s+2k-1)(s+2k)} cannot overflow. If {@code a^2} overflows then
+     * {@code g = 0} and the series converges at k=1. The convergence threshold is
+     * {@code >= 2^-56 / (s-1)} and one term reduces by at most ~2^-111, so the term
+     * that ends the series is normal. The double-double bracket is used only if
+     * {@code c_1 >= 2^-50} times the threshold, i.e. {@code a < ~2^66}, so the
+     * double-double operations on {@code a} cannot overflow. With the divergence exit
+     * the terms are decreasing and bounded by {@code c_1}.
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a > 2}
-     * @return zeta(s, a)
+     * @param m Maximum number of correction terms.
+     * @param divergenceExit Stop when the terms stop decreasing.
+     * @return zeta(s, a), or NaN if the correction series did not converge
      */
-    private static double zetaAsymptotic(double s, double a) {
-        // Zero result:
+    private static double zetaEm0(double s, double a, int m, boolean divergenceExit) {
+        // Zero result. Integral bound: zeta <= a^-s + a^(1-s) / (s-1).
         // a^(1-s) <= 2^(-e * (s-1)) with e = exponent(a) (a >= 2^e, e >= 1)
-        // 1 / (s-1) + 1 / (2a) < 2^(1-g) with g = exponent(s-1)
-        // The result is below 2^-1075 (rounds to 0) when e * (s-1) > 1076 - g.
+        // 1 / a <= 2^-e; 1 / (s-1) <= 2^-g with g = exponent(s-1)
+        // zeta <= 2^(-e * (s-1)) * 2^(1 - min(e, g))
+        // The result is below 2^-1075 (rounds to 0) when e * (s-1) > 1076 - min(e, g).
         // A margin of 2 allows for rounding of the product.
-        // This includes all s >= SINGLE_TERM_S as a > 2^53 or s < 2.
-        if ((s - 1) * Math.getExponent(a) > 1078 - Math.getExponent(s - 1)) {
+        // This includes all s >= 2^53, and all s >= SINGLE_TERM_S when a > 2^53.
+        final int e = Math.getExponent(a);
+        if ((s - 1) * e > 1078 - Math.min(e, Math.getExponent(s - 1))) {
             forwardExitK = -3;
             return 0;
         }
+
+        final double a2 = a * a;
+        // 1 / (s-1) is a lower bound for the bracket: the corrections sum is positive
+        final double stop = EM0_CONVERGED / (s - 1);
+        // g = (s)_(2k-1) * a^-2k
+        double g = s / a2;
+        double previous = Double.POSITIVE_INFINITY;
+        final double c1 = Math.abs(F[0] * g);
+        // Correction terms k >= 2 in double precision
+        double sum = 0;
+        int k = 1;
+        for (;; k++) {
+            final double c = Math.abs(F[k - 1] * g);
+            if (c < stop) {
+                break;
+            }
+            // Correction terms 1 to k are required
+            if (k > m) {
+                forwardEm0Terms = k;
+                return Double.NaN;
+            }
+            if (divergenceExit && c >= previous) {
+                // Asymptotic series: once the terms increase they cannot converge
+                forwardEm0Terms = k;
+                return Double.NaN;
+            }
+            if (k >= 2) {
+                sum += F[k - 1] * g;
+            }
+            previous = c;
+            g *= (s + 2 * k - 1) * (s + 2 * k) / a2;
+        }
+        forwardEm0Terms = k;
+
+        // s - 1 is exact (s < 2^53).
+        final DD f;
+        // c_1 is included in the bracket unless negligible. This avoids up to ~0.1 ulp
+        // error from omitting a term just below the convergence threshold.
+        // A negligible c_1 (a > ~2^33) uses no corrections: a may be very large and the
+        // double-double operations on a could overflow.
+        if (k == 1 && c1 < stop * 0x1p-50) {
+            // No corrections: asymptotic approximation. a may be very large.
+            forwardExitK = -2;
+            f = DD.of(s - 1).reciprocal().add(0.5 / a);
+        } else {
+            // Bracket: 1/(s-1) + 1/(2a) + s / (12 a^2) in double-double, then the corrections.
+            // Here c_1 >= 2^-50 * stop so a < ~2^66 and the double-double operations are safe.
+            forwardExitK = -4;
+            final DD aa = DD.of(a);
+            f = DD.of(s - 1).reciprocal()
+                .add(aa.reciprocal().multiply(0.5))
+                .add(DD.of(s).divide(aa.square()).divide(12))
+                .add(sum);
+        }
         // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
-        // If a^(1-s) is sub-normal then (s-1) * log2(a) > 1022 so s - 1 > 0.998 and the
-        // factor is <= ~1.002: the absolute error of the sub-normal power is not
-        // increased and no split power is required.
+        // If a^(1-s) is sub-normal then the bracket is small: the absolute error of the
+        // sub-normal power is not increased and no split power is required.
         final double p = Math.pow(a, 1 - s);
         forwardPowCount++;
-        // s - 1 is exact (s < 22 after the zero test). The factor is accurate to ~2^-100.
-        final DD f = DD.of(s - 1).reciprocal().add(0.5 / a);
         // The double-double product is exact only if its low part is not sub-normal.
         // If the result is below ~2^-968 the low part loses precision and the high part
         // can be wrong by up to 1 ulp. Compute using p scaled by 2^106 (exact).
@@ -2203,7 +2357,7 @@ class HurwitzZetaTest {
      */
     private static double scaledPow(PowOperator pow, double a, int k, double z) {
         final double p = pow.apply(a, k, z * 0.5);
-        forwardPowCount += 2;
+        forwardPowCount++;
         return p * UPSCALE_1022 * p;
     }
 
@@ -2282,7 +2436,100 @@ class HurwitzZetaTest {
             oldAll.getMaxAbs(), oldAll.getRMS(), oldSub.getMaxAbs(), oldSub.getRMS());
         report("  new: max=%.3f rms=%.4f | sub-normal max=%.3f rms=%.4f | worst %s%n",
             newAll.getMaxAbs(), newAll.getRMS(), newSub.getMaxAbs(), newSub.getRMS(), worstCase);
-        report("  exit k (0=trap/asymptotic, %d=I+T): %s%n", FORWARD_N, Arrays.toString(exit));
+        report("  exit k (0=trap/asymptotic/N=0, %d=I+T): %s%n", FORWARD_N, Arrays.toString(exit));
+    }
+
+    /**
+     * Compare the forward summation zeta implementation using the Euler-Maclaurin sum
+     * with N=0 for different maximum terms M on reference data with {@code a > 0}.
+     * The baseline is M=0 (disabled).
+     *
+     * <p>Reports for each M: the fraction of rows using N=0 (including the asymptotic
+     * approximation and the zero result), the mean number of power
+     * function evaluations, the mean number of correction terms evaluated on rows that
+     * did not use N=0 (wasted), and the error statistics.
+     *
+     * @param filename Reference data file
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
+        "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_s-52_8_a-53_0.csv",
+        "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
+        "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
+        "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
+        "hzeta_s1_19_a2147483648_10000000000000000.csv", "hzeta_s4_32_a1_8.csv",
+        "hzeta_s9_1075_tail.csv", "hzeta_s9_1837_tail.csv", "hzeta_s15_1128_tail.csv",
+        "hzeta_s20_1024_ap0.1_subnormal1073.csv", "hzeta_s20_1024_ap1_subnormal1040.csv",
+        "hzeta_s20_1024_ap1_subnormal1053.csv", "hzeta_s20_1024_ap9_subnormal1023.csv",
+        "hzeta_s32_1024_ap0.1_subnormal1073.csv", "hzeta_s32_1024_ap1_subnormal1040.csv",
+        "hzeta_s32_1024_ap1_subnormal1053.csv", "hzeta_s32_1024_ap9_subnormal1023.csv",
+    })
+    @Disabled("Used to compare the Euler-Maclaurin sum with N=0 in the forward summation zeta implementation")
+    void testZetaForwardEm0(String filename) {
+        final ForwardContext[] contexts = {
+            ForwardContext.NO_EM0,
+            ForwardContext.DEFAULT.withM(8),
+            ForwardContext.DEFAULT.withM(12),
+            ForwardContext.DEFAULT.withM(16),
+            ForwardContext.DEFAULT.withM(20),
+            ForwardContext.DEFAULT.withM(25),
+            ForwardContext.DEFAULT.withM(16).withDivergenceExit(false),
+        };
+        final int nc = contexts.length;
+        final TestUtils.ErrorStatistics[] all = new TestUtils.ErrorStatistics[nc];
+        final TestUtils.ErrorStatistics[] sub = new TestUtils.ErrorStatistics[nc];
+        final long[] pows = new long[nc];
+        final long[] em0 = new long[nc];
+        final long[] wasted = new long[nc];
+        final String[] worst = new String[nc];
+        final double[] worstE = new double[nc];
+        for (int i = 0; i < nc; i++) {
+            all[i] = new TestUtils.ErrorStatistics();
+            sub[i] = new TestUtils.ErrorStatistics();
+        }
+        int n = 0;
+        try (DataReader in = new DataReader(filename)) {
+            while (in.next()) {
+                final double s = in.getDouble(0);
+                final double a = in.getDouble(1);
+                final BigDecimal expected = in.getBigDecimal(2);
+                if (!(a > 0 && s > 1)) {
+                    continue;
+                }
+                n++;
+                final boolean isSub = expected.doubleValue() < Double.MIN_NORMAL;
+                for (int i = 0; i < nc; i++) {
+                    final double z = zetaForward(s, a, contexts[i]);
+                    final double e = TestUtils.assertEquals(expected, z, -Double.MAX_VALUE, null, () -> "");
+                    all[i].add(e);
+                    if (isSub) {
+                        sub[i].add(e);
+                    }
+                    if (Math.abs(e) > worstE[i]) {
+                        worstE[i] = Math.abs(e);
+                        worst[i] = String.format("s=%s, a=%s", s, a);
+                    }
+                    pows[i] += forwardPowCount;
+                    if (forwardExitK <= -2) {
+                        // Euler-Maclaurin N=0 (with or without corrections) or zero
+                        em0[i]++;
+                    } else {
+                        wasted[i] += forwardEm0Terms;
+                    }
+                }
+            }
+        } catch (final IOException ex) {
+            Assertions.fail("Failed to load data: " + filename, ex);
+        }
+        report("%s: n=%d%n", filename, n);
+        for (int i = 0; i < nc; i++) {
+            report("  %-28s N=0 %5.1f%% pow %5.2f wasted terms %5.2f | max %.3f rms %.4f | sub-normal max %.3f | worst %s%n",
+                contexts[i], 100.0 * em0[i] / n, (double) pows[i] / n,
+                n == em0[i] ? 0.0 : (double) wasted[i] / (n - em0[i]),
+                all[i].getMaxAbs(), all[i].getRMS(), sub[i].getMaxAbs(), worst[i]);
+        }
     }
 
     /**
