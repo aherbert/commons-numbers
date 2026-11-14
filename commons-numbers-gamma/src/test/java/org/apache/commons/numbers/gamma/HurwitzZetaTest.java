@@ -6992,35 +6992,117 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Create test data for {@code s-1 in 2^[ls, us)} and {@code a in 2^[la, ua) < 1}.
-     * Samples can follow a log-uniform limiting distribution with full randomisation
-     * of the 52-bit mantissa.
+     * Create test data for {@code s > 1} and {@code a < 1}.
+     *
+     * <p>The sample variable for {@code s} is either {@code s-1} or {@code s} in
+     * {@code 2^[ls, us)}. The sample variable for {@code a} is either {@code a} or
+     * {@code 1-a} in {@code 2^[la, ua)}. Samples can follow a log-uniform limiting
+     * distribution with full randomisation of the 52-bit mantissa.
+     *
+     * <p>Samples are accepted if the exponent of the first term {@code t0 = a^-s},
+     * {@code log2(t0) = s * log2(1/a)}, is in {@code [minB, maxB)}. This allows sampling
+     * under the curve {@code t0 = 2^maxB}; for example {@code maxB = 106} excludes the
+     * region where zeta is computed as a single power {@code a^-s}. Use
+     * {@code [0, Infinity)} to accept all samples.
+     *
+     * <p>The default sampling of {@code s-1} and {@code a} with all samples accepted
+     * reproduces the original data.
+     *
+     * @param sVar Sample variable for s: {@code s-1} or {@code s}.
+     * @param ls Lower bound exponent of the sample variable for s (inclusive).
+     * @param us Upper bound exponent of the sample variable for s (exclusive).
+     * @param uniforms If true sample s uniformly; otherwise log-uniformly.
+     * @param aVar Sample variable for a: {@code a} or {@code 1-a}.
+     * @param la Lower bound exponent of the sample variable for a (inclusive).
+     * @param ua Upper bound exponent of the sample variable for a (exclusive).
+     * @param uniforma If true sample a uniformly; otherwise log-uniformly.
+     * @param minB Minimum exponent of t0 (inclusive).
+     * @param maxB Maximum exponent of t0 (exclusive).
+     * @param size Number of samples.
      */
     @ParameterizedTest
     @CsvSource({
-        "-52, 8, false, -53, 0, false, 50000",
+        // Original data: s close to 1 is over-represented; a < 2^-53 is not sampled.
+        "s-1, -52, 8, false, a, -53, 0, false, 0, Infinity, 50000",
+        // s close to 1; a in [2^-106, 1) excluding the single power region.
+        "s-1, -52, 0, false, a, -106, 0, false, 0, 106, 20000",
+        // Moderate and large s (2 to 512) excluding the single power region.
+        "s, 1, 9, false, a, -106, 0, false, 0, 106, 20000",
+        // Single power region (t0 >= 2^106), including overflow
+        "s, 0, 9, false, a, -53, 0, false, 106, 1100, 2000",
+        // Large s with a close to 1 (including s > 2^31 for the pow workaround).
+        // Excludes overflow of t0.
+        "s, 8, 50, false, 1-a, -53, -1, false, 0, 1024, 5000",
     })
-//    @Disabled("Used to generate test data")
-    void testDataSample01(int ls, int us, boolean uniforms,
-                          int la, int ua, boolean uniforma, int size) throws IOException {
+    @Disabled("Used to generate test data")
+    void testDataSample01(String sVar, int ls, int us, boolean uniforms,
+                          String aVar, int la, int ua, boolean uniforma,
+                          double minB, double maxB, int size) throws IOException {
         final SplittableRandom rng = new SplittableRandom(SEED);
         // Validate arguments
-        Assertions.assertTrue(ls >= -52);
+        final boolean sm1 = "s-1".equals(sVar);
+        final boolean oma = "1-a".equals(aVar);
+        Assertions.assertTrue(sm1 || "s".equals(sVar), () -> "s variable: " + sVar);
+        Assertions.assertTrue(oma || "a".equals(aVar), () -> "a variable: " + aVar);
+        // s-1 >= 2^-52 so that s > 1; s >= 1 (s = 1 is rejected)
+        Assertions.assertTrue(ls >= (sm1 ? -52 : 0));
         Assertions.assertTrue(us > ls);
-        Assertions.assertTrue(la >= Double.MIN_EXPONENT);
+        // a >= 2^MIN_EXPONENT; 1-a >= 2^-53 so that a < 1
+        Assertions.assertTrue(la >= (oma ? -53 : Double.MIN_EXPONENT));
         Assertions.assertTrue(ua > la);
-        Assertions.assertTrue(ua < 1);
+        Assertions.assertTrue(ua <= 0);
+        Assertions.assertTrue(minB >= 0);
+        Assertions.assertTrue(maxB > minB);
         // Create samplers
         final DoubleSupplier nextS = createSampler(rng, Math.scalb(1.0, ls), Math.scalb(1.0, us), uniforms);
         final DoubleSupplier nextA = createSampler(rng, Math.scalb(1.0, la), Math.scalb(1.0, ua), uniforma);
+        final boolean filter = minB > 0 || maxB < Double.POSITIVE_INFINITY;
 
-        try (PrintStream out = getPrintStream(
-            String.format("hzeta_s%s_%s_a%s_%s.txt",
-                shortFormat(ls), shortFormat(us), shortFormat(la), shortFormat(ua)))) {
-            for (int i = 0; i < size; i++) {
-                // Sampler was for s-1
-                out.printf("%s, %s%n", 1 + nextS.getAsDouble(), nextA.getAsDouble());
+        final StringBuilder name = new StringBuilder("hzeta");
+        name.append(sm1 ? "_sm1" : "_s").append(shortFormat(ls)).append('_').append(shortFormat(us));
+        name.append(oma ? "_1ma" : "_a").append(shortFormat(la)).append('_').append(shortFormat(ua));
+        if (filter) {
+            name.append("_t0b").append(shortFormat(minB)).append('_')
+                .append(maxB < Double.POSITIVE_INFINITY ? shortFormat(maxB) : "inf");
+        }
+        name.append(".txt");
+
+        // Collect samples to report the rejection rate
+        final ArrayList<double[]> data = new ArrayList<>(size);
+        long rejects = 0;
+        final double ln2 = Math.log(2);
+        while (data.size() < size) {
+            final double xs = nextS.getAsDouble();
+            final double xa = nextA.getAsDouble();
+            // Sampler was for s-1 or s
+            final double s = sm1 ? 1 + xs : xs;
+            // Sampler was for a or 1-a
+            final double a = oma ? 1 - xa : xa;
+            if (s <= 1) {
+                rejects++;
+                continue;
             }
+            if (filter) {
+                // log2(t0) = s * log2(1/a).
+                // Use 1-a (exact for a in [0.5, 1)) for accuracy when a is close to 1.
+                final double l = a >= 0.5 ? -Math.log1p(-(1 - a)) / ln2 : -Math.log(a) / ln2;
+                final double b = s * l;
+                if (!(b >= minB && b < maxB)) {
+                    rejects++;
+                    continue;
+                }
+            }
+            data.add(new double[] {s, a});
+        }
+
+        try (PrintStream out = getPrintStream(name.toString())) {
+            out.printf("# %s in 2^[%d, %d) %s%n", sVar, ls, us, uniforms ? "uniform" : "log-uniform");
+            out.printf("# %s in 2^[%d, %d) %s%n", aVar, la, ua, uniforma ? "uniform" : "log-uniform");
+            if (filter) {
+                out.printf("# Filtered: log2(a^-s) in [%s, %s)%n", minB, maxB);
+                out.printf("# Rejection rate: %.5g%n", (double) rejects / (rejects + size));
+            }
+            data.forEach(x -> out.printf("%s, %s%n", x[0], x[1]));
         }
     }
 
