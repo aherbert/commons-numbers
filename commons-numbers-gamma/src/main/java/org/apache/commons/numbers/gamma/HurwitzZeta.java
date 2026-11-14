@@ -486,6 +486,7 @@ public final class HurwitzZeta {
         // Tiny s trap using N=0.
         // zeta ~ a^(1-s) / (s-1) + a^-s / 2
         //      = a^(1-s) * (1 / (s-1) + 1 / (2a))
+        //      = a^-s * (a / (s-1) + 1 / 2)
         // When 0.5 cannot be added to a / (s-1) then N=0 is a good approximation.
         // a / (s - 1) > 2^52 : a > 2^52 * (s - 1)
         // Here a > 2: for tiny s, s - 1 >= 2^-52 so a > (s - 1) * 2^53 >= 2.
