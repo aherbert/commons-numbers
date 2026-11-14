@@ -141,7 +141,12 @@ class HurwitzZetaTest {
 //        "hzeta_s1_19_a2147483648_10000000000000000.csv",
         "hzeta_domain_2p-1022.csv",
         "hzeta_domain_2p-1075.csv",
-        "hzeta_s-52_8_a-53_0.csv",
+        // a < 1
+        "hzeta_sm1-52_8_a-53_0.csv",
+        "hzeta_sm1-52_0_a-106_0_t0b0_106.csv",
+        "hzeta_s1_9_a-106_0_t0b0_106.csv",
+        "hzeta_s0_9_a-53_0_t0b106_1100.csv",
+        "hzeta_s8_50_1ma-53_-1_t0b0_1024.csv",
     };
     /** Filenames of resources used for the extended precision zeta function using integer s
      * and a in the expected range for the negative a use case. This requires {@code 0 < a < 1}
@@ -195,6 +200,14 @@ class HurwitzZetaTest {
     private static final String[] DOMAIN_RESOURCES = {
         "hzeta_domain_2p-1022.csv",
         "hzeta_domain_2p-1075.csv",
+    };
+    /** Filenames of resources containing samples from the domain {@code a < 1}. */
+    private static final String[] DOMAIN_A01_RESOURCES = {
+        "hzeta_sm1-52_8_a-53_0.csv",
+        "hzeta_sm1-52_0_a-106_0_t0b0_106.csv",
+        "hzeta_s1_9_a-106_0_t0b0_106.csv",
+        "hzeta_s0_9_a-53_0_t0b106_1100.csv",
+        "hzeta_s8_50_1ma-53_-1_t0b0_1024.csv",
     };
 
     // For the configurable double implementation these constants are from the main class
@@ -1244,6 +1257,8 @@ class HurwitzZetaTest {
         ZETA_SUB_NORMAL(HurwitzZeta::value, SUB_NORMAL_RESOURCES, 2.0, 0.5),
         // Random samples from the domain
         ZETA_DOMAIN(HurwitzZeta::value, DOMAIN_RESOURCES, 2.0, 0.5),
+        // Random samples from the domain a < 1 (measured max 1.37, RMS 0.318)
+        ZETA_DOMAIN_A01(HurwitzZeta::value, DOMAIN_A01_RESOURCES, 1.5, 0.35),
         // Negative a
         ZETA_S2_4_N_A1_15(HurwitzZeta::value, "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", 0.55, 0.07),
         ZETA_S2_4_N_A40_99(HurwitzZeta::value, "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv", 0.55, 0.07),
@@ -2731,7 +2746,7 @@ class HurwitzZetaTest {
     @ValueSource(strings = {
         "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
         "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
-        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_s-52_8_a-53_0.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_sm1-52_8_a-53_0.csv",
         "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
         "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
@@ -2812,7 +2827,7 @@ class HurwitzZetaTest {
     @ValueSource(strings = {
         "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
         "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
-        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_s-52_8_a-53_0.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_sm1-52_8_a-53_0.csv",
         "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
         "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
@@ -2905,7 +2920,7 @@ class HurwitzZetaTest {
     @ValueSource(strings = {
         "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
         "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
-        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_s-52_8_a-53_0.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_sm1-52_8_a-53_0.csv",
         "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
         "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
