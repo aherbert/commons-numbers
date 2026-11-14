@@ -2361,6 +2361,291 @@ class HurwitzZetaTest {
         return p * UPSCALE_1022 * p;
     }
 
+    /** Exit type of the last call to the dynamic zeta implementation: trap or zero. */
+    private static final int DYN_EXIT_TRAP = 0;
+    /** Exit type: Euler-Maclaurin sum with N=0 ({@link #zetaEm0}). */
+    private static final int DYN_EXIT_EM0 = 1;
+    /** Exit type: remainder of the forward sum is negligible. */
+    private static final int DYN_EXIT_REMAINDER = 2;
+    /** Exit type: Euler-Maclaurin tail converged at x = a + k. */
+    private static final int DYN_EXIT_EM = 3;
+    /** Exit type: Euler-Maclaurin tail forced at the maximum N. */
+    private static final int DYN_EXIT_FORCED = 4;
+    /** Exit type of the last call to the dynamic zeta implementation. Used for testing. */
+    private static int dynamicExit;
+    /** Exit k (the value of N) of the last call to the dynamic zeta implementation.
+     * Used for testing. */
+    private static int dynamicExitK;
+    /** Number of Euler-Maclaurin correction terms evaluated in failed convergence checks
+     * in the last call to the dynamic zeta implementation. Used for testing. */
+    private static int dynamicWastedTerms;
+    /** Term k at which the sum switched to scaling (split power) in the last call to the
+     * dynamic zeta implementation; -1 if not scaled. Used for testing. */
+    private static int dynamicSwitchK;
+
+    /**
+     * Options for the dynamic zeta implementation.
+     */
+    static final class DynamicContext {
+        /** Default options. */
+        static final DynamicContext DEFAULT = new DynamicContext(16, FORWARD_N, true, false);
+
+        /** Maximum number of terms M of the Euler-Maclaurin correction series. */
+        private final int m;
+        /** Maximum N: the Euler-Maclaurin tail is used at x = a + N if not converged. */
+        private final int maxN;
+        /** Set to true to include the current sum in the convergence threshold of the
+         * Euler-Maclaurin correction series. */
+        private final boolean useSum;
+        /** Set to true to compute {@code x^(1-s)} with a power function; otherwise use
+         * {@code x^-s * x}. */
+        private final boolean directPow;
+
+        /**
+         * @param m Maximum number of correction terms.
+         * @param maxN Maximum N.
+         * @param useSum Include the current sum in the convergence threshold.
+         * @param directPow Compute {@code x^(1-s)} with a power function.
+         */
+        DynamicContext(int m, int maxN, boolean useSum, boolean directPow) {
+            this.m = m;
+            this.maxN = maxN;
+            this.useSum = useSum;
+            this.directPow = directPow;
+        }
+
+        /**
+         * @param m Maximum number of correction terms.
+         * @return a new instance
+         */
+        DynamicContext withM(int m) {
+            return new DynamicContext(m, maxN, useSum, directPow);
+        }
+
+        /**
+         * @param n Maximum N.
+         * @return a new instance
+         */
+        DynamicContext withMaxN(int n) {
+            return new DynamicContext(m, n, useSum, directPow);
+        }
+
+        /**
+         * @param use Include the current sum in the convergence threshold.
+         * @return a new instance
+         */
+        DynamicContext withUseSum(boolean use) {
+            return new DynamicContext(m, maxN, use, directPow);
+        }
+
+        /**
+         * @param direct Compute {@code x^(1-s)} with a power function.
+         * @return a new instance
+         */
+        DynamicContext withDirectPow(boolean direct) {
+            return new DynamicContext(m, maxN, useSum, direct);
+        }
+
+        @Override
+        public String toString() {
+            return "M=" + m + " maxN=" + maxN + (useSum ? "" : " (tail only)") +
+                (directPow ? " (direct pow)" : "");
+        }
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} using a forward
+     * summation of the series with a dynamic choice of N for the Euler-Maclaurin tail.
+     *
+     * <p>At each {@code k} with {@code x = a + k} the sum is:
+     *
+     * <pre>
+     * zeta(s, a) = S_k + x^(1-s) * [1 / (s-1) + 1 / (2x) + sum_{j>=1} c_j]
+     * S_k = sum_{i<k} (a+i)^-s
+     * c_j = B_2j / (2j)! * (s)_(2j-1) * x^-2j
+     * </pre>
+     *
+     * <p>The bracket does not require a power function and {@code x^(1-s) = t_k * x}
+     * where {@code t_k = x^-s} is the next term of the forward sum. The correction series
+     * is checked for convergence within M terms relative to the total
+     * {@code S_k + x^(1-s) / (s-1)}: {@code c_j < 2^-56 * (1/(s-1) + S_k / x^(1-s))}.
+     * If it converges the result is returned with no further power function evaluations.
+     * Otherwise {@code t_k} is added to the sum and the forward sum remainder bound is
+     * checked. At {@code k = maxN} the tail is used without a convergence requirement.
+     *
+     * <p>For {@code a > 2} the case {@code k = 0} uses {@link #zetaEm0}.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 0}
+     * @param dc Options.
+     * @return zeta(s, a)
+     */
+    static double zetaDynamic(double s, double a, DynamicContext dc) {
+        forwardPowCount = 0;
+        forwardEm0Terms = 0;
+        dynamicWastedTerms = 0;
+        dynamicSwitchK = -1;
+        dynamicExitK = 0;
+        final int m = Math.min(Math.max(0, dc.m), F.length - 1);
+
+        // k = 0 for a > 2: Euler-Maclaurin sum with N=0 (S_0 = 0).
+        // This handles a zero result and very large a.
+        final boolean em0 = a > 2;
+        if (em0) {
+            final double z = zetaEm0(s, a, m, true);
+            if (!Double.isNaN(z)) {
+                dynamicExit = forwardExitK == -3 ? DYN_EXIT_TRAP : DYN_EXIT_EM0;
+                return z;
+            }
+            dynamicWastedTerms = forwardEm0Terms;
+        }
+
+        // First term
+        double t = HurwitzZeta.safePow(a, -s);
+        forwardPowCount = 1;
+        dynamicExit = DYN_EXIT_TRAP;
+        if (t >= LARGE_T0 || s >= SINGLE_TERM_S) {
+            return t;
+        }
+
+        // Here a < ~2^66 (zetaEm0 converges for larger a) so a + k is safe in DD.
+        final int maxN = Math.max(0, dc.maxN);
+        final double rs1 = 1 / (s - 1);
+        final PowOperator pow = DD.ofSum(a, maxN).lo() == 0 ?
+            Context::stdPow :
+            Context::extPowxpn;
+
+        boolean scaled = false;
+        if (t < SCALED_SUM_THRESHOLD) {
+            t = scaledPow(pow, a, 0, -s);
+            if (t == 0) {
+                return 0;
+            }
+            scaled = true;
+            dynamicSwitchK = 0;
+        }
+
+        DD sum = DD.ZERO;
+        for (int k = 0;; k++) {
+            if (k != 0) {
+                // t_k = (a+k)^-s
+                if (scaled) {
+                    t = scaledPow(pow, a, k, -s);
+                } else {
+                    t = pow.apply(a, k, -s);
+                    forwardPowCount++;
+                    if (t < SCALED_SUM_THRESHOLD) {
+                        sum = DD.ofSum(sum.hi() * UPSCALE_1022, sum.lo() * UPSCALE_1022);
+                        t = scaledPow(pow, a, k, -s);
+                        scaled = true;
+                        dynamicSwitchK = k;
+                    }
+                }
+            }
+            // Euler-Maclaurin tail at x = a + k (k = 0 already tested if a > 2)
+            if (k != 0 || !em0) {
+                final boolean force = k >= maxN;
+                final DD x = DD.ofSum(a, k);
+                // x^(1-s), scaled if the sum is scaled
+                DD px = x.multiply(t);
+                final double extra = dc.useSum ? sum.hi() / px.hi() : 0;
+                final DD f = emBracket(s, x, extra, m, force);
+                if (f != null) {
+                    if (dc.directPow) {
+                        // Note: s < 350 so no requirement for safePow
+                        if (scaled && px.hi() < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
+                            // Sub-normal x^(1-s)
+                            px = DD.of(scaledPow(pow, a, k, 1 - s));
+                        } else if (scaled) {
+                            px = DD.of(UPSCALE_1022 * pow.apply(a, k, 1 - s));
+                            forwardPowCount++;
+                        } else {
+                            px = DD.of(pow.apply(a, k, 1 - s));
+                            forwardPowCount++;
+                        }
+                    }
+                    dynamicExit = force ? DYN_EXIT_FORCED : DYN_EXIT_EM;
+                    dynamicExitK = k;
+                    if (scaled) {
+                        // Scaled result is above 2^-53: the double-double product is exact.
+                        return sum.add(px.multiply(f)).hi() * Double.MIN_NORMAL;
+                    }
+                    if (sum.hi() + px.hi() * f.hi() < DD_PRODUCT_THRESHOLD) {
+                        // Avoid a sub-normal low part
+                        return sum.multiply(UPSCALE_106).add(px.multiply(UPSCALE_106).multiply(f))
+                            .hi() * DOWNSCALE_106;
+                    }
+                    return sum.add(px.multiply(f)).hi();
+                }
+            }
+            sum = sum.add(t);
+            // Remainder bound: sum_{j>k} (a+j)^-s <= t_k * (1 + (a+k+1) / (s-1))
+            if (t * (1 + (a + k + 1) * rs1) < FORWARD_CONVERGED * sum.hi()) {
+                dynamicExit = DYN_EXIT_REMAINDER;
+                dynamicExitK = k + 1;
+                return scaled ? sum.hi() * Double.MIN_NORMAL : sum.hi();
+            }
+        }
+    }
+
+    /**
+     * Compute the bracket of the Euler-Maclaurin tail at {@code x}:
+     *
+     * <pre>
+     * 1 / (s-1) + 1 / (2x) + sum_{j>=1} c_j
+     * c_j = B_2j / (2j)! * (s)_(2j-1) * x^-2j
+     * </pre>
+     *
+     * <p>The series must converge within {@code m} terms: {@code |c_j| < 2^-56 *
+     * (1/(s-1) + extra)}. The terms {@code 1/(s-1)}, {@code 1/(2x)} and {@code c_1} are
+     * summed in double-double precision; the remaining terms in double precision.
+     *
+     * @param s Argument {@code s > 1} with {@code s < 2^53}
+     * @param x Argument {@code x > 0} with {@code x < ~2^66}
+     * @param extra Extra magnitude of the total relative to {@code x^(1-s)}.
+     * @param m Maximum number of correction terms.
+     * @param force If true return the series truncated before the smallest term (or
+     * at m terms) if it does not converge.
+     * @return the bracket, or null if the series did not converge
+     */
+    private static DD emBracket(double s, DD x, double extra, int m, boolean force) {
+        final double xd = x.hi();
+        final double x2 = xd * xd;
+        final double stop = EM0_CONVERGED * (1 / (s - 1) + extra);
+        double g = s / x2;
+        final double c1 = Math.abs(F[0] * g);
+        double previous = Double.POSITIVE_INFINITY;
+        double sum = 0;
+        int j = 1;
+        for (;; j++) {
+            final double c = Math.abs(F[j - 1] * g);
+            if (c < stop) {
+                break;
+            }
+            if (j > m || c >= previous) {
+                if (!force) {
+                    dynamicWastedTerms += j;
+                    return null;
+                }
+                // Truncate: terms 1 to j-1
+                break;
+            }
+            if (j >= 2) {
+                sum += F[j - 1] * g;
+            }
+            previous = c;
+            g *= (s + 2 * j - 1) * (s + 2 * j) / x2;
+        }
+        DD f = DD.of(s - 1).reciprocal().add(x.reciprocal().multiply(0.5));
+        // c_1 is included unless negligible (or truncated: j == 1 and c_1 >= stop)
+        if (j > 1 || (c1 < stop && c1 >= stop * 0x1p-50)) {
+            f = f.add(DD.of(s).divide(x.square()).divide(12)).add(sum);
+        }
+        return f;
+    }
+
     /**
      * Compare the forward summation zeta implementation with the test implementation
      * using the default context on reference data with {@code a > 0}.
@@ -2530,6 +2815,170 @@ class HurwitzZetaTest {
                 n == em0[i] ? 0.0 : (double) wasted[i] / (n - em0[i]),
                 all[i].getMaxAbs(), all[i].getRMS(), sub[i].getMaxAbs(), worst[i]);
         }
+    }
+
+    /**
+     * Compare the dynamic zeta implementation with the forward summation zeta
+     * implementation (default context) on reference data with {@code a > 0}.
+     *
+     * <p>Reports for each option: the mean number of power function evaluations, the
+     * fraction of each exit type, the mean number of wasted correction terms, and the error
+     * statistics. For the default options also reports a histogram of the exit N, and a
+     * table of the mean power function evaluations (dynamic/forward) by exponent(a) and
+     * s band.
+     *
+     * @param filename Reference data file
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
+        "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_s-52_8_a-53_0.csv",
+        "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
+        "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
+        "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
+        "hzeta_s1_19_a2147483648_10000000000000000.csv", "hzeta_s4_32_a1_8.csv",
+        "hzeta_s9_1075_tail.csv", "hzeta_s9_1837_tail.csv", "hzeta_s15_1128_tail.csv",
+        "hzeta_s20_1024_ap0.1_subnormal1073.csv", "hzeta_s20_1024_ap1_subnormal1040.csv",
+        "hzeta_s20_1024_ap1_subnormal1053.csv", "hzeta_s20_1024_ap9_subnormal1023.csv",
+        "hzeta_s32_1024_ap0.1_subnormal1073.csv", "hzeta_s32_1024_ap1_subnormal1040.csv",
+        "hzeta_s32_1024_ap1_subnormal1053.csv", "hzeta_s32_1024_ap9_subnormal1023.csv",
+    })
+    @Disabled("Used to compare the dynamic N zeta implementation")
+    void testZetaDynamic(String filename) {
+        // Index 0 is the forward summation baseline
+        final DynamicContext[] contexts = {
+            null,
+            DynamicContext.DEFAULT,
+            DynamicContext.DEFAULT.withUseSum(false),
+            DynamicContext.DEFAULT.withM(8),
+            DynamicContext.DEFAULT.withMaxN(32),
+            DynamicContext.DEFAULT.withDirectPow(true),
+            DynamicContext.DEFAULT.withM(8).withDirectPow(true),
+        };
+        final int nc = contexts.length;
+        final TestUtils.ErrorStatistics[] all = new TestUtils.ErrorStatistics[nc];
+        final TestUtils.ErrorStatistics[] sub = new TestUtils.ErrorStatistics[nc];
+        final long[] pows = new long[nc];
+        final long[][] exits = new long[nc][5];
+        final long[] wasted = new long[nc];
+        final String[] worst = new String[nc];
+        final double[] worstE = new double[nc];
+        for (int i = 0; i < nc; i++) {
+            all[i] = new TestUtils.ErrorStatistics();
+            sub[i] = new TestUtils.ErrorStatistics();
+        }
+        // Default context: histogram of exit N; mean pow by a band and s band
+        final int maxN = DynamicContext.DEFAULT.maxN;
+        final long[][] histN = new long[5][maxN + 2];
+        final String[] aBands = {"a<1", "[1,2)", "[2,4)", "[4,8)", "[8,16)", "[16,64)", ">=64"};
+        final String[] sBands = {"(1,2]", "(2,4]", "(4,16]", "(16,64]", "(64,350)", ">=350"};
+        final long[][] bandN = new long[aBands.length][sBands.length];
+        final long[][] bandPow = new long[aBands.length][sBands.length];
+        final long[][] bandPow0 = new long[aBands.length][sBands.length];
+        // Direct pow context: error by exit relative to the switch to scaling.
+        // 0 = not scaled; 1 = scaled from t0; 2 = exit at the switch term; 3 = exit after it
+        final int iDirect = 5;
+        final String[] switchNames = {"not scaled", "scaled at t0", "exit at switch k", "exit after switch k"};
+        final TestUtils.ErrorStatistics[] switchStats = new TestUtils.ErrorStatistics[4];
+        final TestUtils.ErrorStatistics[] switchSub = new TestUtils.ErrorStatistics[4];
+        for (int i = 0; i < 4; i++) {
+            switchStats[i] = new TestUtils.ErrorStatistics();
+            switchSub[i] = new TestUtils.ErrorStatistics();
+        }
+        int n = 0;
+        try (DataReader in = new DataReader(filename)) {
+            while (in.next()) {
+                final double s = in.getDouble(0);
+                final double a = in.getDouble(1);
+                final BigDecimal expected = in.getBigDecimal(2);
+                if (!(a > 0 && s > 1)) {
+                    continue;
+                }
+                n++;
+                final boolean isSub = expected.doubleValue() < Double.MIN_NORMAL;
+                final int ab = a < 1 ? 0 : Math.min(aBands.length - 1,
+                    a < 16 ? 1 + Math.getExponent(a) : a < 64 ? 5 : 6);
+                final int sb = s <= 2 ? 0 : s <= 4 ? 1 : s <= 16 ? 2 : s <= 64 ? 3 : s < SINGLE_TERM_S ? 4 : 5;
+                for (int i = 0; i < nc; i++) {
+                    final double z = i == 0 ? zetaForward(s, a) : zetaDynamic(s, a, contexts[i]);
+                    final double e = TestUtils.assertEquals(expected, z, -Double.MAX_VALUE, null, () -> "");
+                    all[i].add(e);
+                    if (isSub) {
+                        sub[i].add(e);
+                    }
+                    if (Math.abs(e) > worstE[i]) {
+                        worstE[i] = Math.abs(e);
+                        worst[i] = String.format("s=%s, a=%s", s, a);
+                    }
+                    pows[i] += forwardPowCount;
+                    if (i == 0) {
+                        bandPow0[ab][sb] += forwardPowCount;
+                        continue;
+                    }
+                    exits[i][dynamicExit]++;
+                    wasted[i] += dynamicWastedTerms;
+                    if (i == iDirect && (dynamicExit == DYN_EXIT_EM || dynamicExit == DYN_EXIT_REMAINDER ||
+                        dynamicExit == DYN_EXIT_FORCED)) {
+                        // Last term used: EM exit at k uses t_k; remainder exit (k+1) added t_k
+                        final int last = dynamicExit == DYN_EXIT_REMAINDER ? dynamicExitK - 1 : dynamicExitK;
+                        final int c = dynamicSwitchK < 0 ? 0 : dynamicSwitchK == 0 ? 1 :
+                            last == dynamicSwitchK ? 2 : 3;
+                        switchStats[c].add(e);
+                        if (isSub) {
+                            switchSub[c].add(e);
+                        }
+                    }
+                    if (i == 1) {
+                        histN[dynamicExit][Math.min(dynamicExitK, maxN + 1)]++;
+                        bandN[ab][sb]++;
+                        bandPow[ab][sb] += forwardPowCount;
+                    }
+                }
+            }
+        } catch (final IOException ex) {
+            Assertions.fail("Failed to load data: " + filename, ex);
+        }
+        report("%s: n=%d%n", filename, n);
+        for (int i = 0; i < nc; i++) {
+            final String name = i == 0 ? "forward (M=16, N=" + FORWARD_N + ")" : contexts[i].toString();
+            report("  %-26s pow %5.2f", name, (double) pows[i] / n);
+            if (i == 0) {
+                report("%59s", "");
+            } else {
+                report(" | trap %5.1f%% em0 %5.1f%% rem %5.1f%% em %5.1f%% forced %5.1f%% | wasted %5.2f",
+                    100.0 * exits[i][DYN_EXIT_TRAP] / n, 100.0 * exits[i][DYN_EXIT_EM0] / n,
+                    100.0 * exits[i][DYN_EXIT_REMAINDER] / n, 100.0 * exits[i][DYN_EXIT_EM] / n,
+                    100.0 * exits[i][DYN_EXIT_FORCED] / n, (double) wasted[i] / n);
+            }
+            report(" | max %.3f rms %.4f | sub-normal max %.3f | worst %s%n",
+                all[i].getMaxAbs(), all[i].getRMS(), sub[i].getMaxAbs(), worst[i]);
+        }
+        report("  %s exit N: rem %s; em %s; forced %s%n", contexts[1],
+            Arrays.toString(histN[DYN_EXIT_REMAINDER]), Arrays.toString(histN[DYN_EXIT_EM]),
+            Arrays.toString(histN[DYN_EXIT_FORCED]));
+        for (int i = 0; i < 4; i++) {
+            if (switchStats[i].size() != 0) {
+                report("  %s %-20s n=%6d max %.3f rms %.4f | sub-normal n=%6d max %.3f rms %.4f%n",
+                    contexts[iDirect], switchNames[i], switchStats[i].size(), switchStats[i].getMaxAbs(),
+                    switchStats[i].getRMS(), switchSub[i].size(), switchSub[i].getMaxAbs(), switchSub[i].getRMS());
+            }
+        }
+        final StringBuilder sb = new StringBuilder(256);
+        sb.append(String.format("  mean pow dynamic/forward (rows)%n  %-8s", ""));
+        for (final String b : sBands) {
+            sb.append(String.format(" %-20s", "s " + b));
+        }
+        for (int i = 0; i < aBands.length; i++) {
+            sb.append(String.format("%n  %-8s", aBands[i]));
+            for (int j = 0; j < sBands.length; j++) {
+                final long c = bandN[i][j];
+                sb.append(c == 0 ? String.format(" %-20s", "-") :
+                    String.format(" %-20s", String.format("%.2f/%.2f (%d)",
+                        (double) bandPow[i][j] / c, (double) bandPow0[i][j] / c, c)));
+            }
+        }
+        report("%s%n", sb);
     }
 
     /**
