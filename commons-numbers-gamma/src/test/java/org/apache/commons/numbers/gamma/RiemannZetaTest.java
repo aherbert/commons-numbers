@@ -116,7 +116,9 @@ class RiemannZetaTest {
         // Requires by passing public API which can call the zeta function when a==1.
         // Similar precision to RiemannZeta.
         HURWITZ_ZETA_1_32(s -> HurwitzZeta.zetaImp(s, 1), "zeta_1_32.csv", 1.5, 0.13),
-        HURWITZ_ZETA_36_53(s -> HurwitzZeta.zetaImp(s, 1), "zeta_36_53.csv", 0, 0),
+        // The series sum stops when the remainder is below 2^-56 relative to the sum.
+        // This can change the rounding of a result close to a tie (s=36.22, 0.508 ulp).
+        HURWITZ_ZETA_36_53(s -> HurwitzZeta.zetaImp(s, 1), "zeta_36_53.csv", 0.51, 0.02),
         HURWITZ_ZETA_ABOVE_1(s -> HurwitzZeta.zetaImp(s, 1), "zeta_above1.csv", 1.45, 0.42),
         // Borwein zeta has no support for negative s using reflection.
         // It is worse than BoostZeta.

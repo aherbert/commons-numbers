@@ -2351,6 +2351,18 @@ class HurwitzZetaTest {
         final double p = Math.pow(a, 1 - s);
         forwardPowCount++;
         forwardEm0P = p;
+        if (p < SCALED_SUM_THRESHOLD) {
+            // Sub-normal power: limited relative precision. The product would round twice
+            // (p, then the result) and can be incorrectly rounded close to a tie.
+            // Recompute as a split power with full relative precision:
+            // a^(1-s) * 2^1022 = a^((1-s)/2) * 2^1022 * a^((1-s)/2).
+            // The scaled power is normal and the scaled result is above ~2^-53 (the bracket
+            // is above 1 / (s-1) and s < 2^53) so the double-double product is exact.
+            // The final scaling rounds once.
+            final double h = Math.pow(a, (1 - s) * 0.5);
+            forwardPowCount++;
+            return f.multiply(h * UPSCALE_1022 * h).hi() * Double.MIN_NORMAL;
+        }
         // The double-double product is exact only if its low part is not sub-normal.
         // If the result is below ~2^-968 the low part loses precision and the high part
         // can be wrong by up to 1 ulp. Compute using p scaled by 2^106 (exact).
@@ -4949,7 +4961,7 @@ class HurwitzZetaTest {
             // f(1.001, 1) etc.
             Arguments.of(1.001, 0.999, 1000.57893532226893974131793946, 1),
             Arguments.of(1.001, 1, 1000.57728847601162684806668989, 0),
-            Arguments.of(1.001, 1.001, 1000.57564403708096426589811664, 0),
+            Arguments.of(1.001, 1.001, 1000.57564403708096426589811664, 1),
             Arguments.of(1.001, 3, 999.077634929516400548962369402, 0),
             Arguments.of(1.001, 156.78, 994.961087152463264230812967825, 1),
             Arguments.of(1.001, 345600, 987.327939500118316838908716646, 1),
@@ -4970,7 +4982,7 @@ class HurwitzZetaTest {
             Arguments.of(1.3567, 1, 3.40603490577277492861753138946, 1),
             Arguments.of(1.3567, 12, 1.17295098623816176759602458034, 1),
             Arguments.of(1.3567, 267, 0.382340735582659556038655214163, 0),
-            Arguments.of(1.3567, 100000000.0, 0.00392732544562110257556960028487, 0),
+            Arguments.of(1.3567, 100000000.0, 0.00392732544562110257556960028487, 1),
             Arguments.of(1.3567, 1000000000.0, 0.0017274158124759523689829065186, 0),
             Arguments.of(1.3567, 6780000000.0, 0.000872764873809386121835245990354, 1),
             Arguments.of(1.3567, 10000000000.0, 0.000759795803739606906900648768122, 1),
@@ -4980,7 +4992,7 @@ class HurwitzZetaTest {
             Arguments.of(1.9183, 2.234, 0.642314727500847848717986207886, 1),
             Arguments.of(1.9183, 32, 0.0458231265360237920443268300232, 1),
             Arguments.of(1.9183, 189, 0.00886331331419119681212176796288, 0),
-            Arguments.of(1.9183, 26378, 9.48410976427270589834458588242e-05, 0),
+            Arguments.of(1.9183, 26378, 9.48410976427270589834458588242e-05, 1),
             Arguments.of(1.9183, 1484793, 2.34193449523082289840265727697e-06, 1),
             Arguments.of(1.9183, 100000000.0, 4.90473353191884545392736492566e-08, 1),
             Arguments.of(1.9183, 1000000000.0, 5.91991424826323516752379877396e-09, 1),
@@ -5029,7 +5041,7 @@ class HurwitzZetaTest {
             Arguments.of(5, 1000000000000.0, 2.5000000000050000000000041666666666666666666666667e-49, 1),
             Arguments.of(5, 10000000000000.0, 2.5000000000005000000000000416666666666666666666667e-53, 1),
             Arguments.of(5, 100000000000000.0, 2.5000000000000500000000000004166666666666666666667e-57, 1),
-            Arguments.of(5, 1000000000000000.0, 2.5000000000000050000000000000041666666666666666667e-61, 0),
+            Arguments.of(5, 1000000000000000.0, 2.5000000000000050000000000000041666666666666666667e-61, 1),
 
             // a^-s underflows
             // a = 2^-53 - 100 : Below asymptotic threshold
@@ -5066,7 +5078,7 @@ class HurwitzZetaTest {
             Arguments.of(1.5, 0.5, 4.77653794755483324857662766936, 1),
             Arguments.of(1.5, 0.1, 34.0529755150756003469433380579, 1),
             Arguments.of(1.5, 0.9, 2.83731486390441065293824846471, 0),
-            Arguments.of(1.234, 0.9, 5.06661932437970945786497350413, 0),
+            Arguments.of(1.234, 0.9, 5.06661932437970945786497350413, 1),
             Arguments.of(1.234, 0.567, 6.18461364443178731103712531596, 1),
             Arguments.of(1.234, 0.1567, 14.4639283884787232559726455653, 0),
 
@@ -5309,7 +5321,7 @@ class HurwitzZetaTest {
             Arguments.of(1.00001, 1.789, 99999.7231466483928005870213366, 1),
             Arguments.of(1.00001, 17.89, 99997.1440070978817356297446315, 1),
             Arguments.of(1.00001, 1278562927.89, 99979.0331951153772621341875866, 1),
-            Arguments.of(1.0000000000000002, 1.789, 4503599627370495.72314713725233, 0),
+            Arguments.of(1.0000000000000002, 1.789, 4503599627370495.72314713725233, 1),
             Arguments.of(1.0000000000000002, 1278562927.89, 4503599627370475.03099742881301, 0),
 
             // Spurious failures fixed during development

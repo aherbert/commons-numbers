@@ -51,6 +51,15 @@ import org.apache.commons.numbers.core.DDMath;
  * <p>These formulas for the real-valued \( s \) are provided in Johansson (2015) as
  * equations 5-9. The implementation omits the residual term \( \mathrm{R} \).
  *
+ * <p>For positive \( a \) the number of terms \( N \) is chosen dynamically. The
+ * terms \( \mathrm{I} + \mathrm{T} \) are written as
+ * \( (a+N)^{1-s} \left[ \frac{1}{s-1} + \frac{1}{2(a+N)} + \sum_{k=1}^M c_k \right] \)
+ * where the bracket does not require a power function. Starting from \( N = 0 \) the
+ * bracket is evaluated if the correction terms \( c_k \) converge within \( M \) terms;
+ * otherwise the next term of the sum \( \mathrm{S} \) is added. This minimises the
+ * number of power function evaluations. The sum \( \mathrm{S} \) also stops if the
+ * remaining terms are negligible.
+ *
  * <p>The integrals are well defined when \( a + N \gt 0 \). Negative \( a \) may require the
  * sum \( S \) of a large number of terms \( N \). The implementation uses a difference
  * of zeta evaluations to compute the sum \( S \) over negative
@@ -87,19 +96,27 @@ import org.apache.commons.numbers.core.DDMath;
  */
 public final class HurwitzZeta {
     /**
-     * Number of terms of the series summation S.
+     * Maximum number of terms N of the series summation S.
      *
-     * <p>Increasing this will impact runtime performance as each additional call to
-     * Math.pow has a measurable cost. The full function evaluation has a cost of
-     * approximately N+2 calls to Math.pow. If too low the tail series can diverge.
+     * <p>N is chosen dynamically. At this limit the Euler-Maclaurin tail is used without
+     * a convergence requirement; with {@link #M} terms this does not occur on the
+     * reference data (the maximum observed N is 7).
      */
-    private static final int N = 8;
-    /** Convergence epsilon for the sum of the tail function. This prevents summation
-     * of terms that do not affect the final result. Equal to 2^-53. */
-    private static final double EPS = 0x1.0p-53;
-    /** Asymptotic threshold for large {@code a}. Used when {@code a + N} is not accurate.
-     * Equal to 2^53 - N. */
-    private static final double LARGE_A = (1L << 53) - N;
+    private static final int MAX_N = 9;
+    /**
+     * Maximum number of correction terms M of the Euler-Maclaurin tail.
+     *
+     * <p>The correction terms do not require a power function. A larger M allows
+     * a smaller N. The error does not increase with the number of terms used.
+     */
+    private static final int M = 16;
+    /** Relative convergence threshold for the Euler-Maclaurin correction terms and the
+     * remainder of the series sum. Equal to 2^-56. */
+    private static final double CONVERGED = 0x1.0p-56;
+    /** Threshold for a negligible first correction term relative to the convergence
+     * threshold. The bracket then requires no correction terms and supports any
+     * {@code a} without overflow. Equal to 2^-50. */
+    private static final double NEGLIGIBLE_C1 = 0x1.0p-50;
     /** Threshold used when {@code a < 1} where {@code a^-s} == zeta(s, a) with the smallest supported
      * {@code s = 1 + 2^-52}. Set using zeta(s, 1) * 2^54. No possible evaluation of
      * all remaining terms for any s could be added to {@code a^-s} when {@code a < 1}.
@@ -284,10 +301,9 @@ public final class HurwitzZeta {
     private static final double[] F;
 
     static {
-        // Limit the table size.
-        // If max M is reached the error is in the uncomputed residual term.
-        // This prevents possible divergence of the tail series.
-        F = Arrays.stream(FDD).limit(12).mapToDouble(DD::hi).toArray();
+        // Limit the table size to the maximum number of correction terms.
+        // The term M+1 is used to check convergence.
+        F = Arrays.stream(FDD).limit(M + 1).mapToDouble(DD::hi).toArray();
     }
 
     /**
@@ -483,233 +499,308 @@ public final class HurwitzZeta {
      */
     // package-private for testing using a == 1 (Riemann zeta function)
     static double zetaImp(double s, double a) {
-        // Asymptotic behavior as a -> inf
+        // Euler-Maclaurin summation with N=0 if the correction terms converge.
+        // This includes the asymptotic behaviour as a -> inf, or tiny s:
+        // zeta ~ a^(1-s) / (s-1) + a^-s / 2 = a^(1-s) * (1 / (s-1) + 1 / (2a))
         // https://dlmf.nist.gov/25.11#E43
-        // When a is large the series cannot use a+k.
-        // This reduces to N=0 (no series sum S): the I term and the first term of T.
-        // Tiny s trap using N=0.
-        // zeta ~ a^(1-s) / (s-1) + a^-s / 2
-        //      = a^(1-s) * (1 / (s-1) + 1 / (2a))
-        //      = a^-s * (a / (s-1) + 1 / 2)
-        // When 0.5 cannot be added to a / (s-1) then N=0 is a good approximation.
-        // a / (s - 1) > 2^52 : a > 2^52 * (s - 1)
-        // Here a > 2: for tiny s, s - 1 >= 2^-52 so a > (s - 1) * 2^53 >= 2.
-        if (a > LARGE_A || a * EPS > s - 1) {
-            return zetaAsymptotic(s, a);
+        // Requires a > 2 so a^(1-s) is not close to 1 (Math.pow is accurate).
+        final boolean em0 = a > 2;
+        if (em0) {
+            final double z = zetaEm0(s, a);
+            if (!Double.isNaN(z)) {
+                return z;
+            }
         }
 
         // First term. safePow is only required here: after the single-term trap
         // (s < SINGLE_TERM_S) the exponent is small (|y| < 2^31) and calls to Math.pow
-        // are accurate for a base close to 1. The asymptotic route uses a > 2.
-        double t0 = safePow(a, -s);
+        // are accurate for a base close to 1.
+        double t = safePow(a, -s);
 
         // The remaining terms cannot be added to a^-s when:
         // - a^-s is very large (can overflow if 0 <= a < 1), see LARGE_T0
         // - s is large, see SINGLE_TERM_S
-        if (t0 >= LARGE_T0 || s >= SINGLE_TERM_S) {
-            return t0;
+        if (t >= LARGE_T0 || s >= SINGLE_TERM_S) {
+            return t;
         }
 
-        // Now any (a+n)^-s cannot overflow and the sum cannot overflow
+        // Now any (a+k)^-s cannot overflow and the sum cannot overflow.
+        // Here a < ~2^66 (zetaEm0 converges for larger a) so a + k is exact in DD.
 
         // Methods are used to increase precision
         // - Extended precision summation (low cost)
         // - Extended precision power function using round-off from (a+k) (selectively applied)
         // - Computation of sub-normal power terms in parts (low cost)
-        // - Scaling for sub-normal tail terms (no cost)
-        // - Adding series terms in magnitude order (no cost)
+        // - Scaling for sub-normal terms (no cost)
+
+        // Reciprocal used for the convergence bound (not required to be exact).
+        // s > 1 + a * 2^-53 so the division is safe.
+        final double rs1 = 1 / (s - 1);
 
         // Check the extended precision power can be used.
-        // If there is no round-off from (a+n) use standard precision.
+        // If there is no round-off from (a+k) use standard precision.
         // Note: s < SINGLE_TERM_S so the extended precision power is limited to |z| < 350.
-        final PowOperator pow = twoSumLow(a, N, a + N) == 0 ?
+        final PowOperator pow = twoSumLow(a, MAX_N, a + MAX_N) == 0 ?
             HurwitzZeta::stdPowxpn :
             HurwitzZeta::extPowxpn;
 
-        // Scaled power for the series sum to support sub-normal terms.
-        // Avoid by using: scale * x^y = x^(y/2) * scale * x^(y/2).
-        // This includes early-exit traps for when s is too large and the value is zero or t0.
-        PowOperator powS = pow;
-
-        // Check if a^-s or (a+1)^-s are sub-normal and use scaling.
-        boolean scaledSum = t0 < SCALED_SUM_THRESHOLD;
-        final double originalT0 = t0;
-        if (scaledSum) {
-            // Re-compute t0 using scaling
-            t0 = Math.pow(a, -s * 0.5);
-            t0 = t0 * UPSCALE_1022 * t0;
-            if (t0 == 0) {
-                // I = (a+n)^(1-s) / (s-1) = (a+n)^-s * (a+n) / (s-1)
-                // For any s > 1 the I term is not 2^1022 larger than a^-s.
+        // Scaling: if active, all terms and the sum are scaled by 2^1022.
+        boolean scaled = false;
+        if (t < SCALED_SUM_THRESHOLD) {
+            t = scaledPow(pow, a, 0, -s);
+            if (t == 0) {
+                // (a+k)^(1-s) / (s-1) is not 2^1022 larger than a^-s for any s > 1.
                 // The max is ~ 2^53 with a~2^53 and s~1.
-                // No need to compute I
                 return 0;
             }
-            scaledSum = true;
-            powS = createScaledPower(pow);
+            scaled = true;
         }
 
-        // Compute t1 = (a+1)^-s. This may be scaled or unscaled.
-        double t1 = powS.apply(a, 1, -s);
-        if (t1 < Double.MIN_VALUE) {
-            // If t0 was sub-normal then return t0 as t1 cannot be added.
-            // If t0 was normal check if a sub-normal term can be added
-            // otherwise s is very large and the result is t0.
-            if (scaledSum) {
-                return originalT0;
+        // Forward summation of S_k = sum_{i<k} (a+i)^-s. At each k with x = a + k:
+        // zeta(s, a) = S_k + x^(1-s) * [1 / (s-1) + 1 / (2x) + sum_{j>=1} c_j]
+        DD sum = DD.ZERO;
+        for (int k = 0;; k++) {
+            if (k != 0) {
+                // t = (a+k)^-s
+                if (scaled) {
+                    t = scaledPow(pow, a, k, -s);
+                } else {
+                    t = pow.apply(a, k, -s);
+                    if (t < SCALED_SUM_THRESHOLD) {
+                        // First sub-normal term: activate scaling.
+                        // The sum is below ~2^-920 (it has not converged with a sub-normal
+                        // term for s > 19.3) so scaling by 2^1022 cannot overflow and is exact.
+                        sum = DD.ofSum(sum.hi() * UPSCALE_1022, sum.lo() * UPSCALE_1022);
+                        t = scaledPow(pow, a, k, -s);
+                        scaled = true;
+                    }
+                }
             }
-            t0 *= UPSCALE_1022;
-            scaledSum = true;
-            powS = createScaledPower(pow);
-            t1 = powS.apply(a, 1, -s);
-        }
-
-        // If t1 cannot be added to t0 (exponent s is too large) reduce n.
-        // Continue so the I term is evaluated which dominates with small s.
-        final int n = t1 < t0 * EPS ? 2 : N;
-
-        // Here we compute the entire evaluation.
-        // Compute the final power term.
-        double p = powS.apply(a, n, -s);
-
-        if (p < SCALED_SUM_THRESHOLD && !scaledSum && t0 < 1) {
-            // t0 and t1 are normal but some of the remaining terms in the summation are not.
-            // The p term is used for the tail and will be inaccurate.
-            // Activate scaling.
-            t0 *= UPSCALE_1022;
-            t1 *= UPSCALE_1022;
-            scaledSum = true;
-            powS = createScaledPower(pow);
-            p = powS.apply(a, n, -s);
-        }
-
-        // Initialise sum with the first tail term
-        DD sum = DD.of(0.5 * p);
-        // S : k in [0, n-1]
-        // Note k=0,1 already computed as t0,t1
-        for (int k = n - 1; k > 1; k--) {
-            // Descending k sums in order of magnitude for increased precision
-            sum = sum.add(powS.apply(a, k, -s));
-        }
-        sum = sum.add(t1);
-
-        // The dominant term may be t0 when a in [0, 1], or ti when s is small.
-        // Adding in double-double precision handles either magnitude order.
-        sum = sum.add(t0);
-
-        // I: (a+n)^(1-s) / (s-1) = (a+n)^-s * (a+n) / (s-1)
-        // Note: This term represents the sum of the remaining terms to infinity.
-        // For S ~ I and I to be sub-normal requires a sum of 9 sub-normal terms.
-        // Only compute scaled when the sum is scaled: a^-s is sub-normal and a < 2^53
-        // (asymptotic case) hence s > 2 and division by (s-1) is safe.
-        double ti;
-        if (scaledSum) {
-            // Determine if (a+n)^(1-s) is sub-normal and compute in parts.
-            // p is scaled by 2^1022: compare with the scaled threshold (2^-1022 * 2^1022 = 1)
-            if (p * (a + n) < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
-                ti = powS.apply(a, n, 1 - s);
-            } else {
-                ti = UPSCALE_1022 * pow.apply(a, n, 1 - s);
+            // Euler-Maclaurin tail at x = a + k (k = 0 already tested if a > 2)
+            if (k != 0 || !em0) {
+                final DD x = DD.ofSum(a, k);
+                // Estimate of x^(1-s) (scaled if the sum is scaled) used for convergence.
+                final double px = x.multiply(t).hi();
+                // The convergence threshold is relative to the total S_k + x^(1-s) / (s-1).
+                // At the maximum N the tail is used without a convergence requirement.
+                final DD f = emBracket(s, x, sum.hi() / px, k >= MAX_N);
+                if (f != null) {
+                    // Compute x^(1-s) with a power function. This is more accurate than
+                    // the estimate x^-s * x when x^(1-s) / (s-1) dominates (s near 1).
+                    final double p;
+                    if (!scaled) {
+                        p = pow.apply(a, k, 1 - s);
+                    } else if (px < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
+                        // Sub-normal x^(1-s)
+                        p = scaledPow(pow, a, k, 1 - s);
+                    } else {
+                        p = UPSCALE_1022 * pow.apply(a, k, 1 - s);
+                    }
+                    if (scaled) {
+                        // Scaled result is above 2^-53: the double-double product is exact.
+                        return sum.add(f.multiply(p)).hi() * Double.MIN_NORMAL;
+                    }
+                    if (sum.hi() + p * f.hi() < DD_PRODUCT_THRESHOLD) {
+                        // Avoid a sub-normal low part of the double-double product
+                        return sum.multiply(UPSCALE_106).add(f.multiply(p * UPSCALE_106))
+                            .hi() * DOWNSCALE_106;
+                    }
+                    return sum.add(f.multiply(p)).hi();
+                }
             }
-            ti /= s - 1;
-            sum = sum.add(ti);
-            // Partial downscale of the sum. The tail can use normal numbers.
-            sum = DD.ofSum(sum.hi() * DOWNSCALE_916, sum.lo() * DOWNSCALE_916);
-        } else {
-            ti = pow.apply(a, n, 1 - s) / (s - 1);
-            sum = sum.add(ti);
-            // Upscale the sum so the tail can use normal numbers.
-            sum = DD.ofSum(sum.hi() * UPSCALE_106, sum.lo() * UPSCALE_106);
-        }
-
-        // T
-        // The following recycles the power term p: (a+n)^-(2k-1+s) using division by (a+N)^2.
-        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
-        // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        //
-        // If a or s are large then (a+n)^-(2k-1+s) will underflow.
-        // We can downscale the rising factorial (always above 1)
-        // and upscale p (always below 1) by the same amount.
-        // Scaling could dynamically use the exponent of f and p. Here we use
-        // fixed scaling which can be pre-applied to a possible sub-normal
-        // power term. This allows a few terms of the tail to be computed
-        // when the zeta result or terms are sub-normal and a significant
-        // improvement in accuracy for sub-normal results.
-        //
-        // The loop will exit immediately if p = (a+n)^-(1-s) = 0:
-        // Extend support for large s by computing sub-normal (a+n)^-(1+s)
-        // in parts with fixed scaling:
-        //   scale * (a+n)^-(1+s) = (a+n)^-(1+s)/2 * scale * (a+n)^-(1+s)/2
-        // The limit on (1+s):
-        //   9^-(1+s) = 2^-(1075+1022) : 1+s = log(2)/log(9) * (1075+1022) = 662
-        //
-        // Rising factorial term : (s)_{2k-1}
-        // The maximum s is < 662.
-        // (662)_{2k-1}; k=53 = Pochammer(662, 105) = 3.96e299
-        // The rising factorial will not overflow for k <= 53 before (a+n)^-(1+s) is
-        // zero. This is within the length of table F.
-        // For larger s where p=0 the loop exits immediately.
-        //
-        // Note that downscaling of f does not match upscaling of p. The mismatch of 2^106
-        // allows the tail to sum normal terms and converge on a normal number.
-        // Due to a prior check on large a^-s the zeta result cannot be above 2^106 and
-        // overflow cannot occur.
-        double f = s * DOWNSCALE_916;
-        // 2k - 1
-        double k2 = 1;
-
-        // Use to divide by (a+n)^2
-        final double apn = DD.ofSum(a, n).square().hi();
-
-        // Scaled power term (a+n)^-(1+s).
-        // The tail is expected to be a small contribution to the result.
-        // This term is not required to high accuracy so compute as
-        // (a+n)^-s / (a+n).
-        if (scaledSum) {
-            p /= a + n;
-        } else {
-            // Power term was not scaled.
-            // Note if p < MIN_NORMAL this is inexact. The smallest s for this to occur
-            // is (2^-53)^-s < 2^-1022 : s = 1022/53 ~ 19.28. In this case the tail
-            // is not required to high accuracy.
-            p = UPSCALE_1022 * p / (a + n);
-        }
-
-        // Sum of an alternating series as each F changes sign.
-        // Sum until terms will not impact the result.
-        // Note: an extended precision sum here has no effect on the final result.
-        // The terms sum is 2^106 too large. This allows the tail sum to use
-        // normal numbers and converge on a normal result.
-        final double stop = sum.hi() * EPS;
-        double tsum = 0;
-        for (int i = 0; i < F.length; i++) {
-            final double t = f * p * F[i];
-            tsum += t;
-            if (Math.abs(t) <= stop) {
-                break;
+            sum = sum.add(t);
+            // Convergence: the remainder of the series is bounded by the next term and an
+            // integral:  sum_{j>k} (a+j)^-s <= t_{k+1} * (1 + (a+k+1) / (s-1))
+            //                               <= t_k * (1 + (a+k+1) / (s-1))
+            if (t * (1 + (a + k + 1) * rs1) < CONVERGED * sum.hi()) {
+                return scaled ? sum.hi() * Double.MIN_NORMAL : sum.hi();
             }
-            // Update (a+n)^-(2k-1+s)
-            p /= apn;
-            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-            f *= s + k2;
-            k2 += 1.0;
-            f *= s + k2;
-            k2 += 1.0;
         }
-        return sum.add(tsum).hi() * DOWNSCALE_106;
     }
 
     /**
-     * Create a scaled power operator. The result is scaled by 2^1022.
+     * Compute the Hurwitz zeta function using the Euler-Maclaurin sum with N=0 (no
+     * series terms):
      *
-     * @param pow Original power operator
-     * @return scaled power operator.
+     * <pre>
+     * zeta(s, a) = a^(1-s) * [1 / (s-1) + 1 / (2a) + sum_{k>=1} c_k]
+     * c_k = B_2k / (2k)! * (s)_(2k-1) * a^-2k
+     * </pre>
+     *
+     * <p>The bracket does not require a power function. It is evaluated first and the
+     * single power {@code a^(1-s)} is computed only if the correction series converges
+     * within {@link #M} terms. The remainder after a term is bounded by 2 times the first
+     * omitted term. If the first correction term {@code c_1} is negligible this is the
+     * asymptotic approximation for large {@code a}, or tiny {@code s}.
+     *
+     * <p>With corrections the terms {@code 1/(s-1)}, {@code 1/(2a)} and {@code c_1} are
+     * summed in double-double precision; the remaining correction terms in double
+     * precision. The product with the power is rounded once.
+     *
+     * <p>Overflow and underflow: after the zero test {@code s < 2^53} ({@code s - 1} is
+     * exact) and {@code (s+2k-1)(s+2k)} cannot overflow. If {@code a^2} overflows then
+     * {@code g = 0} and the series converges at k=1. The convergence threshold is
+     * {@code >= 2^-56 / (s-1)} and one term reduces by at most ~2^-111, so the term
+     * that ends the series is normal. The double-double bracket is used only if
+     * {@code c_1 >= 2^-50} times the threshold, i.e. {@code a < ~2^66}, so the
+     * double-double operations on {@code a} cannot overflow. The terms are decreasing
+     * (the series stops if a term increases) and bounded by {@code c_1}.
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 2}
+     * @return zeta(s, a), or NaN if the correction series did not converge
      */
-    private static PowOperator createScaledPower(final PowOperator pow) {
-        return (x, n, z) -> {
-            final double p = pow.apply(x, n, z * 0.5);
-            return p * UPSCALE_1022 * p;
-        };
+    private static double zetaEm0(double s, double a) {
+        // Zero result. Integral bound: zeta <= a^-s + a^(1-s) / (s-1).
+        // a^(1-s) <= 2^(-e * (s-1)) with e = exponent(a) (a >= 2^e, e >= 1)
+        // 1 / a <= 2^-e; 1 / (s-1) <= 2^-g with g = exponent(s-1)
+        // zeta <= 2^(-e * (s-1)) * 2^(1 - min(e, g))
+        // The result is below 2^-1075 (rounds to 0) when e * (s-1) > 1076 - min(e, g).
+        // A margin of 2 allows for rounding of the product.
+        // This includes all s >= 2^53, and all s >= SINGLE_TERM_S when a > 2^53.
+        final int e = Math.getExponent(a);
+        if ((s - 1) * e > 1078 - Math.min(e, Math.getExponent(s - 1))) {
+            return 0;
+        }
+
+        final double a2 = a * a;
+        // 1 / (s-1) is a lower bound for the bracket: the corrections sum is positive
+        final double stop = CONVERGED / (s - 1);
+        // g = (s)_(2k-1) * a^-2k
+        double g = s / a2;
+        double previous = Double.POSITIVE_INFINITY;
+        final double c1 = Math.abs(F[0] * g);
+        // Correction terms k >= 2 in double precision
+        double sum = 0;
+        int k = 1;
+        for (;; k++) {
+            final double c = Math.abs(F[k - 1] * g);
+            if (c < stop) {
+                break;
+            }
+            // Correction terms 1 to k are required.
+            // Asymptotic series: once the terms increase they cannot converge.
+            if (k > M || c >= previous) {
+                return Double.NaN;
+            }
+            if (k >= 2) {
+                sum += F[k - 1] * g;
+            }
+            previous = c;
+            g *= (s + 2 * k - 1) * (s + 2 * k) / a2;
+        }
+
+        // s - 1 is exact (s < 2^53).
+        final DD f;
+        // c_1 is included in the bracket unless negligible. This avoids up to ~0.1 ulp
+        // error from omitting a term just below the convergence threshold.
+        // A negligible c_1 (a > ~2^33) uses no corrections: a may be very large and the
+        // double-double operations on a could overflow.
+        if (k == 1 && c1 < stop * NEGLIGIBLE_C1) {
+            // No corrections: asymptotic approximation. a may be very large.
+            f = DD.of(s - 1).reciprocal().add(HALF / a);
+        } else {
+            // Bracket: 1/(s-1) + 1/(2a) + s / (12 a^2) in double-double, then the corrections.
+            // Here c_1 >= 2^-50 * stop so a < ~2^66 and the double-double operations are safe.
+            final DD aa = DD.of(a);
+            f = DD.of(s - 1).reciprocal()
+                .add(aa.reciprocal().multiply(HALF))
+                .add(DD.of(s).divide(aa.square()).divide(12))
+                .add(sum);
+        }
+        // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
+        final double p = Math.pow(a, 1 - s);
+        if (p < SCALED_SUM_THRESHOLD) {
+            // Sub-normal power: limited relative precision. The product would round twice
+            // (p, then the result) and can be incorrectly rounded close to a tie.
+            // Recompute as a split power with full relative precision:
+            // a^(1-s) * 2^1022 = a^((1-s)/2) * 2^1022 * a^((1-s)/2).
+            // The scaled power is normal and the scaled result is above ~2^-53 (the bracket
+            // is above 1 / (s-1) and s < 2^53) so the double-double product is exact.
+            // The final scaling rounds once.
+            return f.multiply(scaledPow(HurwitzZeta::stdPowxpn, a, 0, 1 - s)).hi() * Double.MIN_NORMAL;
+        }
+        // The double-double product is exact only if its low part is not sub-normal.
+        // If the result is below ~2^-968 the low part loses precision and the high part
+        // can be wrong by up to 1 ulp. Compute using p scaled by 2^106 (exact).
+        // The final scaling rounds once if the result is sub-normal.
+        if (p * f.hi() < DD_PRODUCT_THRESHOLD) {
+            return f.multiply(p * UPSCALE_106).hi() * DOWNSCALE_106;
+        }
+        return f.multiply(p).hi();
+    }
+
+    /**
+     * Compute the bracket of the Euler-Maclaurin tail at {@code x}:
+     *
+     * <pre>
+     * 1 / (s-1) + 1 / (2x) + sum_{j>=1} c_j
+     * c_j = B_2j / (2j)! * (s)_(2j-1) * x^-2j
+     * </pre>
+     *
+     * <p>The series must converge within {@link #M} terms: {@code |c_j| < 2^-56 *
+     * (1/(s-1) + extra)}, where {@code extra} is the current sum relative to
+     * {@code x^(1-s)}. The terms {@code 1/(s-1)}, {@code 1/(2x)} and {@code c_1} are
+     * summed in double-double precision; the remaining terms in double precision.
+     *
+     * @param s Argument {@code s > 1} with {@code s < 2^53}
+     * @param x Argument {@code x > 0} with {@code x < ~2^66}
+     * @param extra Magnitude of the current sum relative to {@code x^(1-s)}.
+     * @param force If true return the series truncated before the smallest term (or
+     * at M terms) if it does not converge.
+     * @return the bracket, or null if the series did not converge
+     */
+    private static DD emBracket(double s, DD x, double extra, boolean force) {
+        final double xd = x.hi();
+        final double x2 = xd * xd;
+        final double stop = CONVERGED * (1 / (s - 1) + extra);
+        // g = (s)_(2j-1) * x^-2j
+        double g = s / x2;
+        final double c1 = Math.abs(F[0] * g);
+        double previous = Double.POSITIVE_INFINITY;
+        // Correction terms j >= 2 in double precision
+        double sum = 0;
+        int j = 1;
+        for (;; j++) {
+            final double c = Math.abs(F[j - 1] * g);
+            if (c < stop) {
+                break;
+            }
+            // Asymptotic series: once the terms increase they cannot converge.
+            if (j > M || c >= previous) {
+                if (!force) {
+                    return null;
+                }
+                // Truncate: terms 1 to j-1
+                break;
+            }
+            if (j >= 2) {
+                sum += F[j - 1] * g;
+            }
+            previous = c;
+            g *= (s + 2 * j - 1) * (s + 2 * j) / x2;
+        }
+        DD f = DD.of(s - 1).reciprocal().add(x.reciprocal().multiply(HALF));
+        // c_1 is included unless negligible (or truncated: j == 1 and c_1 >= stop)
+        if (j > 1 || (c1 < stop && c1 >= stop * NEGLIGIBLE_C1)) {
+            f = f.add(DD.of(s).divide(x.square()).divide(12)).add(sum);
+        }
+        return f;
+    }
+
+    /**
+     * Compute {@code (a+k)^z * 2^1022} using the split power
+     * {@code (a+k)^(z/2) * 2^1022 * (a+k)^(z/2)}.
+     *
+     * @param pow Power function
+     * @param a Argument a
+     * @param k Argument k
+     * @param z Exponent z
+     * @return the scaled power
+     */
+    private static double scaledPow(PowOperator pow, double a, int k, double z) {
+        final double p = pow.apply(a, k, z * HALF);
+        return p * UPSCALE_1022 * p;
     }
 
     /**
@@ -1156,45 +1247,6 @@ public final class HurwitzZeta {
     }
 
     /**
-     * Compute the asymptotic approximation of the Hurwitz zeta function for large
-     * {@code a}, or tiny {@code s}: {@code zeta(s, a) ~ a^(1-s) * (1 / (s-1) + 1 / (2a))}.
-     *
-     * <p>Requires {@code a > 2}. Uses a single power function call. The factor is
-     * computed in double-double precision and the product is rounded once: the error
-     * is the power function error plus 0.5 ulp.
-     *
-     * @param s Argument {@code s > 1}
-     * @param a Argument {@code a > 2}
-     * @return zeta(s, a)
-     */
-    private static double zetaAsymptotic(double s, double a) {
-        // Zero result:
-        // a^(1-s) <= 2^(-e * (s-1)) with e = exponent(a) (a >= 2^e, e >= 1)
-        // 1 / (s-1) + 1 / (2a) < 2^(1-g) with g = exponent(s-1)
-        // The result is below 2^-1075 (rounds to 0) when e * (s-1) > 1076 - g.
-        // A margin of 2 allows for rounding of the product.
-        // This includes all s >= SINGLE_TERM_S as a > 2^53 or s < 2.
-        if ((s - 1) * Math.getExponent(a) > 1078 - Math.getExponent(s - 1)) {
-            return 0;
-        }
-        // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
-        // If a^(1-s) is sub-normal then (s-1) * log2(a) > 1022 so s - 1 > 0.998 and the
-        // factor is <= ~1.002: the absolute error of the sub-normal power is not
-        // increased and no split power is required.
-        final double p = Math.pow(a, 1 - s);
-        // s - 1 is exact (s < 22 after the zero test). The factor is accurate to ~2^-100.
-        final DD f = DD.of(s - 1).reciprocal().add(0.5 / a);
-        // The double-double product is exact only if its low part is not sub-normal.
-        // If the result is below ~2^-968 the low part loses precision and the high part
-        // can be wrong by up to 1 ulp. Compute using p scaled by 2^106 (exact).
-        // The final scaling rounds once if the result is sub-normal.
-        if (p * f.hi() < DD_PRODUCT_THRESHOLD) {
-            return f.multiply(p * UPSCALE_106).hi() * DOWNSCALE_106;
-        }
-        return f.multiply(p).hi();
-    }
-
-    /**
      * Standard precision {@code (x+n)^z}.
      *
      * @param x Argument x
@@ -1215,8 +1267,8 @@ public final class HurwitzZeta {
      *
      * <ul>
      * <li>{@code x > 0}
-     * <li>{@code n >= 1}
-     * <li>{@code x+n > 1} and finite
+     * <li>{@code n >= 0}
+     * <li>{@code x+n} finite
      * <li>{@code -350 < z < 0}
      * </ul>
      *
@@ -1227,14 +1279,14 @@ public final class HurwitzZeta {
      * round-off component to (x+n). In the event that {@code (x+n)} is exact this method
      * will return the same result as {@code Math.pow(x+n, z)}.
      *
-     * <p>Calling with {@code n=0} will consume resources for no benefit. More generally
+     * <p>Calling with {@code n=0} will return {@code Math.pow(x, z)}. More generally
      * this method should not be called when {@code x + n} does not create a change of
      * exponent between {@code x} and {@code x + n}, and may offer no benefit even if the
      * exponent does change depending on the arguments. For example if {@code |x| < 2^52}
      * and is an integer then addition of any {@code int} value will be exact.
      *
      * @param x Argument x ({@code 0 < x < 2^53})
-     * @param n Argument n ({@code > 0})
+     * @param n Argument n ({@code >= 0})
      * @param z Exponent z ({@code -350 < z < 0})
      * @return the result
      */
