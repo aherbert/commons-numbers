@@ -1015,11 +1015,39 @@ class RiemannZetaTest {
             Arguments.of(52.2342, 1.00000000000000018877261881338, 0),
             Arguments.of(53.0000000001, 1.00000000000000011102230250641, 0),
             // Effectively 1.0
+            // Threshold: zeta(s) - 1 = 2^-53 at s = 53 + 6.704e-10
+            Arguments.of(53.0000000007, 1.00000000000000011102230246023838843572199134, 0),
             Arguments.of(53.000000001, 1.00000000000000011102230243715, 0),
             Arguments.of(53.2342, 1.00000000000000009438630938675, 0),
             Arguments.of(59.67, 1.00000000000000000109028530523, 0),
             Arguments.of(69.67, 1.00000000000000000000106473174, 0),
             Arguments.of(89.67, 1.00000000000000000000000000102, 0),
+
+            // Region s in [36, 53]: zeta(s) = 1 + 2^-s + 3^-s + 4^-s + ...
+            // Cases are near a rounding tie of the result and are incorrectly rounded
+            // by simpler methods. Reference values from mpmath with mp.dps = 60
+            // (45 digits are required to parse the double for cases close to a tie).
+            // Rounding errors when using 1 + 2^-s with Math.pow for the power term
+            // (also s in (53, 53 + 6.7e-10] where the result is 1 + 2^-52)
+            Arguments.of(36.99997798638864, 1.00000000000727607085741363770762302199953803, 0),
+            Arguments.of(40.999647826869456, 1.00000000000045485839924588005899814225451228, 0),
+            Arguments.of(44.99437545166717, 1.00000000000002853273205642437418020154376065, 0),
+            Arguments.of(48.91253715892548, 1.00000000000000188737914623308475719217126738, 0),
+            Arguments.of(53.0000000003, 1.00000000000000011102230249102030936709904128, 0),
+            // Rounding errors when using 3^-s + 2^-s + 1 with Math.pow for the power terms
+            // (the first three also fail using Math.exp)
+            Arguments.of(36.9999784267429, 1.00000000000727606863653620861582565524148889, 0),
+            Arguments.of(40.999647909514856, 1.00000000000045485837318912276251431885161936, 0),
+            Arguments.of(44.99437546802712, 1.000000000000028532731732867278150490163301, 0),
+            Arguments.of(46.97763219467746, 1.00000000000000721644966006355750372264967213, 0),
+            Arguments.of(47.95560588582491, 1.00000000000000366373598126302875938338654084, 0),
+            // Rounding errors when using 3^-s + 2^-s + 1 with Math.exp for the power terms
+            // (exp(-s * ln(x)) for x in {2, 3}; these also fail using Math.pow)
+            Arguments.of(38.99991214328793, 1.00000000000181910042585162522652489341763365, 0),
+            Arguments.of(42.998591844288256, 1.00000000000011379786002409105221532181606993, 0),
+            Arguments.of(45.98877275608353, 1.00000000000001432187701766466550932852555367, 0),
+            Arguments.of(46.97763219467747, 1.00000000000000721644966006352196193623860801, 0),
+            Arguments.of(47.327574664715065, 1.00000000000000566213742558830096469679860176, 0),
 
             // s -> large, a == 1
             Arguments.of(1001, 1.0, 0),

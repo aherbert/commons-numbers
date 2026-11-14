@@ -40,8 +40,31 @@ public final class BoostZeta {
     private static final double LN_2PI = 1.83787706640934548356065947281;
     /** ln(2). Computed to 30-digits precision. */
     private static final double LN_2 = 0.693147180559945309417232121458;
-    /** ln(3). Computed to 30-digits precision. */
-    private static final double LN_3 = 1.09861228866810969139524523692;
+    /** Threshold for {@code s} above which zeta(s) is 1.0 in double precision.
+     * This is where {@code zeta(s) - 1 = 2^-53} (half the ulp of 1.0):
+     * {@code s = 53 + 6.704e-10}. Computed using mpmath. */
+    private static final double ZETA_ONE_S = 53.000000000670404;
+    /** (2/3)^k for k in [36, 53]. Computed using mpmath. */
+    private static final double[] TWO_THIRDS_POW = {
+        4.578409921182168e-07,
+        3.052273280788112e-07,
+        2.0348488538587412e-07,
+        1.3565659025724942e-07,
+        9.043772683816628e-08,
+        6.029181789211086e-08,
+        4.019454526140724e-08,
+        2.6796363507604823e-08,
+        1.7864242338403216e-08,
+        1.1909494892268811e-08,
+        7.93966326151254e-09,
+        5.29310884100836e-09,
+        3.528739227338907e-09,
+        2.352492818225938e-09,
+        1.5683285454839587e-09,
+        1.0455523636559724e-09,
+        6.970349091039816e-10,
+        4.646899394026544e-10,
+    };
     /** Value for {@code s < 0} where zeta(s) is +/- infinity for all
      * {@code s != -2n}. Note the zeta function for negative arguments oscillates
      * above and below zero with roots at even {@code s}. The value is increasingly
@@ -275,9 +298,11 @@ public final class BoostZeta {
 
         //
         // Trivial case:
-        // Changed threshold from 53 to a higher value where result in double precision is 1.0.
+        // Changed threshold from 53 to the value where the result in double precision is 1.0.
+        // zeta(53) = 1 + 2^-53 + 3^-53 + ... is above 1 + ulp(1)/2 and rounds up to 1 + 2^-52.
+        // The threshold is where zeta(s) - 1 = 2^-53.
         //
-        if (s > 53.0000000001) {
+        if (s > ZETA_ONE_S) {
             return 1;
         }
         //
@@ -534,24 +559,47 @@ public final class BoostZeta {
             // [1.00000000001455192189104198424, 1.0]
             // Updated from 1.0 + pow(2, -s)
             //
-            // The correct result requires 1 + 2^-s + hurwitzZeta(s, 3).
-            // Here zeta(s, 3) < ulp(1) and so 1 + 2^-s is correct to 1 ULP.
-            // The observed rounding error is approximately:
-            // zeta(s, 3) / 2^-52
-            // This ranges from 0.03 to 2.3e-10 for s in [36, 53].
-            // We can approximate zeta(s, 3) using 3^-s.
-            // When adding this term rounding differences to (1 + 2^-s) occur with
-            // observed frequency ~ 0.0016 across random s in [36, 53].
+            // zeta(s) = 1 + 2^-s + 3^-s + 4^-s + ...
+            //         = 1 + 2^-s * F(s)
+            // F(s) = sum_{n>=2} (2/n)^s = 1 + (2/3)^s + (2/4)^s + (2/5)^s + ...
             //
-            // Note that 2^-36 = 1.46e-11; 3^-36 / 2^-36 = 4.58e-7.
-            // Neither power term is required to high accuracy (lower bits are lost when adding).
-            // Use pow(x, -s) = exp(log(x) * -s)
-            // The exponential approximation to 3^-s + 2^-s + 1 has enough precision
-            // to achieve a 0 ULP result in most cases and is faster than a single
-            // call to pow.
+            // For s in [36, 53]: 2^-s <= 2^-36 and the result is 1 + y with y < 2^-35.
+            // The terms of the correction factor F(s) - 1 are small:
+            // (2/3)^s <= 4.6e-7, (2/4)^s = 2^-s <= 1.5e-11, (2/5)^s <= 4.7e-15.
+            // Their contribution to the result is at most 0.03 ulp of 1.0 and decides
+            // the rounding of 1 + 2^-s: the original 1 + 2^-s is 1 ULP wrong with
+            // frequency ~0.0016 across s in [36, 53] (~0.018 for s in [36, 37]).
+            //
+            // Only 2^-s is required to high relative precision. It is computed with exp
+            // (faster than pow). The correction factor requires low relative precision:
+            // an error r in (2/3)^s causes a rounding error with frequency < 0.03 r.
+            // (2/3)^s is computed using s = k + f with a table of (2/3)^k and a degree 6
+            // Taylor polynomial for (2/3)^f = exp(-f ln(3/2)), f in [0, 1)
+            // (relative error < ln(3/2)^7 / 7! ~ 3.5e-7).
+            // The term (2/4)^s = 2^-s is included: it is ~2e-8 ulp of 1.0 at s=38 and
+            // decides rounding of near ties. Terms (2/5)^s and smaller are ignored.
+            //
+            // Rounding errors in 1e8 random s in [36, 53]:
+            // 1 + 2^-s              : 1.6e-3
+            // 3^-s + 2^-s + 1       : 4e-8 (pow or exp; missing 4^-s at a near tie)
+            // 1 + 2^-s * F(s)       : 0
             //
             // The function is monotonic at integer s (which use exact results).
-            result = Math.exp(-s * LN_3) + Math.exp(-s * LN_2) + 1;
+            final double p2 = Math.exp(-s * LN_2);
+            // s in [36, 53 + 6.7e-10]
+            final int k = (int) s;
+            final double f = s - k;
+            double p;
+            p = 6.171467238340065e-06;
+            p = -9.132426610716492e-05 + p * f;
+            p = 0.001126166768495437 + p * f;
+            p = -0.011109876001414297 + p * f;
+            p = 0.08220097694658271 + p * f;
+            p = -0.4054651081081644 + p * f;
+            p = 1 + p * f;
+            // (2/3)^s + (2/4)^s
+            final double c = TWO_THIRDS_POW[k - 36] * p + p2;
+            result = 1 + (p2 + p2 * c);
         }
         return result;
     }
