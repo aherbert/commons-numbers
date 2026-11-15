@@ -4341,6 +4341,418 @@ class HurwitzZetaTest {
         return DD.ofSum(za, zb).add(z).hi();
     }
 
+    /** Path of the last call to {@link #zetaNegativeHybrid}: special case. Used for testing. */
+    private static final int NEG_PATH_SPECIAL = 0;
+    /** Path of the last call to {@link #zetaNegativeHybrid}: double precision. Used for testing. */
+    private static final int NEG_PATH_DOUBLE = 1;
+    /** Path of the last call to {@link #zetaNegativeHybrid}: double-double. Used for testing. */
+    private static final int NEG_PATH_DD = 2;
+    /** Path of the last call to {@link #zetaNegativeHybrid}. Used for testing. */
+    private static int negativePath;
+    /**
+     * Test if the last call to {@link #zetaNegativeHybrid} used double-double precision.
+     * Used for testing.
+     *
+     * @return true if double-double was used
+     */
+    static boolean negativePathIsDD() {
+        return negativePath == NEG_PATH_DD;
+    }
+    /** Estimated cancellation factor of the last call to {@link #zetaNegativeHybrid}
+     * (odd s only; NaN otherwise). Used for testing. */
+    private static double negativeFactor;
+
+    /**
+     * Options for the hybrid negative zeta implementation.
+     */
+    static final class NegativeContext {
+        /** Default options. */
+        static final NegativeContext DEFAULT = new NegativeContext(true, 1.2, 16, false, Double.POSITIVE_INFINITY);
+
+        /** Set to true to use double precision for even s. */
+        private final boolean evenDouble;
+        /** Odd s: use double precision if the estimated cancellation factor is at most this
+         * value (0 to never use double precision; infinity to always use it). */
+        private final double maxFactor;
+        /** Maximum number of negative terms (a+k)^-s to sum directly. Above this the
+         * negative terms are computed using a difference of zeta functions. */
+        private final int maxDirect;
+        /** Set to true to compute the largest term each side of zero, {@code (1+x)^-s} and
+         * {@code x^-s}, in double-double precision in the double precision path. */
+        private final boolean leading;
+        /** With the leading terms in double-double precision: accept the double precision
+         * result if the magnitude of the parts computed in double precision is at most this
+         * multiple of the result (infinity to always accept). */
+        private final double maxRest;
+
+        /**
+         * @param evenDouble Use double precision for even s.
+         * @param maxFactor Maximum cancellation factor for double precision (odd s).
+         * @param maxDirect Maximum number of negative terms to sum directly.
+         * @param leading Compute the largest terms in double-double precision.
+         * @param maxRest Maximum magnitude of the double precision parts relative to the result.
+         */
+        NegativeContext(boolean evenDouble, double maxFactor, int maxDirect, boolean leading, double maxRest) {
+            this.maxRest = maxRest;
+            this.leading = leading;
+            this.evenDouble = evenDouble;
+            this.maxFactor = maxFactor;
+            this.maxDirect = maxDirect;
+        }
+
+        /**
+         * @param f Maximum cancellation factor for double precision (odd s).
+         * @return a new instance
+         */
+        NegativeContext withMaxFactor(double f) {
+            return new NegativeContext(evenDouble, f, maxDirect, leading, maxRest);
+        }
+
+        /**
+         * @param n Maximum number of negative terms to sum directly.
+         * @return a new instance
+         */
+        NegativeContext withMaxDirect(int n) {
+            return new NegativeContext(evenDouble, maxFactor, n, leading, maxRest);
+        }
+
+        /**
+         * @param use Compute the largest terms in double-double precision.
+         * @return a new instance
+         */
+        NegativeContext withLeading(boolean use) {
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, use, maxRest);
+        }
+
+        /**
+         * @param t Maximum magnitude of the double precision parts relative to the result.
+         * @return a new instance
+         */
+        NegativeContext withMaxRest(double t) {
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, t);
+        }
+
+        @Override
+        public String toString() {
+            return (evenDouble ? "even=double" : "even=DD") + " odd F<=" + maxFactor + " direct<=" + maxDirect +
+                (leading ? " leading=DD" : "") + (maxRest < Double.POSITIVE_INFINITY ? " rest<=" + maxRest : "");
+        }
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} when {@code a} is
+     * negative. Uses double precision where there is little cancellation, otherwise
+     * double-double arithmetic ({@link #zetaNegativeDD(int, double)}).
+     *
+     * <p>With {@code u = a - floor(a)} in {@code (0, 1)}:
+     *
+     * <pre>
+     * zeta(s, a) = C_s(u) - (-1)^s zeta(s, 1-a)
+     * C_s(u) = sum_{n in Z} (u+n)^-s = zeta(s, u) + (-1)^s zeta(s, 1-u)
+     * </pre>
+     *
+     * <p>For even s all terms of {@code C_s} are positive and {@code C_s(u) >= pi^2} while
+     * {@code zeta(s, 1-a) <= zeta(2, 2) < 0.65}: there is no significant cancellation. For odd
+     * s the terms of {@code C_s} cancel when {@code u} is close to 1/2 and the result cancels
+     * close to a root. The cancellation factor of the two largest terms {@code p = u^-s} and
+     * {@code q = (1-u)^-s} is {@code (p + q) / |p - q| = coth(s |ln(u / (1-u))| / 2)}. The
+     * root zone is inside the zone where this factor is large.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @param nc Options.
+     * @return zeta(s, a)
+     */
+    static double zetaNegativeHybrid(int s, double a, NegativeContext nc) {
+        negativePath = NEG_PATH_SPECIAL;
+        negativeFactor = Double.NaN;
+        final double ca = Math.ceil(a);
+        if (ca == a) {
+            // The term 0^-s is infinity
+            return Double.POSITIVE_INFINITY;
+        }
+        final boolean odd = (s & 1) == 1;
+        // x = a - ceil(a) in (-1, 0); u = 1 + x
+        final double x = a - ca;
+        // Intentional float comparison
+        if (odd && x == -0.5) {
+            // Total cancellation of C_s: zeta(s, 1-a). 1 - a is exact (half-integer a).
+            negativePath = NEG_PATH_DOUBLE;
+            return HurwitzZeta.zetaImp(s, 1 - a);
+        }
+        final boolean useDouble;
+        if (odd) {
+            // Cancellation factor of the two largest terms. u may be inexact (estimate only).
+            final double f = 1 / Math.tanh(0.5 * s * Math.abs(Math.log((1 + x) / -x)));
+            negativeFactor = f;
+            useDouble = f <= nc.maxFactor;
+        } else {
+            useDouble = nc.evenDouble;
+        }
+        if (useDouble) {
+            final double r = nc.leading ?
+                zetaNegativeDoubleLeading(s, a, x, ca, odd, nc.maxDirect, nc.maxRest) :
+                zetaNegativeDouble(s, a, x, ca, odd, nc.maxDirect);
+            // NaN when infinite terms cancel
+            if (!Double.isNaN(r)) {
+                negativePath = NEG_PATH_DOUBLE;
+                return r;
+            }
+        }
+        negativePath = NEG_PATH_DD;
+        return zetaNegativeDD(s, a);
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} when {@code a} is
+     * negative using double precision evaluations of zeta for positive arguments.
+     *
+     * <pre>
+     * zeta(s, a) = sum_{k=0}^{-ca} (a+k)^-s + zeta(s, 1+x)
+     * sum_{k=0}^{-ca} (a+k)^-s = (-1)^s [zeta(s, -x) - zeta(s, 1-a)]
+     * </pre>
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @param x {@code a - ceil(a)}
+     * @param ca {@code ceil(a)}
+     * @param odd Set to true if s is odd
+     * @param maxDirect Maximum number of negative terms to sum directly
+     * @return zeta(s, a)
+     */
+    private static double zetaNegativeDouble(int s, double a, double x, double ca, boolean odd,
+                                             int maxDirect) {
+        // Positive side: zeta(s, 1+x).
+        // 1 + x is inexact only if x > -0.5 has bits below 2^-53 (a in (-0.5, 0)).
+        // Then use the exact base for (1+x)^-s and zeta(s, 2+x): its share of the result is
+        // small so the error from rounding 2+x is negligible.
+        final double u = 1 + x;
+        DD sum;
+        if (u - 1 == x) {
+            sum = DD.of(HurwitzZeta.zetaImp(s, u));
+        } else {
+            sum = DD.of(HurwitzZeta.extPowxpn(x, 1, -s)).add(HurwitzZeta.zetaImp(s, 2 + x));
+        }
+        // Negative side: (a+k)^-s for k in [0, -ca]. a + k is exact.
+        if (1 - ca <= maxDirect) {
+            for (double t = a; t < 0; t += 1) {
+                sum = sum.add(Math.pow(t, -s));
+            }
+        } else {
+            // (-1)^s [zeta(s, -x) - zeta(s, 1-a)]. -x is exact; 1 - a may be rounded
+            // but zeta(s, 1-a) <= zeta(s, 2) is a small share of the result.
+            double za = HurwitzZeta.zetaImp(s, -x);
+            double zb = HurwitzZeta.zetaImp(s, 1 - a);
+            if (odd) {
+                za = -za;
+            } else {
+                zb = -zb;
+            }
+            sum = sum.add(za).add(zb);
+        }
+        return sum.hi();
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} when {@code a} is
+     * negative using double precision evaluations of zeta for positive arguments, and the
+     * largest term each side of zero in double-double precision.
+     *
+     * <pre>
+     * zeta(s, a) = sum_{k=0}^{-ca} (a+k)^-s + (1+x)^-s + zeta(s, 2+x)
+     * sum_{k=0}^{-ca} (a+k)^-s = x^-s + (-1)^s [zeta(s, 1-x) - zeta(s, 1-a)]
+     * </pre>
+     *
+     * <p>The two largest terms {@code (1+x)^-s} and {@code x^-s} cancel when s is odd and
+     * {@code x} is close to -1/2. Their sum is exact to double-double precision.
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @param x {@code a - ceil(a)}
+     * @param ca {@code ceil(a)}
+     * @param odd Set to true if s is odd
+     * @param maxDirect Maximum number of negative terms to sum directly
+     * @param maxRest Maximum magnitude of the double precision parts relative to the result
+     * @return zeta(s, a); or NaN if the largest terms overflow or the result fails the
+     * error check
+     */
+    private static double zetaNegativeDoubleLeading(int s, double a, double x, double ca, boolean odd,
+                                                    int maxDirect, double maxRest) {
+        // Largest terms (1+x)^-s and x^-s in double-double precision
+        final DD pp = ddPow(DD.ofSum(1, x), -s);
+        final DD pn = ddPow(DD.of(x), -s);
+        if (pp == null || pn == null) {
+            return Double.NaN;
+        }
+        DD sum = pp.add(pn);
+        // Remaining positive side: zeta(s, 2+x). 2 + x is exact unless a in (-1, 0)
+        // has bits below 2^-52; its share of the result is then small.
+        final double z2 = HurwitzZeta.zetaImp(s, 2 + x);
+        sum = sum.add(z2);
+        // Magnitude of the parts computed in double precision
+        double rest = z2;
+        // Remaining negative side: (a+k)^-s for k in [0, -ca), i.e. excluding x.
+        if (-ca <= maxDirect) {
+            for (double t = a; t < x; t += 1) {
+                final double p = Math.pow(t, -s);
+                sum = sum.add(p);
+                rest += Math.abs(p);
+            }
+        } else {
+            // (-1)^s [zeta(s, 1-x) - zeta(s, 1-a)]. 1 - x is exact for |a| >= 1;
+            // 1 - a may be rounded but zeta(s, 1-a) <= zeta(s, 2) is a small share.
+            double za = HurwitzZeta.zetaImp(s, 1 - x);
+            double zb = HurwitzZeta.zetaImp(s, 1 - a);
+            if (odd) {
+                za = -za;
+            } else {
+                zb = -zb;
+            }
+            sum = sum.add(za).add(zb);
+            rest += Math.abs(za) + Math.abs(zb);
+        }
+        final double r = sum.hi();
+        // Error check: each double precision part has an error of ~1.5 ulp; the largest
+        // terms using DD.pow have a relative error of ~16 s eps with eps = 2^-106.
+        // Scale the error of the largest terms to the 1.5 ulp (2^-53) of the double parts.
+        final double lead = (Math.abs(pp.hi()) + Math.abs(pn.hi())) * s * (16 / 1.5) * 0x1.0p-53;
+        if (!(rest + lead <= maxRest * Math.abs(r))) {
+            return Double.NaN;
+        }
+        return r;
+    }
+
+    /**
+     * Compute {@code x^n} in double-double precision.
+     *
+     * @param x Base.
+     * @param n Exponent.
+     * @return the power, or null if it is not finite
+     */
+    private static DD ddPow(DD x, int n) {
+        final long[] exp = {0};
+        final DD f = x.pow(n, exp);
+        if (exp[0] > Double.MAX_EXPONENT) {
+            return null;
+        }
+        return f.scalb((int) exp[0]);
+    }
+
+    /**
+     * Compare the hybrid negative zeta implementation with the double-double implementation.
+     *
+     * <p>Reports the error for each context, the share of rows evaluated using double
+     * precision, and for odd s evaluated using only double precision the error binned by the
+     * estimated cancellation factor.
+     *
+     * @param filename Data filename.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "hzeta_s2_4_na1_15_p0.5_p0x1p-1.csv", "hzeta_s2_4_na40_99_p0.5_p0x1p-1.csv",
+        "hzeta_s2_4_na1_15_p0x1p-30.csv", "hzeta_s2_4_na1_15_p0.5_p0x1p-30.csv",
+        "hzeta_s3_5_na1_15_p0.5_p0x1p-1.csv", "hzeta_s3_5_na40_99_p0.5_p0x1p-1.csv",
+        "hzeta_s3_5_na1_15_p0x1p-30.csv", "hzeta_s3_5_na1_15_p0.5_p0x1p-30.csv",
+        "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv",
+        "hzeta_s6_50_na400_999_p0.5_p0x1p-3.csv", "hzeta_s7_51_na400_999_p0.5_p0x1p-3.csv",
+        "hzeta_root_s3_21_na2b0_2b6.csv", "hzeta_root_s23_1067_na2b0_2b6.csv",
+        "hzeta_root_s3_25_na2b7_2b11.csv", "hzeta_root_s3_21_na2b12_2b14.csv",
+        "hzeta_root_s3_3_na1001_16384.csv",
+    })
+    @Disabled("Used to compare the hybrid negative zeta implementation")
+    void testZetaNegativeHybrid(String filename) throws IOException {
+        // Index 0 is the double-double baseline
+        final NegativeContext[] contexts = {
+            null,
+            NegativeContext.DEFAULT,
+            NegativeContext.DEFAULT.withMaxFactor(0),
+            NegativeContext.DEFAULT.withMaxFactor(1.1),
+            NegativeContext.DEFAULT.withMaxFactor(1.5),
+            NegativeContext.DEFAULT.withMaxFactor(2),
+            NegativeContext.DEFAULT.withMaxFactor(4),
+            NegativeContext.DEFAULT.withMaxFactor(Double.POSITIVE_INFINITY),
+            NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.125),
+            NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25),
+            NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.5),
+            NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(1),
+            NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY),
+        };
+        final int nc = contexts.length;
+        // Always double without and with the leading terms in double-double
+        final int iAll = 7;
+        final int iLead = nc - 1;
+        final TestUtils.ErrorStatistics[] all = new TestUtils.ErrorStatistics[nc];
+        final long[] doublePath = new long[nc];
+        final String[] worst = new String[nc];
+        final double[] worstE = new double[nc];
+        for (int i = 0; i < nc; i++) {
+            all[i] = new TestUtils.ErrorStatistics();
+        }
+        // Always double: error by parity and estimated cancellation factor (odd s)
+        final double[] limits = {1.05, 1.1, 1.2, 1.5, 2, 4, 16, 256, 0x1.0p16, 0x1.0p32, Double.POSITIVE_INFINITY};
+        final String[] binNames = {"always-double", "always-double-leading"};
+        final TestUtils.ErrorStatistics[] even = new TestUtils.ErrorStatistics[2];
+        final TestUtils.ErrorStatistics[] half = new TestUtils.ErrorStatistics[2];
+        final TestUtils.ErrorStatistics[][] bins = new TestUtils.ErrorStatistics[2][limits.length];
+        for (int j = 0; j < 2; j++) {
+            even[j] = new TestUtils.ErrorStatistics();
+            half[j] = new TestUtils.ErrorStatistics();
+            for (int i = 0; i < limits.length; i++) {
+                bins[j][i] = new TestUtils.ErrorStatistics();
+            }
+        }
+        int n = 0;
+        try (DataReader in = new DataReader(filename)) {
+            while (in.next()) {
+                final int s = (int) in.getDouble(0);
+                final double a = in.getDouble(1);
+                final BigDecimal expected = in.getBigDecimal(2);
+                n++;
+                for (int i = 0; i < nc; i++) {
+                    final double z = i == 0 ? zetaNegativeDD(s, a) : zetaNegativeHybrid(s, a, contexts[i]);
+                    final double e = TestUtils.assertEquals(expected, z, -Double.MAX_VALUE, null, () -> "");
+                    all[i].add(e);
+                    if (Math.abs(e) > worstE[i]) {
+                        worstE[i] = Math.abs(e);
+                        worst[i] = String.format("s=%d, a=%s", s, a);
+                    }
+                    if (i != 0 && negativePath == NEG_PATH_DOUBLE) {
+                        doublePath[i]++;
+                    }
+                    final int j = i == iAll ? 0 : i == iLead ? 1 : -1;
+                    if (j >= 0) {
+                        if ((s & 1) == 0) {
+                            even[j].add(e);
+                        } else if (Double.isNaN(negativeFactor)) {
+                            half[j].add(e);
+                        } else if (negativePath == NEG_PATH_DOUBLE) {
+                            int b = 0;
+                            while (!(negativeFactor <= limits[b])) {
+                                b++;
+                            }
+                            bins[j][b].add(e);
+                        }
+                    }
+                }
+            }
+        }
+        report("%s: n=%d%n", filename, n);
+        for (int i = 0; i < nc; i++) {
+            report("  %-40s max %8.4g rms %8.4g | double %5.1f%% | worst %s%n",
+                i == 0 ? "DD (zetaNegativeDD)" : contexts[i], all[i].getMaxAbs(), all[i].getRMS(),
+                100.0 * doublePath[i] / n, worst[i]);
+        }
+        for (int j = 0; j < 2; j++) {
+            diag(filename, binNames[j], "even", even[j]);
+            diag(filename, binNames[j], "half", half[j]);
+            for (int i = 0; i < limits.length; i++) {
+                diag(filename, binNames[j], "F<=" + limits[i], bins[j][i]);
+            }
+        }
+    }
+
     @ParameterizedTest
     @MethodSource()
     void testSafePow(double x, double y, BigDecimal expected, double ulps) {
