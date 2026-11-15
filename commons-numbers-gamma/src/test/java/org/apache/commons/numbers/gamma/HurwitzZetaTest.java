@@ -2654,7 +2654,12 @@ class HurwitzZetaTest {
             dynamicSwitchK = 0;
         }
 
-        DD sum = DD.ZERO;
+        // Running sum as a normalised double-double (s0, s1) using a fast-two-sum:
+        // the same result as DD.add(double). Requires decreasing terms: valid for the
+        // default context (a < ~100 in the loop). Contexts with a small M at k=0 can
+        // enter the loop with very large a where t_1 may round above t_0.
+        double s0 = 0;
+        double s1 = 0;
         for (int k = 0;; k++) {
             if (k != 0) {
                 // t_k = (a+k)^-s
@@ -2664,7 +2669,8 @@ class HurwitzZetaTest {
                     t = pow.apply(a, k, -s);
                     forwardPowCount++;
                     if (t < SCALED_SUM_THRESHOLD) {
-                        sum = DD.ofSum(sum.hi() * UPSCALE_1022, sum.lo() * UPSCALE_1022);
+                        s0 *= UPSCALE_1022;
+                        s1 *= UPSCALE_1022;
                         t = scaledPow(pow, a, k, -s);
                         scaled = true;
                         dynamicSwitchK = k;
@@ -2677,7 +2683,7 @@ class HurwitzZetaTest {
                 final DD x = DD.ofSum(a, k);
                 // x^(1-s), scaled if the sum is scaled
                 DD px = x.multiply(t);
-                final double extra = dc.useSum ? sum.hi() / px.hi() : 0;
+                final double extra = dc.useSum ? s0 / px.hi() : 0;
                 // Skip a check that cannot succeed. The terms c_j = F_j (s)_(2j-1) x^-2j are
                 // unimodal in j. All terms j <= M+1 at the previous x were >= minTerm and
                 // scale by (x0/x)^(2j) >= (x0/x)^(2(M+1)).
@@ -2725,6 +2731,7 @@ class HurwitzZetaTest {
                     dynamicExit = force ? DYN_EXIT_FORCED : DYN_EXIT_EM;
                     dynamicExitK = k;
                     // Diagnostics (in the scaled frame if scaled)
+                    final DD sum = DD.ofSum(s0, s1);
                     final DD tail = px.multiply(f);
                     final double r = sum.add(tail).hi();
                     dynamicTailShare = tail.hi() / r;
@@ -2742,14 +2749,32 @@ class HurwitzZetaTest {
                     return sum.add(px.multiply(f)).hi();
                 }
             }
-            sum = sum.add(t);
+            // (s0, s1) += t
+            final double q = s0 + t;
+            final double e = fastTwoSumLow(s0, t, q) + s1;
+            s0 = q + e;
+            s1 = fastTwoSumLow(q, e, s0);
             // Remainder bound: sum_{j>k} (a+j)^-s <= t_k * (1 + (a+k+1) / (s-1))
-            if (t * (1 + (a + k + 1) * rs1) < FORWARD_CONVERGED * sum.hi()) {
+            if (t * (1 + (a + k + 1) * rs1) < FORWARD_CONVERGED * s0) {
                 dynamicExit = DYN_EXIT_REMAINDER;
                 dynamicExitK = k + 1;
-                return scaled ? sum.hi() * Double.MIN_NORMAL : sum.hi();
+                return scaled ? s0 * Double.MIN_NORMAL : s0;
             }
         }
+    }
+
+    /**
+     * Compute the round-off of the sum of two numbers {@code a} and {@code b} using
+     * Dekker's two-sum algorithm. The values are required to be ordered by magnitude:
+     * {@code |a| >= |b|}.
+     *
+     * @param a First part of sum.
+     * @param b Second part of sum.
+     * @param x Sum.
+     * @return the sum round-off
+     */
+    private static double fastTwoSumLow(double a, double b, double x) {
+        return b - (x - a);
     }
 
     /**

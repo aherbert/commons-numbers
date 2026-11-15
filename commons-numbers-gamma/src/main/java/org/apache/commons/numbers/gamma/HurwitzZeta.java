@@ -558,7 +558,14 @@ public final class HurwitzZeta {
 
         // Forward summation of S_k = sum_{i<k} (a+i)^-s. At each k with x = a + k:
         // zeta(s, a) = S_k + x^(1-s) * [1 / (s-1) + 1 / (2x) + sum_{j>=1} c_j]
-        DD sum = DD.ZERO;
+        // The sum is a normalised double-double (s0, s1) with |s1| <= ulp(s0) / 2.
+        // The terms are decreasing so each term can be added using a fast-two-sum.
+        // Here a < ~100 (zetaEm0 converges for larger a when s < SINGLE_TERM_S):
+        // t_k / t_(k-1) = ((a+k-1) / (a+k))^s < ~0.99 so the computed terms are
+        // ordered (s0 >= t_(k-1) > t_k) and the fast-two-sum is exact.
+        // This computes the same result as DD.add(double).
+        double s0 = 0;
+        double s1 = 0;
         for (int k = 0;; k++) {
             if (k != 0) {
                 // t = (a+k)^-s
@@ -570,7 +577,9 @@ public final class HurwitzZeta {
                         // First sub-normal term: activate scaling.
                         // The sum is below ~2^-920 (it has not converged with a sub-normal
                         // term for s > 19.3) so scaling by 2^1022 cannot overflow and is exact.
-                        sum = DD.ofSum(sum.hi() * UPSCALE_1022, sum.lo() * UPSCALE_1022);
+                        // The scaled sum is normalised.
+                        s0 *= UPSCALE_1022;
+                        s1 *= UPSCALE_1022;
                         t = scaledPow(pow, a, k, -s);
                         scaled = true;
                     }
@@ -583,7 +592,7 @@ public final class HurwitzZeta {
                 final double px = x.multiply(t).hi();
                 // The convergence threshold is relative to the total S_k + x^(1-s) / (s-1).
                 // At the maximum N the tail is used without a convergence requirement.
-                final DD f = emBracket(s, x, sum.hi() / px, k >= MAX_N);
+                final DD f = emBracket(s, x, s0 / px, k >= MAX_N);
                 if (f != null) {
                     // Compute x^(1-s) with a power function. This is more accurate than
                     // the estimate x^-s * x when x^(1-s) / (s-1) dominates (s near 1).
@@ -598,22 +607,26 @@ public final class HurwitzZeta {
                     }
                     if (scaled) {
                         // Scaled result is above 2^-53: the double-double product is exact.
-                        return sum.add(f.multiply(p)).hi() * Double.MIN_NORMAL;
+                        return DD.ofSum(s0, s1).add(f.multiply(p)).hi() * Double.MIN_NORMAL;
                     }
-                    if (sum.hi() + p * f.hi() < DD_PRODUCT_THRESHOLD) {
+                    if (s0 + p * f.hi() < DD_PRODUCT_THRESHOLD) {
                         // Avoid a sub-normal low part of the double-double product
-                        return sum.multiply(UPSCALE_106).add(f.multiply(p * UPSCALE_106))
-                            .hi() * DOWNSCALE_106;
+                        return DD.ofSum(s0 * UPSCALE_106, s1 * UPSCALE_106)
+                            .add(f.multiply(p * UPSCALE_106)).hi() * DOWNSCALE_106;
                     }
-                    return sum.add(f.multiply(p)).hi();
+                    return DD.ofSum(s0, s1).add(f.multiply(p)).hi();
                 }
             }
-            sum = sum.add(t);
+            // (s0, s1) += t
+            final double q = s0 + t;
+            final double e = fastTwoSumLow(s0, t, q) + s1;
+            s0 = q + e;
+            s1 = fastTwoSumLow(q, e, s0);
             // Convergence: the remainder of the series is bounded by the next term and an
             // integral:  sum_{j>k} (a+j)^-s <= t_{k+1} * (1 + (a+k+1) / (s-1))
             //                               <= t_k * (1 + (a+k+1) / (s-1))
-            if (t * (1 + (a + k + 1) * rs1) < CONVERGED * sum.hi()) {
-                return scaled ? sum.hi() * Double.MIN_NORMAL : sum.hi();
+            if (t * (1 + (a + k + 1) * rs1) < CONVERGED * s0) {
+                return scaled ? s0 * Double.MIN_NORMAL : s0;
             }
         }
     }
@@ -1341,6 +1354,8 @@ public final class HurwitzZeta {
      * Knuth two-sum algorithm. The values are not required to be ordered by magnitude,
      * i.e. the result is commutative {@code s = a + b == b + a}.
      *
+     * <p>Copied from {@code o.a.c.numbers.core.DD}.
+     *
      * @param a First part of sum.
      * @param b Second part of sum.
      * @param x Sum.
@@ -1355,6 +1370,27 @@ public final class HurwitzZeta {
         // xx = aRoundoff + bRoundoff
         final double bVirtual = x - a;
         return (a - (x - bVirtual)) + (b - bVirtual);
+    }
+
+    /**
+     * Compute the round-off of the sum of two numbers {@code a} and {@code b} using
+     * Dekker's two-sum algorithm. The values are required to be ordered by magnitude:
+     * {@code |a| >= |b|}.
+     *
+     * <p>If {@code a} is zero and {@code b} is non-zero the returned value is zero.
+     *
+     * <p>Copied from {@code o.a.c.numbers.core.DD}.
+     *
+     * @param a First part of sum.
+     * @param b Second part of sum.
+     * @param x Sum.
+     * @return the sum round-off
+     */
+    private static double fastTwoSumLow(double a, double b, double x) {
+        // (x, xx) = a + b
+        // bVirtual = x - a
+        // xx = b - bVirtual
+        return b - (x - a);
     }
 
     /**
