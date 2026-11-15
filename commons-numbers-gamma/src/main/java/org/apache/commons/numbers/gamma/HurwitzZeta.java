@@ -515,8 +515,10 @@ public final class HurwitzZeta {
         // zeta ~ a^(1-s) / (s-1) + a^-s / 2 = a^(1-s) * (1 / (s-1) + 1 / (2a))
         // https://dlmf.nist.gov/25.11#E43
         // Requires a > 2 so a^(1-s) is not close to 1 (Math.pow is accurate).
-        final boolean em0 = a > 2;
-        if (em0) {
+        // firstEmK is the first k at which the Euler-Maclaurin tail is tried in the
+        // forward summation: k = 0 is skipped if already tested here.
+        final int firstEmK = a > 2 ? 1 : 0;
+        if (firstEmK == 1) {
             final double z = zetaEm0(s, a);
             if (!Double.isNaN(z)) {
                 return z;
@@ -602,7 +604,7 @@ public final class HurwitzZeta {
                 }
             }
             // Euler-Maclaurin tail at x = a + k (k = 0 already tested if a > 2)
-            if (k != 0 || !em0) {
+            if (k >= firstEmK) {
                 // x = a + k (rounded). The round-off is computed in the bracket if required.
                 final double x = a + k;
                 // Estimate of x^(1-s) (scaled if the sum is scaled) used for convergence

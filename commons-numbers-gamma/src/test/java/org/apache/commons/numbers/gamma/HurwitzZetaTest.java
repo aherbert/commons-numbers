@@ -2694,8 +2694,10 @@ class HurwitzZetaTest {
 
         // k = 0 for a > 2: Euler-Maclaurin sum with N=0 (S_0 = 0).
         // This handles a zero result and very large a.
-        final boolean em0 = a > 2;
-        if (em0) {
+        // firstEmK is the first k at which the Euler-Maclaurin tail is tried in the
+        // forward summation: k = 0 is skipped if already tested here.
+        final int firstEmK = a > 2 ? 1 : 0;
+        if (firstEmK == 1) {
             final double z = zetaEm0(s, a, Math.max(0, dc.mk(0)), true);
             if (!Double.isNaN(z)) {
                 dynamicExit = forwardExitK == -3 ? DYN_EXIT_TRAP : DYN_EXIT_EM0;
@@ -2712,7 +2714,7 @@ class HurwitzZetaTest {
         // Skip test: lower bound for the minimum correction term at x of the last failed check.
         // Requires a constant maximum number of terms.
         final boolean skip = dc.skip && dc.mStep == 0 && dc.m0 == dc.m;
-        double minTerm = em0 ? dynamicMinTerm : Double.NaN;
+        double minTerm = firstEmK == 1 ? dynamicMinTerm : Double.NaN;
         double minX = a;
 
         // First term
@@ -2772,7 +2774,7 @@ class HurwitzZetaTest {
                 }
             }
             // Euler-Maclaurin tail at x = a + k (k = 0 already tested if a > 2)
-            if (k != 0 || !em0) {
+            if (k >= firstEmK) {
                 final boolean force = k >= maxN;
                 final DD x = DD.ofSum(a, k);
                 // x^(1-s), scaled if the sum is scaled.
