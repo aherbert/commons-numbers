@@ -222,7 +222,7 @@ class RiemannZetaTest {
         }
     }
     /**
-     * Utility support for the fused-mutiply-add (FMA).
+     * Utility support for the fused-multiply-add (FMA).
      */
     private static final class MathExt {
         /**
@@ -244,7 +244,7 @@ class RiemannZetaTest {
             FUN = testFMA(op) ? op : (a, b, c) -> a * b + c;
         }
 
-        /** Fused-mutiply-add (FMA) operator. */
+        /** Fused-multiply-add (FMA) operator. */
         @FunctionalInterface
         interface FMAOperator {
             /**
@@ -262,14 +262,14 @@ class RiemannZetaTest {
         private MathExt() {}
 
         /**
-         * Gets a method to compute the fused-mutiply-add (FMA) operator {@code a * b + c}
+         * Gets a method to compute the fused-multiply-add (FMA) operator {@code a * b + c}
          * using JDK 9 {@code Math.fma}.
          *
          * @return the method, or null
          */
         private static FMAOperator getMathFMA() {
             try {
-                // JDK 18 method
+                // JDK 9 method
                 final MethodHandle mh = MethodHandles.publicLookup()
                     .findStatic(Math.class,
                         "fma",
@@ -287,7 +287,7 @@ class RiemannZetaTest {
         }
 
         /**
-         * Test the implementation of unsigned multiply high.
+         * Test the implementation of fused-multiply-add.
          * It is assumed the invocation of the method may raise an {@link IllegalStateException}
          * if it cannot be invoked.
          *
@@ -316,7 +316,7 @@ class RiemannZetaTest {
          * @param a Argument.
          * @param b Argument.
          * @param c Argument.
-         * @return the high 64-bits of the 128-bit result
+         * @return the result
          */
         static double fma(double a, double b, double c) {
             return FUN.fma(a, b, c);
