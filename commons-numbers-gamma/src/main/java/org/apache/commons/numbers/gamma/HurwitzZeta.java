@@ -533,7 +533,7 @@ public final class HurwitzZeta {
         // - Computation of sub-normal power terms in parts (low cost)
         // - Scaling for sub-normal terms (no cost)
 
-        // Reciprocal used for the convergence bound (not required to be exact).
+        // Reciprocal used for the convergence bounds (not required to be exact).
         // s > 1 + a * 2^-53 so the division is safe.
         final double rs1 = 1 / (s - 1);
 
@@ -587,12 +587,18 @@ public final class HurwitzZeta {
             }
             // Euler-Maclaurin tail at x = a + k (k = 0 already tested if a > 2)
             if (k != 0 || !em0) {
-                final DD x = DD.ofSum(a, k);
+                // x = a + k = (xh, xl) is exact.
+                // Avoid DD.ofSum(a, k).multiply(t).hi(): its performance depends on the JVM
+                // eliminating intermediate DD objects.
+                final double xh = a + k;
+                final double xl = twoSumLow(a, k, xh);
                 // Estimate of x^(1-s) (scaled if the sum is scaled) used for convergence.
-                final double px = x.multiply(t).hi();
+                // This is the high part of the double-double product x * t.
+                final DD xt = DD.ofProduct(xh, t);
+                final double px = xt.hi() + (xt.lo() + xl * t);
                 // The convergence threshold is relative to the total S_k + x^(1-s) / (s-1).
                 // At the maximum N the tail is used without a convergence requirement.
-                final DD f = emBracket(s, x, s0 / px, k >= MAX_N);
+                final DD f = emBracket(s, xh, xl, CONVERGED * (rs1 + s0 / px), k >= MAX_N);
                 if (f != null) {
                     // Compute x^(1-s) with a power function. This is more accurate than
                     // the estimate x^-s * x when x^(1-s) / (s-1) dominates (s near 1).
@@ -752,22 +758,21 @@ public final class HurwitzZeta {
      * c_j = B_2j / (2j)! * (s)_(2j-1) * x^-2j
      * </pre>
      *
-     * <p>The series must converge within {@link #M} terms: {@code |c_j| < 2^-56 *
-     * (1/(s-1) + extra)}, where {@code extra} is the current sum relative to
-     * {@code x^(1-s)}. The terms {@code 1/(s-1)}, {@code 1/(2x)} and {@code c_1} are
+     * <p>The series must converge within {@link #M} terms: {@code |c_j| < stop}. The
+     * threshold is {@code 2^-56 * (1/(s-1) + extra)}, where {@code extra} is the current
+     * sum relative to {@code x^(1-s)}. The terms {@code 1/(s-1)}, {@code 1/(2x)} and {@code c_1} are
      * summed in double-double precision; the remaining terms in double precision.
      *
      * @param s Argument {@code s > 1} with {@code s < 2^53}
-     * @param x Argument {@code x > 0} with {@code x < ~2^66}
-     * @param extra Magnitude of the current sum relative to {@code x^(1-s)}.
+     * @param xh High part of the argument {@code x > 0} with {@code x < ~2^66}
+     * @param xl Low part of the argument {@code x}
+     * @param stop Convergence threshold for the correction terms.
      * @param force If true return the series truncated before the smallest term (or
      * at M terms) if it does not converge.
      * @return the bracket, or null if the series did not converge
      */
-    private static DD emBracket(double s, DD x, double extra, boolean force) {
-        final double xd = x.hi();
-        final double x2 = xd * xd;
-        final double stop = CONVERGED * (1 / (s - 1) + extra);
+    private static DD emBracket(double s, double xh, double xl, double stop, boolean force) {
+        final double x2 = xh * xh;
         // g = (s)_(2j-1) * x^-2j
         double g = s / x2;
         final double c1 = Math.abs(F[0] * g);
@@ -795,7 +800,7 @@ public final class HurwitzZeta {
             g *= (s + 2 * j - 1) * (s + 2 * j) / x2;
         }
         // Avoid double-double division: s - 1 is exact
-        final DD rx = reciprocal(x);
+        final DD rx = reciprocal(xh, xl);
         DD f = DD.fromQuotient(1, s - 1).add(rx.multiply(HALF));
         // c_1 is included unless negligible (or truncated: j == 1 and c_1 >= stop)
         if (j > 1 || (c1 < stop && c1 >= stop * NEGLIGIBLE_C1)) {
@@ -812,12 +817,11 @@ public final class HurwitzZeta {
      * low part. The omitted terms are below {@code 2^-106} relative. This avoids a
      * double-double division.
      *
-     * @param x Value
+     * @param xh High part of the value
+     * @param xl Low part of the value
      * @return 1 / x
      */
-    private static DD reciprocal(DD x) {
-        final double xh = x.hi();
-        final double xl = x.lo();
+    private static DD reciprocal(double xh, double xl) {
         final DD r = DD.fromQuotient(1, xh);
         if (xl == 0) {
             return r;
