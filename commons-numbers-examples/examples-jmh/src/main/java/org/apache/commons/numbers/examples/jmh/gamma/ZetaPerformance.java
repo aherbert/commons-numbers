@@ -205,7 +205,9 @@ public class ZetaPerformance {
     }
 
     /**
-     * Contains arrays of numbers for zeta(s, a).
+     * Contains arrays of numbers for zeta(s, a) sampled uniformly from the ranges.
+     *
+     * <p>Samples are drawn using a fixed seed once per trial.
      */
     @State(Scope.Benchmark)
     public static class HurwitzZetaData {
@@ -228,6 +230,9 @@ public class ZetaPerformance {
             "16:1000000000000",
         })
         private String rangeA;
+        /** The seed for the random samples. */
+        @Param({"12345"})
+        private long seed;
 
         /** The s values. */
         private double[] s;
@@ -264,9 +269,9 @@ public class ZetaPerformance {
         /**
          * Create the numbers.
          */
-        @Setup(Level.Iteration)
+        @Setup(Level.Trial)
         public void setup() {
-            final SplittableRandom rng = new SplittableRandom();
+            final SplittableRandom rng = new SplittableRandom(seed);
             s = doubles(rng, size, rangeS, false, false);
             a = doubles(rng, size, rangeA, false, false);
         }
@@ -287,6 +292,15 @@ public class ZetaPerformance {
      * <p>The source is either a named set ({@code domain} for {@code a >= 1};
      * {@code domainA01} for {@code a < 1}), or a colon-delimited list of resource
      * filenames, e.g. {@code -p source=hzeta_s1_9_a-106_0_t0b0_106.csv}.
+     *
+     * <p>Use {@code -p integerA=true} to sample the integer domain {@code a} in
+     * {@code [1, 2^31)}, e.g. the use case of the zeta and Zipf distributions in
+     * Commons Statistics. Each row with {@code a} in {@code [1, 2^31 - 1)} is mapped to
+     * the two rows {@code floor(a)} and {@code ceil(a)}; the range for {@code a} is
+     * applied to the integer values. Note that {@code a = 1} is computed using the
+     * Riemann zeta function; it can be excluded using {@code -p rangeA=2:Infinity}.
+     * The floor increases the result; the ceiling may move it below the domain
+     * (to a zero result).
      */
     @State(Scope.Benchmark)
     public static class DomainHurwitzZetaData {
@@ -324,6 +338,9 @@ public class ZetaPerformance {
         /** The seed for the sample. */
         @Param({"12345"})
         private long seed;
+        /** Set to true to map a to the integers floor(a) and ceil(a). */
+        @Param({"false"})
+        private boolean integerA;
 
         /** The s values. */
         private double[] s;
@@ -367,9 +384,20 @@ public class ZetaPerformance {
             int total = 0;
             for (final String file : files) {
                 for (final double[] row : load(file)) {
-                    total++;
-                    if (row[0] >= rs[0] && row[0] < rs[1] && row[1] >= ra[0] && row[1] < ra[1]) {
-                        rows.add(row);
+                    if (integerA) {
+                        // Map to integer a in [1, 2^31)
+                        final double x = row[1];
+                        if (x < 1 || x >= Integer.MAX_VALUE) {
+                            continue;
+                        }
+                        final double lo = Math.floor(x);
+                        final double hi = Math.ceil(x);
+                        total += add(rows, row[0], lo, rs, ra);
+                        if (hi != lo) {
+                            total += add(rows, row[0], hi, rs, ra);
+                        }
+                    } else {
+                        total += add(rows, row[0], row[1], rs, ra);
                     }
                 }
             }
@@ -387,6 +415,23 @@ public class ZetaPerformance {
                 s[i] = row[0];
                 a[i] = row[1];
             }
+        }
+
+        /**
+         * Add the (s, a) pair to the rows if it is within the ranges {@code [min, max)}.
+         *
+         * @param rows the rows
+         * @param s the s value
+         * @param a the a value
+         * @param rs the range for s
+         * @param ra the range for a
+         * @return 1 (the number of candidate rows)
+         */
+        private static int add(List<double[]> rows, double s, double a, double[] rs, double[] ra) {
+            if (s >= rs[0] && s < rs[1] && a >= ra[0] && a < ra[1]) {
+                rows.add(new double[] {s, a});
+            }
+            return 1;
         }
 
         /**
@@ -438,6 +483,8 @@ public class ZetaPerformance {
 
     /**
      * Contains arrays of numbers for zeta(s, a) with negative {@code a}.
+     *
+     * <p>Samples are drawn using a fixed seed once per trial.
      */
     @State(Scope.Benchmark)
     public static class NegativeHurwitzZetaData {
@@ -457,6 +504,9 @@ public class ZetaPerformance {
             "100:10000",
         })
         private String rangeA;
+        /** The seed for the random samples. */
+        @Param({"12345"})
+        private long seed;
 
         /** The s values. */
         private double[] s;
@@ -493,9 +543,9 @@ public class ZetaPerformance {
         /**
          * Create the numbers.
          */
-        @Setup(Level.Iteration)
+        @Setup(Level.Trial)
         public void setup() {
-            final SplittableRandom rng = new SplittableRandom();
+            final SplittableRandom rng = new SplittableRandom(seed);
             // Require integer s and negative a
             s = doubles(rng, size, rangeS, true, false);
             a = doubles(rng, size, rangeA, false, true);
@@ -504,6 +554,8 @@ public class ZetaPerformance {
 
     /**
      * Contains arrays of numbers for zeta(s) or zeta(s, 1).
+     *
+     * <p>Samples are drawn using a fixed seed once per trial.
      */
     @State(Scope.Benchmark)
     public static class RiemannZetaData {
@@ -527,6 +579,15 @@ public class ZetaPerformance {
             "0:53",
             })
         private String rangeS;
+        /**
+         * Set to true to use integer s in {@code [min, max]}. Integer s
+         * uses a look-up table of the result.
+         */
+        @Param({"false"})
+        private boolean integerS;
+        /** The seed for the random samples. */
+        @Param({"12345"})
+        private long seed;
 
         /** The s values. */
         private double[] s;
@@ -552,10 +613,10 @@ public class ZetaPerformance {
         /**
          * Create the numbers.
          */
-        @Setup(Level.Iteration)
+        @Setup(Level.Trial)
         public void setup() {
-            final SplittableRandom rng = new SplittableRandom();
-            s = doubles(rng, size, rangeS, false, false);
+            final SplittableRandom rng = new SplittableRandom(seed);
+            s = doubles(rng, size, rangeS, integerS, false);
         }
     }
 
