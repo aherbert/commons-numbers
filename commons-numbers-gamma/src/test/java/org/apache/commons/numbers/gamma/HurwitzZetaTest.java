@@ -2277,6 +2277,7 @@ class HurwitzZetaTest {
      * @param m Maximum number of correction terms.
      * @param divergenceExit Stop when the terms stop decreasing.
      * @return zeta(s, a), or NaN if the correction series did not converge
+     * (the minimum correction term evaluated is stored in {@code dynamicMinTerm})
      */
     private static double zetaEm0(double s, double a, int m, boolean divergenceExit) {
         // Zero result. Integral bound: zeta <= a^-s + a^(1-s) / (s-1).
@@ -2310,11 +2311,13 @@ class HurwitzZetaTest {
             // Correction terms 1 to k are required
             if (k > m) {
                 forwardEm0Terms = k;
+                dynamicMinTerm = Math.min(previous, c);
                 return Double.NaN;
             }
             if (divergenceExit && c >= previous) {
                 // Asymptotic series: once the terms increase they cannot converge
                 forwardEm0Terms = k;
+                dynamicMinTerm = previous;
                 return Double.NaN;
             }
             if (k >= 2) {
@@ -2411,6 +2414,12 @@ class HurwitzZetaTest {
     /** Term k at which the sum switched to scaling (split power) in the last call to the
      * dynamic zeta implementation; -1 if not scaled. Used for testing. */
     private static int dynamicSwitchK;
+    /** Minimum correction term of the last failed convergence check (j <= M+1).
+     * Used for testing. */
+    private static double dynamicMinTerm;
+    /** Number of convergence checks skipped in the last call to the dynamic zeta
+     * implementation. Used for testing. */
+    private static int dynamicSkipped;
     /** Number of Euler-Maclaurin correction terms used at a bracket exit of the last call
      * to the dynamic zeta implementation; -1 for other exits. Used for testing. */
     private static int dynamicEmTerms;
@@ -2429,8 +2438,10 @@ class HurwitzZetaTest {
      */
     static final class DynamicContext {
         /** Default options. The direct power for {@code x^(1-s)} is more accurate than
-         * {@code x^-s * x} when the term {@code x^(1-s) / (s-1)} dominates (s near 1). */
-        static final DynamicContext DEFAULT = new DynamicContext(16, 16, 0, FORWARD_N, true, true);
+         * {@code x^-s * x} when the term {@code x^(1-s) / (s-1)} dominates (s near 1).
+         * Skipping a convergence check that cannot succeed does not change the result; it
+         * is off by default as it gave no net speed-up in production (as in HurwitzZeta). */
+        static final DynamicContext DEFAULT = new DynamicContext(16, 16, 0, FORWARD_N, true, true, false);
 
         /** Maximum number of terms M of the Euler-Maclaurin correction series. */
         private final int m;
@@ -2447,6 +2458,9 @@ class HurwitzZetaTest {
         /** Set to true to compute {@code x^(1-s)} with a power function; otherwise use
          * {@code x^-s * x}. */
         private final boolean directPow;
+        /** Set to true to skip a convergence check that cannot succeed. Uses the minimum
+         * correction term of the previous failed check. */
+        private final boolean skip;
 
         /**
          * @param m Maximum number of correction terms.
@@ -2457,6 +2471,21 @@ class HurwitzZetaTest {
          * @param directPow Compute {@code x^(1-s)} with a power function.
          */
         DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow) {
+            this(m, m0, mStep, maxN, useSum, directPow, false);
+        }
+
+        /**
+         * @param m Maximum number of correction terms.
+         * @param m0 Maximum number of correction terms at k=0.
+         * @param mStep Increase in the maximum number of correction terms per step k.
+         * @param maxN Maximum N.
+         * @param useSum Include the current sum in the convergence threshold.
+         * @param directPow Compute {@code x^(1-s)} with a power function.
+         * @param skip Skip a convergence check that cannot succeed.
+         */
+        DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow,
+                       boolean skip) {
+            this.skip = skip;
             this.m = m;
             this.m0 = m0;
             this.mStep = mStep;
@@ -2470,7 +2499,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withM(int m) {
-            return new DynamicContext(m, m, 0, maxN, useSum, directPow);
+            return new DynamicContext(m, m, 0, maxN, useSum, directPow, skip);
         }
 
         /**
@@ -2482,7 +2511,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withSchedule(int start, int step) {
-            return new DynamicContext(m, start, step, maxN, useSum, directPow);
+            return new DynamicContext(m, start, step, maxN, useSum, directPow, skip);
         }
 
         /**
@@ -2498,7 +2527,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withMaxN(int n) {
-            return new DynamicContext(m, m0, mStep, n, useSum, directPow);
+            return new DynamicContext(m, m0, mStep, n, useSum, directPow, skip);
         }
 
         /**
@@ -2506,7 +2535,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withUseSum(boolean use) {
-            return new DynamicContext(m, m0, mStep, maxN, use, directPow);
+            return new DynamicContext(m, m0, mStep, maxN, use, directPow, skip);
         }
 
         /**
@@ -2514,12 +2543,21 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withDirectPow(boolean direct) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, direct);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, direct, skip);
+        }
+
+        /**
+         * @param skip Skip a convergence check that cannot succeed.
+         * @return a new instance
+         */
+        DynamicContext withSkip(boolean skip) {
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip);
         }
 
         @Override
         public String toString() {
-            return (m0 == m && mStep == 0 ? "M=" + m : "M=min(" + m + "," + m0 + "+" + mStep + "k)") +
+            return (skip ? "skip " : "") +
+                (m0 == m && mStep == 0 ? "M=" + m : "M=min(" + m + "," + m0 + "+" + mStep + "k)") +
                 " maxN=" + maxN + (useSum ? "" : " (tail only)") +
                 (directPow ? "" : " (x^-s * x)");
         }
@@ -2563,6 +2601,7 @@ class HurwitzZetaTest {
         dynamicSwitchK = -1;
         dynamicExitK = 0;
         dynamicEmTerms = -1;
+        dynamicSkipped = 0;
         dynamicTailShare = Double.NaN;
         dynamicAmp = Double.NaN;
         final int m = Math.min(Math.max(0, dc.m), F.length - 1);
@@ -2584,6 +2623,11 @@ class HurwitzZetaTest {
             }
             dynamicWastedTerms = forwardEm0Terms;
         }
+        // Skip test: lower bound for the minimum correction term at x of the last failed check.
+        // Requires a constant maximum number of terms.
+        final boolean skip = dc.skip && dc.mStep == 0 && dc.m0 == dc.m;
+        double minTerm = em0 ? dynamicMinTerm : Double.NaN;
+        double minX = a;
 
         // First term
         double t = HurwitzZeta.safePow(a, -s);
@@ -2634,7 +2678,36 @@ class HurwitzZetaTest {
                 // x^(1-s), scaled if the sum is scaled
                 DD px = x.multiply(t);
                 final double extra = dc.useSum ? sum.hi() / px.hi() : 0;
-                final DD f = emBracket(s, x, extra, force ? m : Math.max(0, dc.mk(k)), force);
+                // Skip a check that cannot succeed. The terms c_j = F_j (s)_(2j-1) x^-2j are
+                // unimodal in j. All terms j <= M+1 at the previous x were >= minTerm and
+                // scale by (x0/x)^(2j) >= (x0/x)^(2(M+1)).
+                boolean skipCheck = false;
+                if (skip && !force && minTerm == minTerm) {
+                    double r = minX / x.hi();
+                    r *= r;
+                    double rn = 1;
+                    for (int e = m + 1; e != 0; e >>>= 1) {
+                        if ((e & 1) != 0) {
+                            rn *= r;
+                        }
+                        r *= r;
+                    }
+                    final double bound = minTerm * rn;
+                    final double stop = EM0_CONVERGED * (1 / (s - 1) + extra);
+                    // Margin for rounding in the evaluation of the terms
+                    if (bound > stop * (1 + 0x1.0p-30)) {
+                        skipCheck = true;
+                        dynamicSkipped++;
+                        minTerm = bound;
+                        minX = x.hi();
+                    }
+                }
+                final DD f = skipCheck ? null :
+                    emBracket(s, x, extra, force ? m : Math.max(0, dc.mk(k)), force);
+                if (f == null && !skipCheck) {
+                    minTerm = dynamicMinTerm;
+                    minX = x.hi();
+                }
                 if (f != null) {
                     if (dc.directPow) {
                         // Note: s < 350 so no requirement for safePow
@@ -2707,7 +2780,8 @@ class HurwitzZetaTest {
      * @param m Maximum number of correction terms.
      * @param force If true return the series truncated before the smallest term (or
      * at m terms) if it does not converge.
-     * @return the bracket, or null if the series did not converge
+     * @return the bracket, or null if the series did not converge (the minimum
+     * correction term evaluated is stored in {@code dynamicMinTerm})
      */
     private static DD emBracket(double s, DD x, double extra, int m, boolean force) {
         final double xd = x.hi();
@@ -2726,6 +2800,7 @@ class HurwitzZetaTest {
             if (j > m || c >= previous) {
                 if (!force) {
                     dynamicWastedTerms += j;
+                    dynamicMinTerm = Math.min(previous, c);
                     return null;
                 }
                 // Truncate: terms 1 to j-1
@@ -2973,6 +3048,7 @@ class HurwitzZetaTest {
         final DynamicContext[] contexts = {
             null,
             DynamicContext.DEFAULT,
+            DynamicContext.DEFAULT.withSkip(true),
             DynamicContext.DEFAULT.withM(8),
             DynamicContext.DEFAULT.withSchedule(0, 2),
             DynamicContext.DEFAULT.withSchedule(4, 2),
