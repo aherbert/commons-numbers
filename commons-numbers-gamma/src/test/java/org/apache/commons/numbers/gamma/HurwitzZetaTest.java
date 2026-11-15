@@ -196,12 +196,16 @@ class HurwitzZetaTest {
         "hzeta_2p-1075.csv",
     };
     /** Filenames of resources used for zeta function using the regions of the
-     * domain (s, a). */
+     * domain (s, a).
+     * Note: These files are reused to sample from the domain in the JMH
+     * performance test (ZetaPerformance in the examples-jmh module). */
     private static final String[] DOMAIN_RESOURCES = {
         "hzeta_domain_2p-1022.csv",
         "hzeta_domain_2p-1075.csv",
     };
-    /** Filenames of resources containing samples from the domain {@code a < 1}. */
+    /** Filenames of resources containing samples from the domain {@code a < 1}.
+     * Note: The first file is reused to sample from the domain in the JMH
+     * performance test (ZetaPerformance in the examples-jmh module). */
     private static final String[] DOMAIN_A01_RESOURCES = {
         "hzeta_sm1-52_8_a-53_0.csv",
         "hzeta_sm1-52_0_a-106_0_t0b0_106.csv",

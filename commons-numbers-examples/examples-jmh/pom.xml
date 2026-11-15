@@ -62,6 +62,13 @@
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-numbers-gamma</artifactId>
     </dependency>
+    <!-- Required for the zeta benchmark data (test resources) -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-numbers-gamma</artifactId>
+      <type>test-jar</type>
+      <scope>compile</scope>
+    </dependency>
 
     <dependency>
       <groupId>org.apache.commons</groupId>

@@ -17,8 +17,16 @@
 
 package org.apache.commons.numbers.examples.jmh.gamma;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.DoubleBinaryOperator;
@@ -261,6 +269,170 @@ public class ZetaPerformance {
             final SplittableRandom rng = new SplittableRandom();
             s = doubles(rng, size, rangeS, false, false);
             a = doubles(rng, size, rangeA, false, false);
+        }
+    }
+
+    /**
+     * Contains arrays of numbers for zeta(s, a) sampled from the domain reference data
+     * in the Commons Numbers gamma test resources.
+     *
+     * <p>The domain data covers the region of {@code (s, a)} where the result is
+     * representable. It includes cases that are cheap to evaluate (e.g. a single term
+     * {@code a^-s}, or a zero result) and cases that require the most terms. The rows
+     * can be filtered to a bracket of {@code s} and {@code a} using the ranges
+     * {@code [min, max)}, e.g. {@code -p rangeA=0:1,1:16,16:Infinity}. Samples are
+     * drawn with replacement using a fixed seed once per trial. The bracket must contain
+     * at least 100 rows, otherwise the setup fails with a message giving its coverage.
+     *
+     * <p>The source is either a named set ({@code domain} for {@code a >= 1};
+     * {@code domainA01} for {@code a < 1}), or a colon-delimited list of resource
+     * filenames, e.g. {@code -p source=hzeta_s1_9_a-106_0_t0b0_106.csv}.
+     */
+    @State(Scope.Benchmark)
+    public static class DomainHurwitzZetaData {
+        /** Path of the test resources. */
+        private static final String PATH = "/org/apache/commons/numbers/gamma/";
+        /** Minimum number of rows in the bracket to sample from. */
+        private static final int MIN_ROWS = 100;
+        /** Domain data for a >= 1: zeta(s, a) above 2^-1022 and 2^-1075.
+         * Note: These are the DOMAIN_RESOURCES test resources of HurwitzZetaTest. */
+        private static final String[] DOMAIN = {
+            "hzeta_domain_2p-1022.csv",
+            "hzeta_domain_2p-1075.csv",
+        };
+        /** Domain data for a in (0, 1).
+         * Note: This is the first of the DOMAIN_A01_RESOURCES test resources of
+         * HurwitzZetaTest: a log-uniform sample of the domain created in the same way
+         * as the data for {@code a >= 1}. The other resources target special regions
+         * (e.g. the single power region, or s near 1) and would bias the sample. */
+        private static final String[] DOMAIN_A01 = {
+            "hzeta_sm1-52_8_a-53_0.csv",
+        };
+
+        /** The size of the data. */
+        @Param({"1000"})
+        private int size;
+        /** The source of the data: a named set, or a colon-delimited list of filenames. */
+        @Param({"domain", "domainA01"})
+        private String source;
+        /** The range for s: [min, max). */
+        @Param({"1:Infinity"})
+        private String rangeS;
+        /** The range for a: [min, max). */
+        @Param({"0:Infinity"})
+        private String rangeA;
+        /** The seed for the sample. */
+        @Param({"12345"})
+        private long seed;
+
+        /** The s values. */
+        private double[] s;
+        /** The a values. */
+        private double[] a;
+
+        /**
+         * Gets the s values.
+         *
+         * @return the numbers
+         */
+        public double[] getS() {
+            return s;
+        }
+
+        /**
+         * Gets the a values.
+         *
+         * @return the numbers
+         */
+        public double[] getA() {
+            return a;
+        }
+
+        /**
+         * Create the numbers.
+         */
+        @Setup(Level.Trial)
+        public void setup() {
+            final String[] files;
+            if ("domain".equals(source)) {
+                files = DOMAIN;
+            } else if ("domainA01".equals(source)) {
+                files = DOMAIN_A01;
+            } else {
+                files = source.split(":");
+            }
+            final double[] rs = range(rangeS);
+            final double[] ra = range(rangeA);
+            final List<double[]> rows = new ArrayList<>();
+            int total = 0;
+            for (final String file : files) {
+                for (final double[] row : load(file)) {
+                    total++;
+                    if (row[0] >= rs[0] && row[0] < rs[1] && row[1] >= ra[0] && row[1] < ra[1]) {
+                        rows.add(row);
+                    }
+                }
+            }
+            // Require enough distinct rows that the sample is not dominated by repeats
+            if (rows.size() < MIN_ROWS) {
+                throw new IllegalStateException(
+                    String.format("Insufficient data for %s: s=%s, a=%s: %d / %d rows (minimum %d)",
+                        source, rangeS, rangeA, rows.size(), total, MIN_ROWS));
+            }
+            final SplittableRandom rng = new SplittableRandom(seed);
+            s = new double[size];
+            a = new double[size];
+            for (int i = 0; i < size; i++) {
+                final double[] row = rows.get(rng.nextInt(rows.size()));
+                s[i] = row[0];
+                a[i] = row[1];
+            }
+        }
+
+        /**
+         * Parse the range "min:max".
+         *
+         * @param minMax the range as "min:max"
+         * @return the range
+         */
+        private static double[] range(String minMax) {
+            final int index = minMax.indexOf(':');
+            return new double[] {
+                Double.parseDouble(minMax.substring(0, index)),
+                Double.parseDouble(minMax.substring(index + 1)),
+            };
+        }
+
+        /**
+         * Load the (s, a) values from the resource. Lines are "s, a, zeta(s, a)";
+         * comment lines start with '#'.
+         *
+         * @param file the resource filename
+         * @return the (s, a) rows
+         */
+        private static List<double[]> load(String file) {
+            final List<double[]> rows = new ArrayList<>();
+            try (InputStream in = ZetaPerformance.class.getResourceAsStream(PATH + file)) {
+                if (in == null) {
+                    throw new IllegalStateException("Missing resource: " + PATH + file);
+                }
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                    for (String line = br.readLine(); line != null; line = br.readLine()) {
+                        if (line.isEmpty() || line.charAt(0) == '#') {
+                            continue;
+                        }
+                        final int i = line.indexOf(',');
+                        final int j = line.indexOf(',', i + 1);
+                        rows.add(new double[] {
+                            Double.parseDouble(line.substring(0, i).trim()),
+                            Double.parseDouble(line.substring(i + 1, j).trim()),
+                        });
+                    }
+                }
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+            return rows;
         }
     }
 
@@ -964,6 +1136,40 @@ public class ZetaPerformance {
         // n=7 is lowest possible value before significant error due to tail divergence.
         // result precision may lost even at n=7 compared to higher n.
         apply(data.getS(), data.getA(), (s, a) -> ZetaPerformance.zeta(s, a, 7), bh);
+    }
+
+    /**
+     * Baseline the JMH overhead for the domain data benchmarks.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void baselineDomain(DomainHurwitzZetaData data, Blackhole bh) {
+        apply(data.getS(), data.getA(), ZetaPerformance::add, bh);
+    }
+
+    /**
+     * Benchmark the HurwitzZeta function using samples from the domain data.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void hurwitzZetaDomain(DomainHurwitzZetaData data, Blackhole bh) {
+        apply(data.getS(), data.getA(), HurwitzZeta::value, bh);
+    }
+
+    /**
+     * Benchmark a standard precision implementation of the Hurwitz zeta function using
+     * samples from the domain data.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void hurwitzZetaStdDomain(DomainHurwitzZetaData data, Blackhole bh) {
+        apply(data.getS(), data.getA(), (s, a) -> ZetaPerformance.zeta(s, a, N), bh);
     }
 
     /**
