@@ -2685,9 +2685,13 @@ class HurwitzZetaTest {
             if (k != 0 || !em0) {
                 final boolean force = k >= maxN;
                 final DD x = DD.ofSum(a, k);
-                // x^(1-s), scaled if the sum is scaled
+                // x^(1-s), scaled if the sum is scaled.
+                // The estimate (a + k) * t is used for convergence and to detect a
+                // sub-normal x^(1-s) (as HurwitzZeta). The double-double product is the
+                // value of x^(1-s) if not using directPow.
+                final double pxe = x.hi() * t;
                 DD px = x.multiply(t);
-                final double extra = dc.useSum ? s0 / px.hi() : 0;
+                final double extra = dc.useSum ? s0 / pxe : 0;
                 // Skip a check that cannot succeed. The terms c_j = F_j (s)_(2j-1) x^-2j are
                 // unimodal in j. All terms j <= M+1 at the previous x were >= minTerm and
                 // scale by (x0/x)^(2j) >= (x0/x)^(2(M+1)).
@@ -2721,7 +2725,7 @@ class HurwitzZetaTest {
                 if (f != null) {
                     if (dc.directPow) {
                         // Note: s < 350 so no requirement for safePow
-                        if (scaled && px.hi() < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
+                        if (scaled && pxe < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
                             // Sub-normal x^(1-s)
                             px = DD.of(scaledPow(pow, a, k, 1 - s));
                         } else if (scaled) {
