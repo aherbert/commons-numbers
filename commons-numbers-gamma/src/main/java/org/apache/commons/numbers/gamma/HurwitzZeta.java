@@ -113,6 +113,14 @@ public final class HurwitzZeta {
     /** Relative convergence threshold for the Euler-Maclaurin correction terms and the
      * remainder of the series sum. Equal to 2^-56. */
     private static final double CONVERGED = 0x1.0p-56;
+    /** Minimum ratio of the sum {@code S_k} to the Euler-Maclaurin tail
+     * {@code x^(1-s) * bracket} to use the estimate {@code x^(1-s) = x * x^-s}: the
+     * estimate is used if {@code tail * ratio < S_k}. A ratio of 3 is equivalent to a tail
+     * share of the result below 1/4. Otherwise {@code x^(1-s)} is computed with a power
+     * function, unless the mantissa product of the estimate carries. The relative error
+     * of the estimate is the relative error of {@code x^-s}; it is reduced in the result
+     * by the tail share {@code tail / (S_k + tail)}. */
+    private static final double MIN_SUM_TAIL_RATIO = 3;
     /** Threshold for a negligible first correction term relative to the convergence
      * threshold. The bracket then requires no correction terms and supports any
      * {@code a} without overflow. Equal to 2^-50. */
@@ -173,6 +181,9 @@ public final class HurwitzZeta {
     /** Upscale to use on the initial probability tail term (always below 1).
      * Multiplicative inverse of Double.MIN_NORMAL: 2^1022. */
     private static final double UPSCALE_1022 = 0x1.0p1022;
+    /** Upscale for the half power of a split power term {@code t = h * 2^1022 * h}:
+     * {@code (h * 2^511)^2 = t}. Equal to 2^511. */
+    private static final double UPSCALE_511 = 0x1.0p511;
     /** Upscale to use on the sum before scaled tail computation. Allows convergence
      * on a normal number using a sum of normal terms.
      * Multiplicative inverse of DOWNSCALE2: 2^106. */
@@ -546,8 +557,11 @@ public final class HurwitzZeta {
 
         // Scaling: if active, all terms and the sum are scaled by 2^1022.
         boolean scaled = false;
+        // Half power of a split power term: t = ht * 2^1022 * ht
+        double ht = 0;
         if (t < SCALED_SUM_THRESHOLD) {
-            t = scaledPow(pow, a, 0, -s);
+            ht = pow.apply(a, 0, -s * HALF);
+            t = ht * UPSCALE_1022 * ht;
             if (t == 0) {
                 // (a+k)^(1-s) / (s-1) is not 2^1022 larger than a^-s for any s > 1.
                 // The max is ~ 2^53 with a~2^53 and s~1.
@@ -570,7 +584,8 @@ public final class HurwitzZeta {
             if (k != 0) {
                 // t = (a+k)^-s
                 if (scaled) {
-                    t = scaledPow(pow, a, k, -s);
+                    ht = pow.apply(a, k, -s * HALF);
+                    t = ht * UPSCALE_1022 * ht;
                 } else {
                     t = pow.apply(a, k, -s);
                     if (t < SCALED_SUM_THRESHOLD) {
@@ -580,7 +595,8 @@ public final class HurwitzZeta {
                         // The scaled sum is normalised.
                         s0 *= UPSCALE_1022;
                         s1 *= UPSCALE_1022;
-                        t = scaledPow(pow, a, k, -s);
+                        ht = pow.apply(a, k, -s * HALF);
+                        t = ht * UPSCALE_1022 * ht;
                         scaled = true;
                     }
                 }
@@ -596,27 +612,7 @@ public final class HurwitzZeta {
                 // At the maximum N the tail is used without a convergence requirement.
                 final DD f = emBracket(s, a, k, x, CONVERGED * (rs1 + s0 / px), k >= MAX_N);
                 if (f != null) {
-                    // Compute x^(1-s) with a power function. This is more accurate than
-                    // the estimate x^-s * x when x^(1-s) / (s-1) dominates (s near 1).
-                    final double p;
-                    if (!scaled) {
-                        p = pow.apply(a, k, 1 - s);
-                    } else if (px < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
-                        // Sub-normal x^(1-s)
-                        p = scaledPow(pow, a, k, 1 - s);
-                    } else {
-                        p = UPSCALE_1022 * pow.apply(a, k, 1 - s);
-                    }
-                    if (scaled) {
-                        // Scaled result is above 2^-53: the double-double product is exact.
-                        return DD.ofSum(s0, s1).add(f.multiply(p)).hi() * Double.MIN_NORMAL;
-                    }
-                    if (s0 + p * f.hi() < DD_PRODUCT_THRESHOLD) {
-                        // Avoid a sub-normal low part of the double-double product
-                        return DD.ofSum(s0 * UPSCALE_106, s1 * UPSCALE_106)
-                            .add(f.multiply(p * UPSCALE_106)).hi() * DOWNSCALE_106;
-                    }
-                    return DD.ofSum(s0, s1).add(f.multiply(p)).hi();
+                    return emResult(pow, s, a, k, x, t, ht, px, s0, s1, f, scaled);
                 }
             }
             // (s0, s1) += t
@@ -634,8 +630,76 @@ public final class HurwitzZeta {
     }
 
     /**
+     * Compute the result {@code S_k + x^(1-s) * f} at the Euler-Maclaurin exit
+     * {@code x = a + k}, where {@code f} is the converged bracket
+     * {@code [1 / (s-1) + 1 / (2x) + sum_j c_j]}.
+     *
+     * <p>If the sum is scaled, all terms and the sum are scaled by 2^1022.
+     *
+     * @param pow Power function.
+     * @param s Argument s.
+     * @param a Argument a.
+     * @param k Number of terms in the sum S_k.
+     * @param x Value of {@code a + k} (rounded).
+     * @param t Term {@code x^-s} (scaled if the sum is scaled).
+     * @param ht Half power {@code x^(-s/2)} of a split power term {@code t} (if scaled).
+     * @param px Estimate {@code x * t}.
+     * @param s0 High part of the sum S_k.
+     * @param s1 Low part of the sum S_k.
+     * @param f Euler-Maclaurin bracket.
+     * @param scaled Set to true if the sum is scaled.
+     * @return zeta(s, a)
+     */
+    private static double emResult(PowOperator pow, double s, double a, int k, double x,
+                                   double t, double ht, double px, double s0, double s1,
+                                   DD f, boolean scaled) {
+        // x^(1-s) (scaled if the sum is scaled)
+        final DD p;
+        if (scaled) {
+            if (px < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
+                // Sub-normal x^(1-s). A power function would require a split
+                // power. Use x * x^-s with an exact square of the half power:
+                // x * (ht * 2^511)^2. This saves a power function and is
+                // more accurate than the rounded split power t.
+                final double h = ht * UPSCALE_511;
+                p = DD.ofSum(a, k).multiply(DD.ofProduct(h, h));
+            } else {
+                // Normal x^(1-s): a power function is more accurate than
+                // any estimate using the split power t.
+                p = DD.of(UPSCALE_1022 * pow.apply(a, k, 1 - s));
+            }
+        } else {
+            final double tail = px * f.hi();
+            if (tail * MIN_SUM_TAIL_RATIO < s0 ||
+                Math.getExponent(px) > Math.getExponent(x) + Math.getExponent(t)) {
+                // Use the estimate x^(1-s) = x * x^-s, exact apart from the
+                // error of x^-s. This saves a power function. It is used:
+                // - if the sum dominates the result; or
+                // - if the mantissa product m(x) * m(x^-s) carries (>= 2):
+                //   the ulp error of the estimate is then at most the ulp
+                //   error of x^-s.
+                p = DD.ofSum(a, k).multiply(t);
+            } else {
+                // Compute x^(1-s) with a power function. This is more accurate
+                // than the estimate when x^(1-s) / (s-1) dominates (s near 1).
+                p = DD.of(pow.apply(a, k, 1 - s));
+            }
+        }
+        if (scaled) {
+            // Scaled result is above 2^-53: the double-double product is exact.
+            return DD.ofSum(s0, s1).add(p.multiply(f)).hi() * Double.MIN_NORMAL;
+        }
+        if (s0 + p.hi() * f.hi() < DD_PRODUCT_THRESHOLD) {
+            // Avoid a sub-normal low part of the double-double product
+            return DD.ofSum(s0 * UPSCALE_106, s1 * UPSCALE_106)
+                .add(p.multiply(UPSCALE_106).multiply(f)).hi() * DOWNSCALE_106;
+        }
+        return DD.ofSum(s0, s1).add(p.multiply(f)).hi();
+    }
+
+    /**
      * Compute the Hurwitz zeta function using the Euler-Maclaurin sum with N=0 (no
-     * series terms):
+     * series terms).
      *
      * <pre>
      * zeta(s, a) = a^(1-s) * [1 / (s-1) + 1 / (2a) + sum_{k>=1} c_k]
@@ -747,7 +811,7 @@ public final class HurwitzZeta {
     }
 
     /**
-     * Compute the bracket of the Euler-Maclaurin tail at {@code x = a + k}:
+     * Compute the bracket of the Euler-Maclaurin tail at {@code x = a + k}.
      *
      * <pre>
      * 1 / (s-1) + 1 / (2x) + sum_{j>=1} c_j
@@ -803,7 +867,7 @@ public final class HurwitzZeta {
         final DD rx = reciprocal(x, twoSumLow(a, k, x));
         DD f = DD.fromQuotient(1, s - 1).add(rx.multiply(HALF));
         // c_1 is included unless negligible (or truncated: j == 1 and c_1 >= stop)
-        if (j > 1 || (c1 < stop && c1 >= stop * NEGLIGIBLE_C1)) {
+        if (j > 1 || c1 < stop && c1 >= stop * NEGLIGIBLE_C1) {
             f = f.add(rx.square().multiply(DD.fromQuotient(s, 12))).add(sum);
         }
         return f;

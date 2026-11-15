@@ -2058,11 +2058,11 @@ class HurwitzZetaTest {
         }
 
         /**
-         * @param m Maximum number of terms (negative for the legacy asymptotic route).
+         * @param terms Maximum number of terms (negative for the legacy asymptotic route).
          * @return a new instance
          */
-        ForwardContext withM(int m) {
-            return new ForwardContext(m, divergenceExit);
+        ForwardContext withM(int terms) {
+            return new ForwardContext(terms, divergenceExit);
         }
 
         /**
@@ -2444,8 +2444,14 @@ class HurwitzZetaTest {
         /** Default options. The direct power for {@code x^(1-s)} is more accurate than
          * {@code x^-s * x} when the term {@code x^(1-s) / (s-1)} dominates (s near 1).
          * Skipping a convergence check that cannot succeed does not change the result; it
-         * is off by default as it gave no net speed-up in production (as in HurwitzZeta). */
-        static final DynamicContext DEFAULT = new DynamicContext(16, 16, 0, FORWARD_N, true, true, false);
+         * is off by default as it gave no net speed-up in production (as in HurwitzZeta).
+         * The estimate {@code x^-s * x} is used when the sum is at least 3 times the tail
+         * (a tail share of the result below 1/4), or the mantissa product of the estimate carries: this saves a power function
+         * with no significant change in accuracy. If the sum is scaled a normal
+         * {@code x^(1-s)} uses a power function and a sub-normal {@code x^(1-s)} uses the
+         * estimate with an exact square of the half power {@code x^(-s/2)}. */
+        static final DynamicContext DEFAULT =
+            new DynamicContext(16, 16, 0, FORWARD_N, true, true, false, 3, true, true);
 
         /** Maximum number of terms M of the Euler-Maclaurin correction series. */
         private final int m;
@@ -2465,6 +2471,19 @@ class HurwitzZetaTest {
         /** Set to true to skip a convergence check that cannot succeed. Uses the minimum
          * correction term of the previous failed check. */
         private final boolean skip;
+        /** If directPow is set, use the estimate {@code x^-s * x} for {@code x^(1-s)} when
+         * the estimated tail {@code x^(1-s) f} times this ratio is below the sum
+         * {@code S_k} (infinity to never use the estimate). A ratio r is equivalent to a tail
+         * share of the result below {@code 1 / (1 + r)}. */
+        private final double estimateRatio;
+        /** If directPow is set and the sum is not scaled, use the estimate
+         * {@code x^-s * x} when the mantissa product m(x) * m(x^-s) carries (>= 2). The
+         * estimate then has an ulp error no larger than that of {@code x^-s}. */
+        private final boolean carry;
+        /** If directPow is set and the sum is scaled: compute a normal {@code x^(1-s)}
+         * with a power function (even if the tail share is small); otherwise use the
+         * estimate {@code x * (x^(-s/2))^2} with an exact square of the half power. */
+        private final boolean splitRule;
 
         /**
          * @param m Maximum number of correction terms.
@@ -2489,6 +2508,41 @@ class HurwitzZetaTest {
          */
         DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow,
                        boolean skip) {
+            this(m, m0, mStep, maxN, useSum, directPow, skip, 0);
+        }
+
+        /**
+         * @param m Maximum number of correction terms.
+         * @param m0 Maximum number of correction terms at k=0.
+         * @param mStep Increase in the maximum number of correction terms per step k.
+         * @param maxN Maximum N.
+         * @param useSum Include the current sum in the convergence threshold.
+         * @param directPow Compute {@code x^(1-s)} with a power function.
+         * @param skip Skip a convergence check that cannot succeed.
+         * @param estimateRatio Minimum ratio of the sum to the tail to use the estimate {@code x^-s * x}.
+         */
+        DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow,
+                       boolean skip, double estimateRatio) {
+            this(m, m0, mStep, maxN, useSum, directPow, skip, Double.POSITIVE_INFINITY, false, false);
+        }
+
+        /**
+         * @param m Maximum number of correction terms.
+         * @param m0 Maximum number of correction terms at k=0.
+         * @param mStep Increase in the maximum number of correction terms per step k.
+         * @param maxN Maximum N.
+         * @param useSum Include the current sum in the convergence threshold.
+         * @param directPow Compute {@code x^(1-s)} with a power function.
+         * @param skip Skip a convergence check that cannot succeed.
+         * @param estimateRatio Minimum ratio of the sum to the tail to use the estimate {@code x^-s * x}.
+         * @param carry Use the estimate {@code x^-s * x} if the mantissa product carries.
+         * @param splitRule Exit rule for a scaled sum.
+         */
+        DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow,
+                       boolean skip, double estimateRatio, boolean carry, boolean splitRule) {
+            this.carry = carry;
+            this.splitRule = splitRule;
+            this.estimateRatio = estimateRatio;
             this.skip = skip;
             this.m = m;
             this.m0 = m0;
@@ -2499,11 +2553,11 @@ class HurwitzZetaTest {
         }
 
         /**
-         * @param m Maximum number of correction terms.
+         * @param terms Maximum number of correction terms.
          * @return a new instance
          */
-        DynamicContext withM(int m) {
-            return new DynamicContext(m, m, 0, maxN, useSum, directPow, skip);
+        DynamicContext withM(int terms) {
+            return new DynamicContext(terms, terms, 0, maxN, useSum, directPow, skip, estimateRatio, carry, splitRule);
         }
 
         /**
@@ -2515,7 +2569,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withSchedule(int start, int step) {
-            return new DynamicContext(m, start, step, maxN, useSum, directPow, skip);
+            return new DynamicContext(m, start, step, maxN, useSum, directPow, skip, estimateRatio, carry, splitRule);
         }
 
         /**
@@ -2531,7 +2585,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withMaxN(int n) {
-            return new DynamicContext(m, m0, mStep, n, useSum, directPow, skip);
+            return new DynamicContext(m, m0, mStep, n, useSum, directPow, skip, estimateRatio, carry, splitRule);
         }
 
         /**
@@ -2539,7 +2593,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withUseSum(boolean use) {
-            return new DynamicContext(m, m0, mStep, maxN, use, directPow, skip);
+            return new DynamicContext(m, m0, mStep, maxN, use, directPow, skip, estimateRatio, carry, splitRule);
         }
 
         /**
@@ -2547,15 +2601,40 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withDirectPow(boolean direct) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, direct, skip);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, direct, skip, estimateRatio, carry, splitRule);
         }
 
         /**
-         * @param skip Skip a convergence check that cannot succeed.
+         * @param use Skip a convergence check that cannot succeed.
          * @return a new instance
          */
-        DynamicContext withSkip(boolean skip) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip);
+        DynamicContext withSkip(boolean use) {
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, use, estimateRatio, carry, splitRule);
+        }
+
+        /**
+         * @param ratio Minimum ratio of the sum to the tail to use the estimate
+         * {@code x^-s * x} (infinity to never use the estimate).
+         * @return a new instance
+         */
+        DynamicContext withEstimateRatio(double ratio) {
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, ratio, carry, splitRule);
+        }
+
+        /**
+         * @param use Use the estimate {@code x^-s * x} if the mantissa product carries.
+         * @return a new instance
+         */
+        DynamicContext withCarry(boolean use) {
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, use, splitRule);
+        }
+
+        /**
+         * @param use Use the exit rule for a scaled sum.
+         * @return a new instance
+         */
+        DynamicContext withSplitRule(boolean use) {
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, carry, use);
         }
 
         @Override
@@ -2563,7 +2642,10 @@ class HurwitzZetaTest {
             return (skip ? "skip " : "") +
                 (m0 == m && mStep == 0 ? "M=" + m : "M=min(" + m + "," + m0 + "+" + mStep + "k)") +
                 " maxN=" + maxN + (useSum ? "" : " (tail only)") +
-                (directPow ? "" : " (x^-s * x)");
+                (directPow ? "" : " (x^-s * x)") +
+                (directPow && estimateRatio < Double.POSITIVE_INFINITY ? " (x^-s * x if tail*" + estimateRatio + "<sum)" : "") +
+                (directPow && carry ? " (carry)" : "") +
+                (directPow && splitRule ? " (split rule)" : "");
         }
     }
 
@@ -2649,8 +2731,12 @@ class HurwitzZetaTest {
             Context::extPowxpn;
 
         boolean scaled = false;
+        // Half power of a split power term: t = ht * 2^1022 * ht
+        double ht = Double.NaN;
         if (t < SCALED_SUM_THRESHOLD) {
-            t = scaledPow(pow, a, 0, -s);
+            ht = pow.apply(a, 0, -s * 0.5);
+            forwardPowCount++;
+            t = ht * UPSCALE_1022 * ht;
             if (t == 0) {
                 return 0;
             }
@@ -2668,14 +2754,18 @@ class HurwitzZetaTest {
             if (k != 0) {
                 // t_k = (a+k)^-s
                 if (scaled) {
-                    t = scaledPow(pow, a, k, -s);
+                    ht = pow.apply(a, k, -s * 0.5);
+                    forwardPowCount++;
+                    t = ht * UPSCALE_1022 * ht;
                 } else {
                     t = pow.apply(a, k, -s);
                     forwardPowCount++;
                     if (t < SCALED_SUM_THRESHOLD) {
                         s0 *= UPSCALE_1022;
                         s1 *= UPSCALE_1022;
-                        t = scaledPow(pow, a, k, -s);
+                        ht = pow.apply(a, k, -s * 0.5);
+                        forwardPowCount++;
+                        t = ht * UPSCALE_1022 * ht;
                         scaled = true;
                         dynamicSwitchK = k;
                     }
@@ -2723,7 +2813,25 @@ class HurwitzZetaTest {
                     minX = x.hi();
                 }
                 if (f != null) {
-                    if (dc.directPow) {
+                    // Estimated tail share of the result
+                    final double tailEst = pxe * f.hi();
+                    boolean direct = dc.directPow && !(tailEst * dc.estimateRatio < s0);
+                    if (dc.directPow && scaled && dc.splitRule) {
+                        if (pxe < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
+                            // Sub-normal x^(1-s): x * (x^(-s/2))^2 with an exact square
+                            final double h = ht * 0x1.0p511;
+                            px = x.multiply(DD.ofProduct(h, h));
+                            direct = false;
+                        } else {
+                            // Normal x^(1-s): a power function is within its 1 ulp spec
+                            direct = true;
+                        }
+                    } else if (direct && !scaled && dc.carry &&
+                        Math.getExponent(pxe) > Math.getExponent(x.hi()) + Math.getExponent(t)) {
+                        // m(x) * m(t) >= 2: the estimate ulp error is <= that of t
+                        direct = false;
+                    }
+                    if (direct) {
                         // Note: s < 350 so no requirement for safePow
                         if (scaled && pxe < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
                             // Sub-normal x^(1-s)
@@ -2850,7 +2958,7 @@ class HurwitzZetaTest {
         final DD rx = reciprocal(x);
         DD f = DD.fromQuotient(1, s - 1).add(rx.multiply(0.5));
         // c_1 is included unless negligible (or truncated: j == 1 and c_1 >= stop)
-        if (j > 1 || (c1 < stop && c1 >= stop * 0x1p-50)) {
+        if (j > 1 || c1 < stop && c1 >= stop * 0x1p-50) {
             f = f.add(rx.square().multiply(DD.fromQuotient(s, 12))).add(sum);
         }
         return f;
@@ -3081,6 +3189,13 @@ class HurwitzZetaTest {
         final DynamicContext[] contexts = {
             null,
             DynamicContext.DEFAULT,
+            DynamicContext.DEFAULT.withEstimateRatio(Double.POSITIVE_INFINITY),
+            DynamicContext.DEFAULT.withEstimateRatio(1),
+            DynamicContext.DEFAULT.withEstimateRatio(1.0 / 3),
+            DynamicContext.DEFAULT.withCarry(false),
+            DynamicContext.DEFAULT.withSplitRule(false),
+            DynamicContext.DEFAULT.withCarry(false).withSplitRule(false),
+            DynamicContext.DEFAULT.withDirectPow(false),
             DynamicContext.DEFAULT.withSkip(true),
             DynamicContext.DEFAULT.withM(8),
             DynamicContext.DEFAULT.withSchedule(0, 2),
@@ -7978,7 +8093,7 @@ class HurwitzZetaTest {
         final long bits = Double.doubleToLongBits(a);
         final long range = Double.doubleToLongBits(b) - bits;
         final long step = n == 0 ? range : range / (Math.abs((long) n) - 1);
-        final long i[] = {bits - step};
+        final long[] i = {bits - step};
         return () -> {
             i[0] += step;
             return Double.longBitsToDouble(i[0]);

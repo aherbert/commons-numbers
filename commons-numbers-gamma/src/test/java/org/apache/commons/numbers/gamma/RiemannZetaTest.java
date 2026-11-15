@@ -228,6 +228,13 @@ class RiemannZetaTest {
      */
     private static final class MathExt {
         /**
+         * Set to true if {@code java.lang.Math.fma} uses hardware FMA instructions.
+         * This is not used to select {@link #FUN}: for accuracy testing a software
+         * {@code java.lang.Math.fma} is preferred to the default implementation.
+         */
+        static final boolean HARDWARE_FMA = isHardwareFMA();
+
+        /**
          * Method to compute fused-multiply-add.
          * <ul>
          * <li>{@code java.lang.Math.fma} if Java 9
@@ -235,13 +242,6 @@ class RiemannZetaTest {
          * </ul>
          */
         private static final FMAOperator FUN;
-
-        /**
-         * Set to true if {@code java.lang.Math.fma} uses hardware FMA instructions.
-         * This is not used to select {@link #FUN}: for accuracy testing a software
-         * {@code java.lang.Math.fma} is preferred to the default implementation.
-         */
-        static final boolean HARDWARE_FMA = isHardwareFMA();
 
         static {
             // Note:
