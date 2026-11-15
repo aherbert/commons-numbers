@@ -22,6 +22,8 @@ import java.io.PrintStream;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.management.ManagementFactory;
+import java.lang.management.PlatformManagedObject;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Arrays;
@@ -234,6 +236,13 @@ class RiemannZetaTest {
          */
         private static final FMAOperator FUN;
 
+        /**
+         * Set to true if {@code java.lang.Math.fma} uses hardware FMA instructions.
+         * This is not used to select {@link #FUN}: for accuracy testing a software
+         * {@code java.lang.Math.fma} is preferred to the default implementation.
+         */
+        static final boolean HARDWARE_FMA = isHardwareFMA();
+
         static {
             // Note:
             // This uses the public lookup mechanism for static methods to find methods
@@ -283,6 +292,34 @@ class RiemannZetaTest {
                 };
             } catch (NoSuchMethodException | IllegalAccessException ignored) {
                 return null;
+            }
+        }
+
+        /**
+         * Test if the JVM uses hardware FMA instructions for {@code java.lang.Math.fma}.
+         *
+         * <p>Reads the HotSpot product flag {@code UseFMA} using the JDK management API
+         * {@code com.sun.management.HotSpotDiagnosticMXBean}. The flag is documented in
+         * the {@code java} tool reference: it enables hardware-based FMA intrinsics for
+         * {@code java.lang.Math.fma} and is on by default if the hardware supports FMA.
+         * Reflection is used to avoid a dependency on the {@code jdk.management} module.
+         *
+         * <p>Any failure (e.g. Java 8, a non-HotSpot JVM, or an unknown flag) returns false.
+         *
+         * @return true if hardware FMA is used
+         */
+        static boolean isHardwareFMA() {
+            try {
+                final Class<? extends PlatformManagedObject> c =
+                    Class.forName("com.sun.management.HotSpotDiagnosticMXBean")
+                        .asSubclass(PlatformManagedObject.class);
+                final Object bean = ManagementFactory.getPlatformMXBean(c);
+                final Object option = c.getMethod("getVMOption", String.class).invoke(bean, "UseFMA");
+                final Object value = option.getClass().getMethod("getValue").invoke(option);
+                // Require Math.fma: the flag may be present on Java 8 (no Math.fma)
+                return Boolean.parseBoolean(String.valueOf(value)) && testFMA(getMathFMA());
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                return false;
             }
         }
 
@@ -522,6 +559,24 @@ class RiemannZetaTest {
             result = Math.pow(3, -s) + Math.pow(2, -s) + 1;
         }
         return result;
+    }
+
+    /**
+     * Report the FMA support. This checks the hardware FMA detection does not fail.
+     * It requires a working {@code java.lang.Math.fma} if hardware FMA is detected.
+     */
+    @Test
+    void testHardwareFMA() {
+        final boolean mathFma = MathExt.testFMA(MathExt.getMathFMA());
+        final boolean hardware = MathExt.isHardwareFMA();
+        // CHECKSTYLE: stop regexp
+        System.out.printf("Java %s %s: Math.fma=%b, hardware FMA=%b%n",
+            System.getProperty("java.version"), System.getProperty("os.arch"), mathFma, hardware);
+        // CHECKSTYLE: resume regexp
+        Assertions.assertEquals(hardware, MathExt.HARDWARE_FMA);
+        if (hardware) {
+            Assertions.assertTrue(mathFma);
+        }
     }
 
     @Test
