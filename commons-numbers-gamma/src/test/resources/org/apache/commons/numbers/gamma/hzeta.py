@@ -40,8 +40,9 @@ patched = _patch_hurwitz_em()
 parser = argparse.ArgumentParser(description="Program to compute zeta(s, a).")
 parser.add_argument("data", type=str, nargs="+", help="s, a values")
 parser.add_argument("--dps", type=int, default=50, help="Digits of precision (default: %(default)s)")
-parser.add_argument("--max-a", type=float, default=1e100, help="Maximum a in [min, max] (default: %(default)s)")
-parser.add_argument("--min-a", type=float, default=0, help="Minimum a in [min, max] (default: %(default)s)")
+# Default range: all finite doubles
+parser.add_argument("--max-a", type=float, default=sys.float_info.max, help="Maximum a in [min, max] (default: %(default)s)")
+parser.add_argument("--min-a", type=float, default=-sys.float_info.max, help="Minimum a in [min, max] (default: %(default)s)")
 parser.add_argument("--negate-a", default=False, action=argparse.BooleanOptionalAction,
     help="Negate the range a in [min, max] (default: %(default)s)")
 args = parser.parse_args()
