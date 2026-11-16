@@ -9352,6 +9352,106 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Coordinate for sampling a variable {@code v}: a monotonic transform {@code t(v)}
+     * sampled uniformly in {@code bits(t)}. A transform relative to 1 spreads out the
+     * region close to {@code v = 1}.
+     */
+    enum Coordinate {
+        /** {@code t = v}. */
+        VALUE(v -> v, t -> t, false, "%s", ""),
+        /** {@code t = v - 1} (requires {@code v >= 1}). */
+        MINUS_ONE(v -> v - 1, t -> 1 + t, false, "%s-1", "_%sm1"),
+        /** {@code t = 1 - v} (requires {@code v <= 1}). */
+        ONE_MINUS(v -> 1 - v, t -> 1 - t, true, "1-%s", "_1m%s");
+
+        /** Transform t(v). */
+        private final DoubleUnaryOperator forward;
+        /** Inverse v(t). */
+        private final DoubleUnaryOperator inverse;
+        /** Set to true if the transform is decreasing. */
+        private final boolean decreasing;
+        /** Format for the label of the variable. */
+        private final String label;
+        /** Format for the file name token of the variable. */
+        private final String token;
+
+        /**
+         * @param forward Transform t(v).
+         * @param inverse Inverse v(t).
+         * @param decreasing Set to true if the transform is decreasing.
+         * @param label Format for the label of the variable.
+         * @param token Format for the file name token of the variable.
+         */
+        Coordinate(DoubleUnaryOperator forward, DoubleUnaryOperator inverse, boolean decreasing,
+                   String label, String token) {
+            this.forward = forward;
+            this.inverse = inverse;
+            this.decreasing = decreasing;
+            this.label = label;
+            this.token = token;
+        }
+
+        /**
+         * Get the coordinate bits(t(v)).
+         *
+         * @param v Value.
+         * @return the coordinate
+         */
+        long toX(double v) {
+            return Double.doubleToRawLongBits(forward.applyAsDouble(v));
+        }
+
+        /**
+         * Get the value v(t) from the coordinate bits(t). The value is rounded.
+         *
+         * @param x Coordinate.
+         * @return the value
+         */
+        double toV(long x) {
+            return inverse.applyAsDouble(Double.longBitsToDouble(x));
+        }
+
+        /**
+         * Get the range of the coordinate for the values in [v0, v1]. The range is limited
+         * so that {@code toV} is positive.
+         *
+         * @param v0 Lower value.
+         * @param v1 Upper value.
+         * @return the range {lower, upper}
+         */
+        long[] range(double v0, double v1) {
+            long t0 = toX(v0);
+            long t1 = toX(v1);
+            if (decreasing) {
+                final long tmp = t0;
+                t0 = t1;
+                t1 = tmp;
+            }
+            if (this == ONE_MINUS) {
+                // v = 1 - t > 0: t < 1
+                t1 = Math.min(t1, Double.doubleToRawLongBits(Math.nextDown(1.0)));
+            }
+            return new long[] {t0, t1};
+        }
+
+        /**
+         * @param name Variable name.
+         * @return the label, e.g. "s-1"
+         */
+        String label(String name) {
+            return String.format(label, name);
+        }
+
+        /**
+         * @param name Variable name.
+         * @return the file name token, e.g. "_sm1" (empty for the value)
+         */
+        String token(String name) {
+            return String.format(token, name);
+        }
+    }
+
+    /**
      * Create test data for real {@code s} within the domain bounded by two contours of
      * the zeta function.
      *
@@ -9367,15 +9467,25 @@ class HurwitzZetaTest {
      * of {@code s}, which must be within the range of the contours (default: the common
      * range of the contours).
      *
-     * <p>Samples are uniform in {@code x = bits(s)} and {@code y = bits(a)}: every
-     * representable {@code (s, a)} in the band has the same probability. The range of
-     * {@code x} is split at the ends of the contour pieces, so in each piece each bound is
-     * a single quadratic (or a constant). A piece is chosen with probability proportional
-     * to {@code dx * Wmax}, where {@code Wmax} is a bound on the number of doubles {@code a}
-     * in the band for any {@code x} in the piece; {@code x} is uniform in the piece and
-     * accepted with probability {@code W(x) / Wmax}; {@code y} is then uniform in
-     * {@code [ceil(y_lo(x)), floor(y_hi(x))]}. This is exact for the contour model. The bound
-     * is checked for every trial.
+     * <p>Samples are uniform in the coordinates {@code x = bits(t(s))} and
+     * {@code y = bits(t(a))} for the chosen transforms (see {@link Coordinate}). With the
+     * values ({@code t(v) = v}) every representable {@code (s, a)} in the band has the same
+     * probability. The transforms {@code s-1}, {@code a-1} (a >= 1) and {@code 1-a}
+     * (a <= 1) increase the density close to 1: e.g. {@code bits(s-1)} gives each binade of
+     * {@code s-1} the same weight. The value is recovered by the inverse transform with
+     * rounding, so several coordinates can map to the same double; the density over the
+     * doubles is then weighted. The range of a is limited to {@code a >= 1 + 2^-52} for
+     * {@code a-1} and to {@code 2^-53 <= a <= 1 - 2^-53} for {@code 1-a}: the value
+     * {@code a = 1} is excluded as every {@code t} below the spacing of the doubles at 1
+     * would round to it.
+     *
+     * <p>The range of {@code x} is split at the ends of the contour pieces, so in each piece
+     * each bound is a single quadratic of {@code bits(s)} (or a constant). A piece is chosen
+     * with probability proportional to {@code dx * Wmax}, where {@code Wmax} is a bound on
+     * the number of coordinates {@code y} in the band for any {@code x} in the piece;
+     * {@code x} is uniform in the piece and accepted with probability {@code W(x) / Wmax};
+     * {@code y} is then uniform in the band at {@code x}. This is exact for the contour
+     * model. The bound is checked for every trial.
      *
      * <p>The contour model is within a tolerance of the true contour (see
      * {@link ContourBuilder}). Samples close to a contour may be just outside the band.
@@ -9391,17 +9501,21 @@ class HurwitzZetaTest {
      * @param maxS Maximum s (ignored if not positive).
      * @param minA Minimum a (ignored if not positive).
      * @param maxA Maximum a (ignored if not positive).
+     * @param sc Coordinate for s (VALUE or MINUS_ONE).
+     * @param ac Coordinate for a.
      */
     @ParameterizedTest
     @CsvSource({
         // a >= 1 under the 2^-1075 contour (non-zero result)
-        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 1, 0",
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 1, 0, VALUE, VALUE",
         // a < 1 between the 2^108 and 2^-1075 contours (a = 1 - 2^-53)
-        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 0, 0.9999999999999999",
+        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 0, 0.9999999999999999, VALUE, VALUE",
     })
     @Disabled("Used to generate test data")
     void testDataWithinDomainReal(String lowerFile, int bl, String upperFile, int bu,
-        double eps, int samples, double minS, double maxS, double minA, double maxA) throws IOException {
+        double eps, int samples, double minS, double maxS, double minA, double maxA,
+        Coordinate sc, Coordinate ac) throws IOException {
+        Assertions.assertNotEquals(Coordinate.ONE_MINUS, sc, "s > 1");
         final PiecewiseContour lower = lowerFile == null || lowerFile.isEmpty() ?
             null : PiecewiseContour.load(lowerFile, bl, eps);
         final PiecewiseContour upper = upperFile == null || upperFile.isEmpty() ?
@@ -9422,12 +9536,20 @@ class HurwitzZetaTest {
             }
         }
         Assertions.assertTrue(s0 > 1 && s0 < s1 && s1 < Double.POSITIVE_INFINITY, "Invalid range of s");
-        final long x0 = Double.doubleToRawLongBits(s0);
-        final long x1 = Double.doubleToRawLongBits(s1);
+        // Coordinates x = bits(t(s))
+        final long x0 = sc.toX(s0);
+        final long x1 = sc.toX(s1);
 
-        // Limits on y = bits(a) - bits(1)
-        final long cl = minA > 0 ? PiecewiseContour.toY(minA) : PiecewiseContour.Y_MIN;
-        final long ch = maxA > 0 ? PiecewiseContour.toY(maxA) : PiecewiseContour.Y_MAX;
+        // Limits on the contour coordinate bits(a) - bits(1)
+        long cl = minA > 0 ? PiecewiseContour.toY(minA) : PiecewiseContour.Y_MIN;
+        long ch = maxA > 0 ? PiecewiseContour.toY(maxA) : PiecewiseContour.Y_MAX;
+        // The transform of a must be positive and exclude a = 1: every t below the
+        // spacing of the doubles at 1 would round to a = 1 (a spike at the pole of t).
+        if (ac == Coordinate.MINUS_ONE) {
+            cl = Math.max(cl, PiecewiseContour.toY(Math.nextUp(1.0)));
+        } else if (ac == Coordinate.ONE_MINUS) {
+            ch = Math.min(ch, PiecewiseContour.toY(Math.nextDown(1.0)));
+        }
         Assertions.assertTrue(cl <= ch, "Invalid range of a");
 
         // Pieces: split at the ends of the contour pieces
@@ -9437,7 +9559,7 @@ class HurwitzZetaTest {
         for (final PiecewiseContour c : new PiecewiseContour[] {lower, upper}) {
             if (c != null) {
                 for (int i = 0; i < c.size(); i += 2) {
-                    final long x = c.nodeX(i);
+                    final long x = sc.toX(Double.longBitsToDouble(c.nodeX(i)));
                     if (x0 < x && x < x1) {
                         breaks.add(x);
                     }
@@ -9455,7 +9577,10 @@ class HurwitzZetaTest {
         int empty = 0;
         for (int i = 0; i < np; i++) {
             xe[i] = i == np - 1 ? bx[i + 1] : bx[i + 1] - 1;
-            wmax[i] = widthBound(lower, upper, cl, ch, xa[i], xe[i]);
+            // Interval of bits(s)
+            final long xsa = Double.doubleToRawLongBits(sc.toV(xa[i]));
+            final long xse = Double.doubleToRawLongBits(sc.toV(xe[i]));
+            wmax[i] = widthBound(lower, upper, cl, ch, xsa, xse, ac);
             weight[i] = (xe[i] - xa[i] + 1.0) * wmax[i];
             if (wmax[i] == 0) {
                 empty++;
@@ -9473,18 +9598,26 @@ class HurwitzZetaTest {
         while (data.size() < samples) {
             trials++;
             final int i = sampler.sample();
-            final long x = rng.nextLong(xa[i], xe[i] + 1);
-            final double s = Double.longBitsToDouble(x);
+            final double s = sc.toV(rng.nextLong(xa[i], xe[i] + 1));
+            final long x = Double.doubleToRawLongBits(s);
             final long lo = lower == null ? cl : Math.max(cl, (long) Math.ceil(lower.y(x)));
             final long hi = upper == null ? ch : Math.min(ch, (long) Math.floor(upper.y(x)));
-            final long n = hi - lo + 1;
+            if (hi < lo) {
+                continue;
+            }
+            // Range of the coordinate y
+            final long[] r = ac == Coordinate.VALUE ?
+                new long[] {lo, hi} :
+                ac.range(PiecewiseContour.toA(lo), PiecewiseContour.toA(hi));
+            final long n = r[1] - r[0] + 1;
             if (n <= 0) {
                 continue;
             }
             Assertions.assertTrue(n <= wmax[i],
                 () -> String.format("Width above the bound: s=%s, n=%d, bound=%s", s, n, wmax[i]));
             if (rng.nextDouble() * wmax[i] < n) {
-                data.add(new double[] {s, PiecewiseContour.toA(lo + rng.nextLong(n))});
+                final long y = r[0] + rng.nextLong(n);
+                data.add(new double[] {s, ac == Coordinate.VALUE ? PiecewiseContour.toA(y) : ac.toV(y)});
             }
         }
         final double acceptance = (double) samples / trials;
@@ -9495,7 +9628,8 @@ class HurwitzZetaTest {
         data.sort(ca.thenComparing(cs));
 
         // Name the file using the range filters and the bounding contours
-        final StringBuilder name = new StringBuilder(64).append("hzeta_rs_domain");
+        final StringBuilder name = new StringBuilder(64).append("hzeta_rs_domain")
+            .append(sc.token("s")).append(ac.token("a"));
         if (minS > 0 || maxS > 0) {
             name.append("_s").append(shortFormat(s0)).append('_').append(shortFormat(s1));
         }
@@ -9526,7 +9660,7 @@ class HurwitzZetaTest {
             if (maxA > 0) {
                 out.printf("# Filtered: a <= %s%n", maxA);
             }
-            out.printf("# Density: uniform in (bits(s), bits(a))%n");
+            out.printf("# Density: uniform in (bits(%s), bits(%s))%n", sc.label("s"), ac.label("a"));
             out.printf("# Pieces: %d (empty %d)%n", np, empty);
             out.printf("# Bound on representable (s, a): %.6g; acceptance %.5f; estimated representable (s, a): %.6g%n",
                 bound, acceptance, bound * acceptance);
@@ -9550,16 +9684,22 @@ class HurwitzZetaTest {
      * <p>The extremes are evaluated with the contour model at the interval ends and the
      * integers next to the vertex. A margin allows for rounding.
      *
+     * <p>For a coordinate of a other than the value, the count is of the coordinates
+     * {@code bits(t(a))} for a in the band. The transform is monotonic, so the bound is the
+     * range of the coordinate for a between the minimum clipped lower bound and the maximum
+     * clipped upper bound. The difference of the quadratics does not apply.
+     *
      * @param lower Lower bound contour (or null).
      * @param upper Upper bound contour (or null).
      * @param cl Lower limit on y.
      * @param ch Upper limit on y.
-     * @param xa Start of the interval.
+     * @param xa Start of the interval (bits of s).
      * @param xe End of the interval (inclusive).
+     * @param ac Coordinate for a.
      * @return the bound (zero if the band is empty)
      */
     private static double widthBound(PiecewiseContour lower, PiecewiseContour upper,
-            long cl, long ch, long xa, long xe) {
+            long cl, long ch, long xa, long xe, Coordinate ac) {
         // Coefficients {A, S} about xa (a constant has none)
         final double[] kl = lower == null ? new double[2] : lower.coefficients(lower.piece(xa), xa);
         final double[] kh = upper == null ? new double[2] : upper.coefficients(upper.piece(xa), xa);
@@ -9571,6 +9711,16 @@ class HurwitzZetaTest {
             kh[0] - kl[0], kh[1] - kl[1]);
         final double hi = Math.min(ch, eh[1]);
         final double lo = Math.max(cl, el[0]);
+        if (ac != Coordinate.VALUE) {
+            if (hi < lo) {
+                return 0;
+            }
+            // Widen to integers. The margin of 1 each side allows for rounding of the model.
+            final long yl = Math.max(cl, (long) Math.floor(lo) - 1);
+            final long yh = Math.min(ch, (long) Math.ceil(hi) + 1);
+            final long[] r = ac.range(PiecewiseContour.toA(yl), PiecewiseContour.toA(yh));
+            return Math.max(0, r[1] - r[0] + 1);
+        }
         final double w = Math.min(hi - lo, ed[1]);
         if (w < 0) {
             // The width is below 1 for every x (floor(hi) < ceil(lo) for w < 0)
