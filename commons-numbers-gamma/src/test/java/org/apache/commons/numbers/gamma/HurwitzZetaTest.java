@@ -8063,7 +8063,7 @@ class HurwitzZetaTest {
             rangeS = String.format("_s%s_%s", shortFormat(minS), shortFormat(maxS));
         }
         if (minA < maxA) {
-            rangeA = String.format("_s%s_%s", shortFormat(minA), shortFormat(maxA));
+            rangeA = String.format("_a%s_%s", shortFormat(minA), shortFormat(maxA));
         }
         try (PrintStream out = getPrintStream(
             String.format("hzeta_domain_%s%s2p%d.txt", rangeS, rangeA, b))) {
@@ -8086,6 +8086,179 @@ class HurwitzZetaTest {
             out.printf("# Rejection rate: %.5g%n", (double) rejects / samples);
             data.forEach(x -> out.printf("%s, %s%n", x[0], x[1]));
         }
+    }
+
+    /**
+     * Create test data for integer {@code s} within the domain bounded by two contours
+     * of the zeta function.
+     *
+     * <p>The input files should contain reference data from an independent zeta
+     * implementation for integer {@code s} with the expected value {@code 2^b}, e.g.
+     * created using {@link #testDataSubNormalDomainDD(int, int)}. Zeta is decreasing
+     * in {@code a}, so the contour {@code 2^bl} provides the lower bound on {@code a}
+     * and the contour {@code 2^bu} the upper bound ({@code bl > bu}). A contour
+     * file may be omitted (empty) and the bound is then set by the range
+     * {@code [minA, maxA]}. The range is ignored if the lower and upper bounds match.
+     *
+     * <p>Contour rows not within a relative {@code eps} of the target are an error,
+     * except for an upper bound at the search limit {@code a = 2^53}, which is used
+     * when the root was not bracketed.
+     *
+     * <p>For each {@code s} in {@code [minS, maxS]} the range of {@code a} is the
+     * bounds clipped to {@code [minA, maxA]}. The value {@code s} is sampled
+     * using the number of representable doubles in the range of {@code a} as the
+     * weight; or with equal weight for each {@code s}. The value {@code a} is
+     * then sampled uniformly from the representable doubles in its range.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "hzeta_is_2p108.csv, 108, hzeta_is_2p-1075.csv, -1075, 1e-6, 50000, 2, 1837, 0, 0, false",
+        "hzeta_is_2p108.csv, 108, hzeta_is_2p-1075.csv, -1075, 1e-6, 50000, 2, 1837, 0, 0, true",
+    })
+    @Disabled("Used to generate test data")
+    void testDataWithinDomainDD(String lowerFile, int bl, String upperFile, int bu,
+        double eps, int samples, int minS, int maxS, double minA, double maxA,
+        boolean equalWeight) throws IOException {
+        Assertions.assertTrue(bl > bu, "Lower bound contour must be above the upper bound contour");
+        Assertions.assertTrue(2 <= minS && minS <= maxS, "Invalid s range");
+        final boolean rangeA = minA < maxA;
+        // Bounds on a for each s. Default to the range of positive doubles.
+        final int n = maxS - minS + 1;
+        final double[] lower = new double[n];
+        final double[] upper = new double[n];
+        Arrays.fill(lower, rangeA ? minA : Double.MIN_VALUE);
+        Arrays.fill(upper, rangeA ? maxA : Double.MAX_VALUE);
+        final double[] maxD = new double[2];
+        final boolean hasLower = loadContour(lowerFile, bl, eps, minS, lower, Math::max, maxD, 0);
+        final boolean hasUpper = loadContour(upperFile, bu, eps, minS, upper, Math::min, maxD, 1);
+
+        // Weights for each s
+        final double[] probability = new double[n];
+        final long[] base = new long[n];
+        final long[] count = new long[n];
+        // Exact sum: the total count can exceed a long
+        BigInteger totalCount = BigInteger.ZERO;
+        int used = 0;
+        for (int i = 0; i < n; i++) {
+            final long lo = Double.doubleToRawLongBits(lower[i]);
+            final long hi = Double.doubleToRawLongBits(upper[i]);
+            if (hi >= lo) {
+                base[i] = lo;
+                count[i] = hi - lo + 1;
+                probability[i] = equalWeight ? 1 : count[i];
+                totalCount = totalCount.add(BigInteger.valueOf(count[i]));
+                used++;
+            }
+        }
+        Assertions.assertTrue(used > 0, "No domain to sample");
+        final double total = equalWeight ? used : totalCount.doubleValue();
+        for (int i = 0; i < n; i++) {
+            probability[i] /= total;
+        }
+
+        // For consistency we keep the same random source as other tests.
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final SharedStateDiscreteSampler sampler =
+            AliasMethodDiscreteSampler.of(rng::nextLong, probability);
+        final ArrayList<double[]> data = new ArrayList<>(samples);
+        for (int k = 0; k < samples; k++) {
+            final int i = sampler.sample();
+            final double a = Double.longBitsToDouble(base[i] + rng.nextLong(count[i]));
+            data.add(new double[] {minS + i, a});
+        }
+        // Sort by a then s
+        final Comparator<double[]> cs = Comparator.comparingDouble(x -> x[0]);
+        final Comparator<double[]> ca = Comparator.comparingDouble(x -> x[1]);
+        data.sort(ca.thenComparing(cs));
+
+        // Name the file using the range filters and the bounding contours
+        final StringBuilder name = new StringBuilder(64)
+            .append("hzeta_is").append(minS).append('_').append(maxS);
+        if (rangeA) {
+            name.append("_a").append(shortFormat(minA)).append('_').append(shortFormat(maxA));
+        }
+        if (hasLower) {
+            name.append("_2p").append(bl);
+        }
+        if (hasUpper) {
+            name.append("_2p").append(bu);
+        }
+        if (equalWeight) {
+            name.append("_eq");
+        }
+        name.append(".txt");
+        try (PrintStream out = getPrintStream(name.toString())) {
+            out.printf("# Integer s in [%d, %d]%n", minS, maxS);
+            if (hasLower) {
+                out.printf("# Lower bound for a: %s (2^%d); max relative deviation = %.5g%n",
+                    lowerFile, bl, maxD[0]);
+            }
+            if (hasUpper) {
+                out.printf("# Upper bound for a: %s (2^%d); max relative deviation = %.5g%n",
+                    upperFile, bu, maxD[1]);
+            }
+            if (rangeA) {
+                out.printf("# Filtered: a in [%s, %s]%n", minA, maxA);
+            }
+            out.printf("# Sampled s: %d / %d%n", used, n);
+            out.printf("# Representable (s, a): %s%n", totalCount);
+            out.printf("# Weight per s: %s%n", equalWeight ? "equal" : "number of doubles in a");
+            out.printf("# Samples: %d%n", samples);
+            data.forEach(x -> out.printf("%d, %s%n", (int) x[0], x[1]));
+        }
+    }
+
+    /**
+     * Load a contour of zeta(s, a) = 2^b for integer s and combine the value a
+     * with the current bound for each s.
+     *
+     * @param filename Contour file (ignored if null or empty).
+     * @param b Contour target 2^b.
+     * @param eps Relative tolerance for the contour value.
+     * @param minS Value of s for index 0 of the bounds.
+     * @param bounds Bounds on a for each s.
+     * @param op Operator to combine the current bound with the contour a.
+     * @param maxD Maximum relative deviation of the contour value from the target.
+     * @param index Index for the maximum deviation.
+     * @return true if the contour was loaded
+     */
+    private static boolean loadContour(String filename, int b, double eps, int minS,
+            double[] bounds, DoubleBinaryOperator op, double[] maxD, int index) {
+        if (filename == null || filename.isEmpty()) {
+            return false;
+        }
+        final BigDecimal t = b < 0 ?
+            BigDecimal.ONE.divide(new BigDecimal(BigInteger.ONE.shiftLeft(-b))) :
+            new BigDecimal(BigInteger.ONE.shiftLeft(b));
+        final boolean[] seen = new boolean[bounds.length];
+        try (DataReader in = new DataReader(filename)) {
+            while (in.next()) {
+                final double s = in.getDouble(0);
+                final double a = in.getDouble(1);
+                Assertions.assertEquals((int) s, s, () -> "Non-integer s: " + Arrays.toString(in.getFields()));
+                final int i = (int) s - minS;
+                if (i < 0 || i >= bounds.length) {
+                    continue;
+                }
+                Assertions.assertFalse(seen[i], () -> "Duplicate s: " + Arrays.toString(in.getFields()));
+                seen[i] = true;
+                final double d = Math.abs(in.getBigDecimal(2).divide(t, MathContext.DECIMAL64).doubleValue() - 1);
+                // A root may not be bracketed for a negative target; the search limit is used
+                if (!(b < 0 && a == 0x1.0p53)) {
+                    Assertions.assertTrue(d <= eps,
+                        () -> "Contour value not at target 2^" + b + ": " + Arrays.toString(in.getFields()));
+                    maxD[index] = Math.max(maxD[index], d);
+                }
+                bounds[i] = op.applyAsDouble(bounds[i], a);
+            }
+        } catch (final IOException ex) {
+            Assertions.fail("Failed to load data: " + filename, ex);
+        }
+        for (int i = 0; i < seen.length; i++) {
+            final int s = i + minS;
+            Assertions.assertTrue(seen[i], () -> "Missing s=" + s + " in " + filename);
+        }
+        return true;
     }
 
     /**
@@ -8261,6 +8434,9 @@ class HurwitzZetaTest {
         // Reflection identity must use max s=1837.
         // zeta(1837, 1.5) = 3.31e-324
         "1837, -1075",
+        // Upper limit for a < 1: above 2^108 zeta(s, a) = a^-s in double-double precision.
+        // a^-s >= 2^107 * zeta(s, 1 + a) as zeta(s, 1 + a) <= zeta(2) < 2.
+        "1837, 108",
     })
     @Disabled("Used to generate test data")
     void testDataSubNormalDomainDD(int maxS, int b) throws IOException {
@@ -8290,14 +8466,26 @@ class HurwitzZetaTest {
         final ArrayList<double[]> points = new ArrayList<>();
 
         // Map zeta(a, s) = t using s
-        final double minA = Math.nextUp(1.0);
-        final double maxA = 0x1p53;
         for (int i = 2; i <= maxS; i++) {
             final int s = i;
+            final double minA;
+            final double maxA;
+            if (b > 0) {
+                // Target is above zeta(s, 1) <= zeta(2) < 2: the root is in a < 1.
+                // zeta(s, a) > a^-s so a^-s = 2^b is a lower bound for the root.
+                // A small margin allows for rounding of the bound.
+                minA = Math.pow(2, (double) -b / s) * (1 - 0x1.0p-20);
+                maxA = 1;
+            } else {
+                // Target is below zeta(s, 1) > 1: the root is in a > 1.
+                minA = Math.nextUp(1.0);
+                maxA = 0x1p53;
+            }
             double a;
             // Note: This starts at s=2. The first s that achieves a sub-normal result
             // with max a is (2^53)^-s = 2^-1022 => s = -log2(2^1022) / log2(2^53) = 19.28.
             // The target may be lower. Catch the no bracket exception and use maxA.
+            // A positive target always has a bracket.
             try {
                 a = solver.findRoot(x -> zeta.apply(s, x).subtract(t).hi(), minA, maxA);
                 // Debug the result
@@ -8308,7 +8496,10 @@ class HurwitzZetaTest {
                 final double expected = e[0] == b ? 1.0 : 0.5;
                 Assertions.assertEquals(expected, z.hi(), expected * 1e-12,
                     () -> "Failed to find target: " + toBigDecimal(z, e[0]));
-            } catch (IllegalArgumentException ignored) {
+            } catch (IllegalArgumentException ex) {
+                if (b > 0) {
+                    throw ex;
+                }
                 a = maxA;
             }
             points.add(new double[] {s, a});
