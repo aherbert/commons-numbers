@@ -620,6 +620,72 @@ public class ZetaPerformance {
         }
     }
 
+    /**
+     * Contains arrays of numbers {@code (x, z)} for a power {@code x^z} close to 1, as used
+     * for {@code x^(1-s)} at the Euler-Maclaurin exit {@code x = a + k} near the pole
+     * {@code s = 1}.
+     *
+     * <p>{@code x} is uniform in {@code [min, max)}; {@code z} is negative with
+     * {@code |z|} log-uniform: {@code 2^e * (1 + u)}, {@code e} uniform in the integer
+     * range {@code [min, max]} of binary exponents and {@code u} uniform in {@code [0, 1)}.
+     *
+     * <p>Samples are drawn using a fixed seed once per trial.
+     */
+    @State(Scope.Benchmark)
+    public static class SmallPowData {
+        /** The size of the data. */
+        @Param({"1000"})
+        private int size;
+        /** The range for x. */
+        @Param({"2:16"})
+        private String rangeX;
+        /** The range for the binary exponent of |z|. */
+        @Param({"-52:-1"})
+        private String rangeExpZ;
+        /** The seed for the random samples. */
+        @Param({"12345"})
+        private long seed;
+
+        /** The x values. */
+        private double[] x;
+        /** The z values. */
+        private double[] z;
+
+        /**
+         * Gets the x values.
+         *
+         * @return the numbers
+         */
+        public double[] getX() {
+            return x;
+        }
+
+        /**
+         * Gets the z values.
+         *
+         * @return the numbers
+         */
+        public double[] getZ() {
+            return z;
+        }
+
+        /**
+         * Create the numbers.
+         */
+        @Setup(Level.Trial)
+        public void setup() {
+            final SplittableRandom rng = new SplittableRandom(seed);
+            x = doubles(rng, size, rangeX, false, false);
+            final int index = rangeExpZ.indexOf(':');
+            final int min = Integer.parseInt(rangeExpZ.substring(0, index));
+            final int max = Integer.parseInt(rangeExpZ.substring(index + 1));
+            z = new double[size];
+            for (int i = 0; i < size; i++) {
+                z[i] = -Math.scalb(1 + rng.nextDouble(), rng.nextInt(min, max + 1));
+            }
+        }
+    }
+
     /** Context for the BigDecimal zeta implementation. */
     private static final class Context {
         // TODO
@@ -1311,5 +1377,62 @@ public class ZetaPerformance {
     @Benchmark
     public void powExp(RiemannZetaData data, Blackhole bh) {
         apply(data.getS(), s -> Math.exp(0.6931471805599453 * -s), bh);
+    }
+
+    /**
+     * Baseline the JMH overhead for the benchmarks of a power close to 1.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void baselineSmallPow(SmallPowData data, Blackhole bh) {
+        apply(data.getX(), data.getZ(), ZetaPerformance::add, bh);
+    }
+
+    /**
+     * Benchmark Math.pow(x, z) for a power close to 1.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void powSmall(SmallPowData data, Blackhole bh) {
+        apply(data.getX(), data.getZ(), Math::pow, bh);
+    }
+
+    /**
+     * Benchmark Math.expm1(z * Math.log(x)) for a power close to 1: the low part of
+     * {@code x^z = 1 + expm1(z ln x)}.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void logExpm1(SmallPowData data, Blackhole bh) {
+        apply(data.getX(), data.getZ(), (x, z) -> Math.expm1(z * Math.log(x)), bh);
+    }
+
+    /**
+     * Benchmark Math.log(x) * z: the log part of {@link #logExpm1(SmallPowData, Blackhole)}.
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void logSmall(SmallPowData data, Blackhole bh) {
+        apply(data.getX(), data.getZ(), (x, z) -> z * Math.log(x), bh);
+    }
+
+    /**
+     * Benchmark Math.expm1(z * x): the expm1 part of
+     * {@link #logExpm1(SmallPowData, Blackhole)} (x in place of the log).
+     *
+     * @param data Test data.
+     * @param bh Data sink.
+     */
+    @Benchmark
+    public void expm1Small(SmallPowData data, Blackhole bh) {
+        apply(data.getX(), data.getZ(), (x, z) -> Math.expm1(z * x), bh);
     }
 }
