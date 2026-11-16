@@ -2286,6 +2286,26 @@ class HurwitzZetaTest {
      * (the minimum correction term evaluated is stored in {@code dynamicMinTerm})
      */
     private static double zetaEm0(double s, double a, int m, boolean divergenceExit) {
+        return zetaEm0(s, a, m, divergenceExit, false);
+    }
+
+    /**
+     * Compute the Hurwitz zeta function using the Euler-Maclaurin sum with N=0.
+     * See {@link #zetaEm0(double, double, int, boolean)}.
+     *
+     * <p>With the pole option {@code a^(1-s)} close to 1 is computed as the double-double
+     * {@code 1 + expm1(w)}, {@code w = (1-s) ln a}, if {@code |w| < POLE_W} (as
+     * HurwitzZeta).
+     *
+     * @param s Argument {@code s > 1}
+     * @param a Argument {@code a > 2}
+     * @param m Maximum number of correction terms.
+     * @param divergenceExit Stop when the terms stop decreasing.
+     * @param pole Compute {@code a^(1-s)} near the pole as {@code 1 + expm1(w)}.
+     * @return zeta(s, a), or NaN if the correction series did not converge
+     * (the minimum correction term evaluated is stored in {@code dynamicMinTerm})
+     */
+    private static double zetaEm0(double s, double a, int m, boolean divergenceExit, boolean pole) {
         // Zero result. Integral bound: zeta <= a^-s + a^(1-s) / (s-1).
         // a^(1-s) <= 2^(-e * (s-1)) with e = exponent(a) (a >= 2^e, e >= 1)
         // 1 / a <= 2^-e; 1 / (s-1) <= 2^-g with g = exponent(s-1)
@@ -2354,6 +2374,17 @@ class HurwitzZetaTest {
                 .add(ra.multiply(0.5))
                 .add(ra.square().multiply(DD.fromQuotient(s, 12)))
                 .add(sum);
+        }
+        // Near the pole a^(1-s) is close to 1: 1 + expm1(w) in double-double precision.
+        // Here a > 2 so the bound on |log2(a)| is the exponent e.
+        dynamicPole = false;
+        if (pole && (s - 1) * e <= POLE_SKIP) {
+            final DD pd = polePow(s, a, 0);
+            if (pd != null) {
+                dynamicPole = true;
+                forwardEm0P = pd.hi();
+                return f.multiply(pd).hi();
+            }
         }
         // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
         // If a^(1-s) is sub-normal then the bracket is small: the absolute error of the
@@ -2439,6 +2470,46 @@ class HurwitzZetaTest {
     /** The power {@code a^(1-s)} of the last call to {@link #zetaEm0}. Used for testing. */
     private static double forwardEm0P;
 
+    /** Set to true if the last call to the dynamic zeta implementation computed
+     * {@code x^(1-s)} near the pole as {@code 1 + expm1(w)}. Used for testing. */
+    private static boolean dynamicPole;
+    /** Maximum magnitude of {@code w = (1-s) ln x} to compute {@code x^(1-s)} as the
+     * double-double {@code 1 + expm1(w)} (as HurwitzZeta). */
+    private static final double POLE_W = 0.5;
+    /** Bound to skip the logarithm for the test {@code |w| < POLE_W} (as HurwitzZeta):
+     * {@code |w| > POLE_W} if {@code (s-1) m > POLE_W / ln 2} where {@code m} is a lower
+     * bound on {@code |log2(x)|}; rounded up as a margin. */
+    private static final double POLE_SKIP = 0.7214;
+
+    /**
+     * Compute {@code x^(1-s)} close to 1 as the double-double {@code 1 + expm1(w)} with
+     * {@code w = (1-s) ln x}, if {@code |w| < POLE_W}. Same arithmetic as HurwitzZeta.
+     *
+     * @param s Argument {@code s}.
+     * @param x Argument {@code x}.
+     * @param xl Round-off of {@code x} ({@code x + xl} is exact).
+     * @return {@code x^(1-s)}, or null if {@code |w| >= POLE_W}
+     */
+    private static DD polePow(double s, double x, double xl) {
+        final double w = (1 - s) * (Math.log(x) + xl / x);
+        if (Math.abs(w) < POLE_W) {
+            return DD.ofSum(1, Math.expm1(w));
+        }
+        return null;
+    }
+
+    /**
+     * Get a lower bound {@code m} on {@code |log2(x)|} for {@code x > 0} (as HurwitzZeta):
+     * {@code x in [2^e, 2^(e+1))} gives {@code m = e} if {@code e >= 0}, else {@code -e-1}.
+     *
+     * @param x Value.
+     * @return the bound
+     */
+    private static int logBound(double x) {
+        final int e = Math.getExponent(x);
+        return e >= 0 ? e : -e - 1;
+    }
+
     /**
      * Options for the dynamic zeta implementation.
      */
@@ -2451,9 +2522,11 @@ class HurwitzZetaTest {
          * (a tail share of the result below 1/4), or the mantissa product of the estimate carries: this saves a power function
          * with no significant change in accuracy. If the sum is scaled a normal
          * {@code x^(1-s)} uses a power function and a sub-normal {@code x^(1-s)} uses the
-         * estimate with an exact square of the half power {@code x^(-s/2)}. */
+         * estimate with an exact square of the half power {@code x^(-s/2)}. Near the pole
+         * {@code x^(1-s)} is computed as {@code 1 + expm1((1-s) ln x)} when the tail
+         * dominates, and in the N=0 evaluation. */
         static final DynamicContext DEFAULT =
-            new DynamicContext(16, 16, 0, FORWARD_N, true, true, false, 3, true, true);
+            new DynamicContext(16, 16, 0, FORWARD_N, true, true, false, 3, true, true, true);
 
         /** Maximum number of terms M of the Euler-Maclaurin correction series. */
         private final int m;
@@ -2486,6 +2559,10 @@ class HurwitzZetaTest {
          * with a power function (even if the tail share is small); otherwise use the
          * estimate {@code x * (x^(-s/2))^2} with an exact square of the half power. */
         private final boolean splitRule;
+        /** Compute {@code x^(1-s)} near the pole as the double-double
+         * {@code 1 + expm1((1-s) ln x)} if {@code |(1-s) ln x| < POLE_W}: at an unscaled
+         * exit when the tail dominates (before the carry rule), and in the N=0 evaluation. */
+        private final boolean pole;
 
         /**
          * @param m Maximum number of correction terms.
@@ -2525,7 +2602,7 @@ class HurwitzZetaTest {
          */
         DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow,
                        boolean skip, double estimateRatio) {
-            this(m, m0, mStep, maxN, useSum, directPow, skip, Double.POSITIVE_INFINITY, false, false);
+            this(m, m0, mStep, maxN, useSum, directPow, skip, Double.POSITIVE_INFINITY, false, false, false);
         }
 
         /**
@@ -2539,9 +2616,12 @@ class HurwitzZetaTest {
          * @param estimateRatio Minimum ratio of the sum to the tail to use the estimate {@code x^-s * x}.
          * @param carry Use the estimate {@code x^-s * x} if the mantissa product carries.
          * @param splitRule Exit rule for a scaled sum.
+         * @param pole Compute {@code x^(1-s)} near the pole as {@code 1 + expm1((1-s) ln x)}.
          */
         DynamicContext(int m, int m0, int mStep, int maxN, boolean useSum, boolean directPow,
-                       boolean skip, double estimateRatio, boolean carry, boolean splitRule) {
+                       boolean skip, double estimateRatio, boolean carry, boolean splitRule,
+                       boolean pole) {
+            this.pole = pole;
             this.carry = carry;
             this.splitRule = splitRule;
             this.estimateRatio = estimateRatio;
@@ -2559,7 +2639,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withM(int terms) {
-            return new DynamicContext(terms, terms, 0, maxN, useSum, directPow, skip, estimateRatio, carry, splitRule);
+            return new DynamicContext(terms, terms, 0, maxN, useSum, directPow, skip, estimateRatio, carry, splitRule, pole);
         }
 
         /**
@@ -2571,7 +2651,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withSchedule(int start, int step) {
-            return new DynamicContext(m, start, step, maxN, useSum, directPow, skip, estimateRatio, carry, splitRule);
+            return new DynamicContext(m, start, step, maxN, useSum, directPow, skip, estimateRatio, carry, splitRule, pole);
         }
 
         /**
@@ -2587,7 +2667,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withMaxN(int n) {
-            return new DynamicContext(m, m0, mStep, n, useSum, directPow, skip, estimateRatio, carry, splitRule);
+            return new DynamicContext(m, m0, mStep, n, useSum, directPow, skip, estimateRatio, carry, splitRule, pole);
         }
 
         /**
@@ -2595,7 +2675,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withUseSum(boolean use) {
-            return new DynamicContext(m, m0, mStep, maxN, use, directPow, skip, estimateRatio, carry, splitRule);
+            return new DynamicContext(m, m0, mStep, maxN, use, directPow, skip, estimateRatio, carry, splitRule, pole);
         }
 
         /**
@@ -2603,7 +2683,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withDirectPow(boolean direct) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, direct, skip, estimateRatio, carry, splitRule);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, direct, skip, estimateRatio, carry, splitRule, pole);
         }
 
         /**
@@ -2611,7 +2691,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withSkip(boolean use) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, use, estimateRatio, carry, splitRule);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, use, estimateRatio, carry, splitRule, pole);
         }
 
         /**
@@ -2620,7 +2700,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withEstimateRatio(double ratio) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, ratio, carry, splitRule);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, ratio, carry, splitRule, pole);
         }
 
         /**
@@ -2628,7 +2708,15 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withCarry(boolean use) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, use, splitRule);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, use, splitRule, pole);
+        }
+
+        /**
+         * @param use Compute {@code x^(1-s)} near the pole as {@code 1 + expm1((1-s) ln x)}.
+         * @return a new instance
+         */
+        DynamicContext withPole(boolean use) {
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, carry, splitRule, use);
         }
 
         /**
@@ -2636,7 +2724,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         DynamicContext withSplitRule(boolean use) {
-            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, carry, use);
+            return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, carry, use, pole);
         }
 
         @Override
@@ -2647,7 +2735,8 @@ class HurwitzZetaTest {
                 (directPow ? "" : " (x^-s * x)") +
                 (directPow && estimateRatio < Double.POSITIVE_INFINITY ? " (x^-s * x if tail*" + estimateRatio + "<sum)" : "") +
                 (directPow && carry ? " (carry)" : "") +
-                (directPow && splitRule ? " (split rule)" : "");
+                (directPow && splitRule ? " (split rule)" : "") +
+                (pole ? " (pole)" : "");
         }
     }
 
@@ -2685,6 +2774,7 @@ class HurwitzZetaTest {
     static double zetaDynamic(double s, double a, DynamicContext dc) {
         forwardPowCount = 0;
         forwardEm0Terms = 0;
+        dynamicPole = false;
         dynamicWastedTerms = 0;
         dynamicSwitchK = -1;
         dynamicExitK = 0;
@@ -2700,7 +2790,7 @@ class HurwitzZetaTest {
         // forward summation: k = 0 is skipped if already tested here.
         final int firstEmK = a > 2 ? 1 : 0;
         if (firstEmK == 1) {
-            final double z = zetaEm0(s, a, Math.max(0, dc.mk(0)), true);
+            final double z = zetaEm0(s, a, Math.max(0, dc.mk(0)), true, dc.pole);
             if (!Double.isNaN(z)) {
                 dynamicExit = forwardExitK == -3 ? DYN_EXIT_TRAP : DYN_EXIT_EM0;
                 if (dynamicExit == DYN_EXIT_EM0) {
@@ -2820,6 +2910,7 @@ class HurwitzZetaTest {
                     // Estimated tail share of the result
                     final double tailEst = pxe * f.hi();
                     boolean direct = dc.directPow && !(tailEst * dc.estimateRatio < s0);
+                    DD pd;
                     if (dc.directPow && scaled && dc.splitRule) {
                         if (pxe < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
                             // Sub-normal x^(1-s): x * (x^(-s/2))^2 with an exact square
@@ -2830,6 +2921,14 @@ class HurwitzZetaTest {
                             // Normal x^(1-s): a power function is within its 1 ulp spec
                             direct = true;
                         }
+                    } else if (direct && !scaled && dc.pole &&
+                        (s - 1) * logBound(x.hi()) <= POLE_SKIP &&
+                        (pd = polePow(s, x.hi(), x.lo())) != null) {
+                        // Near the pole when the tail dominates: x^(1-s) = 1 + expm1(w)
+                        // in double-double precision (as HurwitzZeta). Before the carry rule.
+                        px = pd;
+                        direct = false;
+                        dynamicPole = true;
                     } else if (direct && !scaled && dc.carry &&
                         Math.getExponent(pxe) > Math.getExponent(x.hi()) + Math.getExponent(t)) {
                         // m(x) * m(t) >= 2: the estimate ulp error is <= that of t
