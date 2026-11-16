@@ -8417,6 +8417,7 @@ class HurwitzZetaTest {
         }
 
         try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.txt", b))) {
+            out.printf("# zeta(s, a) ~ 2^%d%n", b);
             points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
         }
     }
@@ -8506,6 +8507,7 @@ class HurwitzZetaTest {
         }
 
         try (PrintStream out = getPrintStream(String.format("hzeta_is_2p%d.txt", b))) {
+            out.printf("# zeta(s, a) ~ 2^%d%n", b);
             points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
         }
     }
