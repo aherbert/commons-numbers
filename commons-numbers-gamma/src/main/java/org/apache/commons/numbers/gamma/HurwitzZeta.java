@@ -317,6 +317,83 @@ public final class HurwitzZeta {
         F = Arrays.stream(FDD).limit(M + 1).mapToDouble(DD::hi).toArray();
     }
 
+    // Implementation Notes
+    //
+    // This describes zeta(s, a) for a > 0. Negative a is described in zetaNegativeImp.
+    //
+    // The function is evaluated using the Euler-Maclaurin (EM) formula. For any N >= 0:
+    //
+    //   zeta(s, a) = S + I + x^-s / 2 + T + R    (x = a+N)
+    //
+    // S = sum of (a+k)^-s for k in [0, N-1]
+    // I = x^(1-s) / (s-1): the integral of the remaining sum to infinity
+    // T = sum_{k=1}^{M} c_k x^(1-s): correction terms (see below)
+    // R = the remainder after M correction terms. For real s > 1 it is bounded by about
+    //     the first omitted term, so R is not computed: T is stopped when a term is
+    //     negligible.
+    //
+    // The code writes the last three parts as one factor times a bracket:
+    //
+    //   zeta(s, a) = S + x^(1-s) * [1/(s-1) + 1/(2x) + sum_k c_k]
+    //   c_k = B_2k / (2k)! * (s)_(2k-1) * x^-2k
+    //
+    // Each correction term has 3 factors:
+    // - a Bernoulli coefficient B_2k / (2k)!, precomputed for k <= M (table F)
+    // - a rising factorial (s)_(2k-1) = s (s+1) ... (s+2k-2)
+    // - a power x^-2k
+    // These give a recursion c_k = F_k * g_k with g_1 = s / x^2 and
+    //   g_k = g_{k-1} * (s+2k-3) * (s+2k-2) / x^2
+    // The coefficients fall by a factor approaching (2pi)^2 (alternating sign), but the
+    // rising factorial grows without limit. So the size ratio of successive terms is about
+    //   |c_k / c_{k-1}| ~ (s+2k)^2 / (2 pi x)^2
+    // The terms decrease until 2k ~ 2 pi x - s and then diverge (an asymptotic series).
+    // Convergence within M terms needs roughly x > (s + 2M) / (2 pi). Increasing N
+    // increases x and moves the point of divergence further away.
+    //
+    // Cases that need at most one power function:
+    // - zero: a bound on zeta is below 2^-1075 (no power function).
+    // - EM0: a > 2 and the corrections converge at x = a (N = 0). The bracket needs no
+    //   power function, so it is tested first and a^(1-s) is computed only on success.
+    //   As a -> inf (or s is tiny) c_1 is negligible and this is the asymptotic
+    //   approximation a^(1-s) * (1/(s-1) + 1/(2a)).
+    // - single term: s >= 350, or a < 1 with a very large a^-s. The rest of the series
+    //   is below the precision of a^-s, so zeta = a^-s.
+    //
+    // Elsewhere the method needs N > 0. A fixed N must be large enough for the tail to
+    // converge over the entire domain, which costs N power functions everywhere. This
+    // implementation chooses N dynamically. Terms (a+k)^-s are added to S for
+    // k = 0, 1, ... and at each x = a + k the bracket is tested: it is used if a
+    // correction term falls below 2^-56 of the estimated result S + x^(1-s)/(s-1)
+    // within M terms, before the terms begin to increase. The estimate needs no extra
+    // power function: x^(1-s) ~ x * x^-s. The test is cheap compared with a power
+    // function and stops at the first terms that diverge. If the terms (a+k)^-s fall
+    // fast enough (s >> a) the sum stops without the tail, when a bound on the remaining
+    // series is negligible. At N = MAX_N the bracket is used without a convergence test;
+    // with M = 16 the domain requires at most N = 7.
+    //
+    // At the exit x^(1-s) is estimated as x * x^-s (no power function) unless the
+    // I term dominates the result (s near 1), where a direct power function is more
+    // accurate. JMH benchmarks against a fixed N implementation show fewer power
+    // function calls and a lower runtime across the domain.
+    //
+    // Accuracy depends mainly on the power function. S and the bracket are computed
+    // in double-double precision and the result is rounded once, so the remaining
+    // error is that of a power function, scaled by the ratio of the mantissas of the
+    // result and the power (up to 2), plus the final rounding.
+    //
+    // When a + k is not exact in double precision, rounding it introduces a relative
+    // error of up to ~s * 2^-53 in (a+k)^-s, which can be hundreds of ulp. The power is
+    // corrected using the round-off of (a+k) (extPowxpn) at a small cost relative to
+    // the power function.
+    //
+    // A sub-normal power has reduced precision: one bit is lost for each power of 2
+    // below 2^-1022. When a term falls below 2^-1022 the whole sum is switched to a
+    // scaled mode where every term and the sum are multiplied by 2^1022, and the result
+    // is scaled back once at the end. A scaled term uses a split power:
+    //   b^y * 2^1022 = b^(y/2) * 2^1022 * b^(y/2)
+    // This needs one power function call and has full 53-bit precision. The only
+    // overhead is recomputing the first sub-normal term.
+
     /**
      * Compute the power function {@code (x+n)^z} in double precision.
      */
