@@ -178,6 +178,7 @@ class HurwitzZetaTest {
         "hzeta_root_s23_1067_na2b0_2b6.csv",
         "hzeta_root_s3_25_na2b7_2b11.csv",
         "hzeta_root_s3_21_na2b12_2b14.csv",
+        "hzeta_root_s3_3_na2b15_2b15.csv",
     };
     /** Filenames of resources used for zeta function using sub-normal terms. */
     private static final String[] SUB_NORMAL_RESOURCES = {
@@ -4658,6 +4659,7 @@ class HurwitzZetaTest {
         "hzeta_s6_50_na400_999_p0.5_p0x1p-3.csv", "hzeta_s7_51_na400_999_p0.5_p0x1p-3.csv",
         "hzeta_root_s3_21_na2b0_2b6.csv", "hzeta_root_s23_1067_na2b0_2b6.csv",
         "hzeta_root_s3_25_na2b7_2b11.csv", "hzeta_root_s3_21_na2b12_2b14.csv",
+        "hzeta_root_s3_3_na2b15_2b15.csv",
     })
     @Disabled("Used to compare the hybrid negative zeta implementation")
     void testZetaNegativeHybrid(String filename) throws IOException {
@@ -7304,18 +7306,25 @@ class HurwitzZetaTest {
     }
 
     /**
-     * Create test data by finding roots of the the zeta function.
+     * Create test data at the roots of the zeta function for {@code a < 0} and odd {@code s}.
      *
-     * <p>The approximate cancellation of the positive and negative terms is computed in
-     * bits. This does not exceed 55 bits, and trends down as s and |a| increase due to
-     * the increasing magnitude of ulp(a) affecting the largest terms.
+     * <p>Between the poles at {@code -(t+1)} and {@code -t} (integer {@code t >= 0}) zeta
+     * falls from +inf to -inf, so each interval has one root. For each root the double closest
+     * to the root and its two neighbours are recorded as (s, a) for independent evaluation if
+     * the cancellation of the positive and negative terms is at least 45 bits for any of the
+     * three. A root at a half-integer is recorded by the same rule using its neighbours.
      *
-     * <p>This sets the limit on double-double computation as 2 ulp in the double result.
-     * This would require exact 106-bit double-double arguments, which is not possible.
-     * The DD zeta function can be optimised to ~105 bits of precision.
+     * <p>Cancellation (bits) of the positive sum x and negative sum y is
+     * {@code max(exponent(x), exponent(y)) - exponent(x + y)}. The maximum found is 55 bits.
+     * It trends down as s and |a| increase as ulp(a) limits how close a double can be to the
+     * root. With 55 bits of cancellation a double-double evaluation (106 bits) retains ~51 bits:
+     * a relative error up to 2^-51 (2 to 4 ulp), assuming exact double-double arguments.
      *
-     * <p>This uses positive a parameters for convenience. Cases with cancellation below a
-     * threshold are ignored.
+     * @param ls Lower bound for s (odd, {@code >= 3}).
+     * @param us Upper bound for s.
+     * @param minb Lower band: the pole intervals with {@code t in [2^(b-1), 2^b)}
+     * ({@code t = 0} for {@code b = 0}).
+     * @param maxb Upper band.
      */
     @ParameterizedTest
     @CsvSource({
@@ -7323,72 +7332,55 @@ class HurwitzZetaTest {
         // when a < 0 and s is odd.
         //
         // Sides of the computation (i.e. positive and negative sums)
-        //   x = a - ceil(a) : x in -(1, 0)
+        //   x = a - ceil(a) : x in (-1, 0)
         //   zeta(s, x + 1) - [ zeta(s, -x) - zeta(s, 1 - a) ]
         //
         // The most significant terms on each side are: -1 < x < 0 < 1 + x < 1.
-        // The positive side is larger than the negative side when x = -0.5
-        // as the series is infinite on one side and not the other.
-        // The root must be x >= -0.5 to bias the most significant term to be larger
-        // on the negative side.
+        // At x = -0.5 these are equal and the positive side is larger as its series is
+        // infinite; the root has x in (-0.5, 0) where the negative term is larger.
         //
-        // As s increases the magnitude of each side increases as the terms with (0, 1)^-s
-        // increase in size. For the two sides to cancel x -> -0.5.
-        // When s is large the two terms (0.5 +/- ulp(a))^-s dominate the two sides.
-        // If s >= 1067 the difference between terms overflows for any a.
-        // The true root is never at a half-integer as total cancellation will result
-        // in the positive value zeta(s, 1 - a). However in double precision
-        // the value of x is limited by ulp(a). So the smallest value may be computed
-        // when x is half-integer. Thus zeta(s, 1 - a) is the upper bound on the value at
-        // the root.
+        // As s increases the terms (0, 1)^-s dominate and the root x -> -0.5. For large s the
+        // two terms (0.5 +/- ulp)^-s dominate. With the smallest ulp (x = -0.5 + 2^-54)
+        // their difference is ~s * 2^(s-52), which overflows for s >= 1067.
         //
-        // If |a| is large the cancellation is less around (0.5 +/- ulp(a))^-s as the ulp
-        // of |a| pushes the dominant terms ~0.5^-s away from each other. However the
-        // sides have more terms and cancellation can still be large.
+        // Half-integer roots: the true root is never at a half-integer (zeta there is
+        // zeta(s, 1 - a) > 0). Near a = -(n + 0.5) the root is offset by
+        //   delta(n) ~ zeta(s, n + 1.5) / |C'|, |C'| = s * 2^(s+2) * (1 - 2^-(s+1)) * zeta(s+1)
+        // (the slope of the sum over all n of (u + n)^-s at u = 0.5). If delta(n) < ulp(a)/2
+        // the closest double is the half-integer. Non-trivial roots therefore end at |a| ~:
+        //   s  limit      code detection (sufficient condition, conservative)
+        //   3  37,562     2^46
+        //   5  341        2^41
+        //   7  47.5       2^38
+        //   9  16         2^34
+        //   11 7.7        2^31
+        //   13 4.2        2^27
+        //   15 2.7        2^24
+        //   17 1.9        2^20
+        //   19 1.3        2^17
+        //   21+ < 1       2^14 .. 2^0 (s = 31)
+        // The code detects half-integer roots when a single negative term (0.5 - ulp)^-s
+        // is larger than the whole positive side zeta(s, 0.5 + ulp); roots are then not
+        // searched. With the rows below the search is complete for non-trivial roots with
+        // cancellation >= 45 bits: s >= 5 is searched beyond its limit; for s = 3 the last
+        // such root is at |a| ~ 26,560 and none exist in [2^15, 37,562] (the delta(n) model
+        // predicted exactly the roots found for b = 12 to 15).
         //
-        // When a single negative term (-0.5+ulp(a))^-s is larger than the entire positive
-        // side (zeta(s, 0.5+ulp(a)) then the roots must be half-integer.
-        // Detection of half-integer roots:
-        // s  2^b
-        // 31 0
-        // 29 1
-        // 27 4
-        // 25 7
-        // 23 11
-        // 21 14   <-- Impractical to search after this point
-        // 19 17
-        // 17 20
-        // 15 24
-        // 13 27
-        // 11 31
-        // 9 34
-        // 7 38
-        // 5 41
-        // 3 46
-        //
-        // The following cases should find roots where cancellation is high and record
-        // them to be verified using e.g. mpmath or MATLAB zeta functions.
-        // Note: Inspection of the output from an independent zeta evaluation should
-        // see a sign change for each case as they are roots in double precision.
-        // The zeta values computed by this implementation are recorded in the output
-        // so visual verification is possible.
-        //
-        // When s is large, search small |a|.
-        // When s is small, search larger |a|.
-        // When |a| is very large, all roots are at half-integer
+        // Evaluation: the output records (s, a) and the value from this implementation.
+        // The independent values should change sign across each recorded root.
+        // Note: mpmath zeta(s, a) is unreliable for a < 0 (wrong values below a precision
+        // of ~2|a|/3 digits); use hzeta.py which evaluates zeta at positive arguments only.
 
-        // Max cancellation 55-bits (~1.9s)
+        // Max cancellation 55-bits
         "3, 21, 0, 6",
-        // Max cancellation 52-bits (~0.5s)
+        // Max cancellation 52-bits
         "23, 1067, 0, 6",
-        // Max cancellation 52-bits (~36s)
+        // Max cancellation 52-bits
         "3, 25, 7, 11",
-        // Max cancellation 51-bits (~250s)
+        // Max cancellation 51-bits
         "3, 21, 12, 14",
-        // Higher b is impractical to search.
-        // This requires optimisation of the BigDecimal implementation to detect
-        // when power terms are sub-normal and stop.
-        // "3, 19, 15, 17",
+        // Max cancellation 50-bits. s = 3 only (s >= 5 has no non-trivial roots)
+        "3, 3, 15, 15",
     })
     @Disabled("Used to generate test data")
     void testDataZetaRoots(int ls, int us, int minb, int maxb) throws IOException {
@@ -7415,7 +7407,7 @@ class HurwitzZetaTest {
         final double[] cancellation = new double[us + 2];
         // Lowest tolerance allowed
         final BrentSolver solver = new BrentSolver(0, 0, 0);
-        // Search for roots in (2^-b, 0) for all b.
+        // Search the pole intervals (-(t+1), -t) for t in [2^(b-1), 2^b) (t = 0 when b = 0).
         // Each increment in b increases the ulp which eventually forces all roots to be half-integer.
         int upperS = us;
         long time = System.nanoTime();
@@ -7426,6 +7418,8 @@ class HurwitzZetaTest {
             }
             final double ua = Math.scalb(1.0, b);
             final double la = ua > 1 ? ua * 0.5 : 0;
+            // ulp at the top of the band. For b = 0 this is larger than ulp(a) for |a| < 0.5,
+            // so half-integer detection may be early; the sign change assertion would fail.
             final double ulp = Math.ulp(ua - 0.5);
             // Iterate s
             for (int s = ls; s <= upperS; s += 2) {
