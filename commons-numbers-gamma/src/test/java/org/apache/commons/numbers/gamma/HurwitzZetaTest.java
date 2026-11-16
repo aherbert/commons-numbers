@@ -8888,15 +8888,8 @@ class HurwitzZetaTest {
          * @return y (not rounded to an integer)
          */
         private static double quadratic(double[] p0, double[] p1, double[] p2, long x) {
-            // Coordinates relative to x0 to retain precision
-            final long x0 = bits(p0[0]);
-            final double u1 = bits(p1[0]) - x0;
-            final double u2 = bits(p2[0]) - x0;
-            final double u = x - x0;
-            // Lagrange form
-            return y(p0) * (u - u1) * (u - u2) / (u1 * u2) +
-                   y(p1) * u * (u - u2) / (u1 * (u1 - u2)) +
-                   y(p2) * u * (u - u1) / (u2 * (u2 - u1));
+            return PiecewiseContour.quadratic(bits(p0[0]), y(p0), bits(p1[0]), y(p1),
+                bits(p2[0]), y(p2), x);
         }
 
         /**
@@ -8927,6 +8920,388 @@ class HurwitzZetaTest {
          */
         private static int exponentClass(double a) {
             return a == Double.MAX_VALUE ? CLIP : Math.getExponent(a);
+        }
+    }
+
+    /**
+     * Test the loader of a piecewise quadratic contour.
+     *
+     * <p>The contour model must reproduce the nodes, and the interpolated {@code a} must
+     * be finite and positive across the range of {@code s}. A contour loaded with the
+     * wrong target must fail.
+     *
+     * @param filename Contour file.
+     * @param b Contour target 2^b.
+     * @param eps Relative tolerance for the contour value.
+     * @param pieces Expected number of pieces.
+     * @param clipped Expected number of clipped nodes.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "hzeta_rs_2p-1075.csv, -1075, 1e-6, 8490, 9",
+        "hzeta_rs_2p108.csv, 108, 1e-6, 3056, 0",
+    })
+    void testPiecewiseContour(String filename, int b, double eps, int pieces, int clipped) {
+        final PiecewiseContour c = PiecewiseContour.load(filename, b, eps);
+        Assertions.assertEquals(b, c.target());
+        Assertions.assertEquals(pieces, c.pieces(), "pieces");
+        Assertions.assertEquals(clipped, c.clipped(), "clipped");
+        Assertions.assertTrue(c.maxDeviation() <= eps, "max deviation");
+
+        // The contour is exact at the nodes. The quadratic of each piece evaluated at
+        // its nodes has a rounding error of a few ulp of y (relative ~2^-50).
+        for (int i = 0; i < c.size(); i++) {
+            final double s = Double.longBitsToDouble(c.nodeX(i));
+            Assertions.assertEquals(c.nodeA(i), c.a(s), "Node a");
+            Assertions.assertEquals(c.nodeY(i), c.y(s), "Node y");
+        }
+        for (int j = 0; j < c.pieces(); j++) {
+            final int k = 2 * j;
+            for (int i = k; i <= k + 2; i++) {
+                final double y = PiecewiseContour.quadratic(c.nodeX(k), c.nodeY(k),
+                    c.nodeX(k + 1), c.nodeY(k + 1), c.nodeX(k + 2), c.nodeY(k + 2), c.nodeX(i));
+                final int ii = i;
+                TestUtils.assertEquals(c.nodeY(i), y, 4, null, () -> "Quadratic at node " + ii);
+            }
+        }
+
+        // Interpolated a is a finite positive double for s across the range,
+        // including within the clipped region (y ~ 2^62 is not exact as a double)
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final long x0 = c.nodeX(0);
+        final long x1 = c.nodeX(c.size() - 1);
+        for (int i = 0; i < 100000; i++) {
+            final double s = Double.longBitsToDouble(rng.nextLong(x0, x1 + 1));
+            final double a = c.a(s);
+            Assertions.assertTrue(a > 0 && a <= Double.MAX_VALUE, () -> "s=" + s + ", a=" + a);
+        }
+
+        // Outside the range of s
+        Assertions.assertThrows(IllegalArgumentException.class,
+            () -> c.y(Math.nextDown(c.minS())));
+        Assertions.assertThrows(IllegalArgumentException.class,
+            () -> c.y(Math.nextUp(c.maxS())));
+
+        // Wrong target
+        Assertions.assertThrows(AssertionError.class,
+            () -> PiecewiseContour.load(filename, b + 1, eps));
+    }
+
+    /**
+     * A piecewise quadratic contour {@code a_b(s)} of the zeta function
+     * {@code zeta(s, a) = 2^b} for real {@code s}.
+     *
+     * <p>The contour is loaded from a file of rows {@code (s, a, zeta)} created by
+     * {@link #testDataContour(int, double, int)} and evaluated with an independent zeta
+     * implementation. The rows are sorted by {@code s} as: end, mid, end, ..., end. Each
+     * (end, mid, end) triple defines one piece: the quadratic through the nodes in the
+     * coordinates {@code x = bits(s)} and {@code y = bits(a) - bits(1)}. The midpoint need
+     * not be at the centre of the piece.
+     *
+     * <p>This is the interpolation model used by {@link ContourBuilder} to subdivide the
+     * contour, so the contour is reconstructed with the tolerance used to create it.
+     *
+     * <p>Note: {@code y} is a double. Its resolution is 2^10 doubles of {@code a} for
+     * {@code a} close to {@code MAX_VALUE} ({@code |y| ~ 2^62}). An interpolated
+     * {@code y} is clamped to the bits of the positive finite doubles after rounding
+     * to an integer.
+     */
+    private static final class PiecewiseContour {
+        /** Bits of 1.0: origin for the y coordinate. */
+        private static final long ONE = Double.doubleToRawLongBits(1.0);
+        /** Minimum y: bits(MIN_VALUE) - bits(1). */
+        private static final long Y_MIN = Double.doubleToRawLongBits(Double.MIN_VALUE) - ONE;
+        /** Maximum y: bits(MAX_VALUE) - bits(1). */
+        private static final long Y_MAX = Double.doubleToRawLongBits(Double.MAX_VALUE) - ONE;
+
+        /** Contour target 2^b. */
+        private final int b;
+        /** Node values s. */
+        private final double[] s;
+        /** Node values a. */
+        private final double[] a;
+        /** Node coordinates x = bits(s). */
+        private final long[] x;
+        /** Node coordinates y = bits(a) - bits(1). */
+        private final double[] y;
+        /** Number of clipped nodes (a = MAX_VALUE). */
+        private final int clipped;
+        /** Maximum relative deviation of the unclipped node values from the target. */
+        private final double maxDeviation;
+
+        /**
+         * @param b Contour target 2^b.
+         * @param s Node values s.
+         * @param a Node values a.
+         * @param clipped Number of clipped nodes.
+         * @param maxDeviation Maximum relative deviation from the target.
+         */
+        private PiecewiseContour(int b, double[] s, double[] a, int clipped, double maxDeviation) {
+            this.b = b;
+            this.s = s;
+            this.a = a;
+            this.x = Arrays.stream(s).mapToLong(Double::doubleToRawLongBits).toArray();
+            this.y = Arrays.stream(a).map(v -> Double.doubleToRawLongBits(v) - ONE).toArray();
+            this.clipped = clipped;
+            this.maxDeviation = maxDeviation;
+        }
+
+        /**
+         * Load the contour {@code zeta(s, a) = 2^b} from a resource file of rows
+         * {@code (s, a, zeta)}.
+         *
+         * <p>The file must define at least one piece: an odd number of rows (at least 3),
+         * with {@code s > 1} strictly increasing and finite positive {@code a}; the contour
+         * must be monotonic in {@code s}. Every node must be within a relative {@code eps}
+         * of the target. A clipped node ({@code a = MAX_VALUE}) need only have a value
+         * above the target: the root is beyond the largest double. A node cannot be
+         * dropped as this would break the pieces.
+         *
+         * @param filename Resource file.
+         * @param b Contour target 2^b.
+         * @param eps Relative tolerance for the contour value.
+         * @return the contour
+         */
+        static PiecewiseContour load(String filename, int b, double eps) {
+            final BigDecimal t = b < 0 ?
+                BigDecimal.ONE.divide(new BigDecimal(BigInteger.ONE.shiftLeft(-b))) :
+                new BigDecimal(BigInteger.ONE.shiftLeft(b));
+            final ArrayList<double[]> rows = new ArrayList<>();
+            int clipped = 0;
+            double maxD = 0;
+            try (DataReader in = new DataReader(filename)) {
+                while (in.next()) {
+                    final double s = in.getDouble(0);
+                    final double a = in.getDouble(1);
+                    final String row = Arrays.toString(in.getFields());
+                    Assertions.assertTrue(s > 1 && s < Double.POSITIVE_INFINITY, () -> "Invalid s: " + row);
+                    Assertions.assertTrue(a > 0 && a <= Double.MAX_VALUE, () -> "Invalid a: " + row);
+                    if (!rows.isEmpty()) {
+                        Assertions.assertTrue(rows.get(rows.size() - 1)[0] < s,
+                            () -> "s not strictly increasing: " + row);
+                    }
+                    // Relative deviation from the target: (z - t) / t = z / t - 1
+                    final double d = in.getBigDecimal(2).divide(t, MathContext.DECIMAL64).doubleValue() - 1;
+                    if (a == Double.MAX_VALUE) {
+                        Assertions.assertTrue(d >= -eps,
+                            () -> "Clipped contour value below the target 2^" + b + ": " + row);
+                        clipped++;
+                    } else {
+                        Assertions.assertTrue(Math.abs(d) <= eps,
+                            () -> "Contour value not at target 2^" + b + ": " + row);
+                        maxD = Math.max(maxD, Math.abs(d));
+                    }
+                    rows.add(new double[] {s, a});
+                }
+            } catch (final IOException ex) {
+                Assertions.fail("Failed to load data: " + filename, ex);
+            }
+            final int n = rows.size();
+            Assertions.assertTrue(n >= 3 && (n & 1) == 1,
+                () -> "Rows must be (end, mid, end, ..., end): " + n + " in " + filename);
+            final double[] s = rows.stream().mapToDouble(r -> r[0]).toArray();
+            final double[] a = rows.stream().mapToDouble(r -> r[1]).toArray();
+            // Monotonic. If the ends are equal it must be constant.
+            final int sign = Double.compare(a[n - 1], a[0]);
+            for (int i = 1; i < n; i++) {
+                final int c = Double.compare(a[i], a[i - 1]);
+                final int ii = i;
+                Assertions.assertTrue(sign == 0 ? c == 0 : c * sign >= 0,
+                    () -> "Contour not monotonic at s=" + s[ii] + " in " + filename);
+            }
+            return new PiecewiseContour(b, s, a, clipped, maxD);
+        }
+
+        /**
+         * @return the contour target b (2^b)
+         */
+        int target() {
+            return b;
+        }
+
+        /**
+         * @return the number of nodes
+         */
+        int size() {
+            return s.length;
+        }
+
+        /**
+         * @return the number of pieces
+         */
+        int pieces() {
+            return s.length >> 1;
+        }
+
+        /**
+         * @return the number of clipped nodes (a = MAX_VALUE)
+         */
+        int clipped() {
+            return clipped;
+        }
+
+        /**
+         * @return the maximum relative deviation of the unclipped node values from the target
+         */
+        double maxDeviation() {
+            return maxDeviation;
+        }
+
+        /**
+         * @return the minimum s
+         */
+        double minS() {
+            return s[0];
+        }
+
+        /**
+         * @return the maximum s
+         */
+        double maxS() {
+            return s[s.length - 1];
+        }
+
+        /**
+         * Get the node coordinate x = bits(s). Nodes of piece {@code j} are
+         * {@code 2j, 2j+1, 2j+2}.
+         *
+         * @param i Node index.
+         * @return x
+         */
+        long nodeX(int i) {
+            return x[i];
+        }
+
+        /**
+         * Get the node coordinate y = bits(a) - bits(1).
+         *
+         * @param i Node index.
+         * @return y
+         */
+        double nodeY(int i) {
+            return y[i];
+        }
+
+        /**
+         * Get the node value a.
+         *
+         * @param i Node index.
+         * @return a
+         */
+        double nodeA(int i) {
+            return a[i];
+        }
+
+        /**
+         * Get the index of the piece containing x. A node shared by two pieces is in
+         * the piece to its right (the last node is in the last piece).
+         *
+         * @param xs Bits of s.
+         * @return the piece index
+         * @throws IllegalArgumentException if x is outside the range of the contour
+         */
+        int piece(long xs) {
+            if (xs < x[0] || xs > x[x.length - 1]) {
+                throw new IllegalArgumentException("s outside the contour: " + Double.longBitsToDouble(xs));
+            }
+            final int i = Arrays.binarySearch(x, xs);
+            // Index of the node at or below x
+            final int k = i >= 0 ? i : -i - 2;
+            return Math.min(k >> 1, pieces() - 1);
+        }
+
+        /**
+         * Evaluate the contour model at x. The result is not rounded or clamped.
+         * At a node the result is the node y; otherwise the quadratic of the piece.
+         *
+         * @param xs Bits of s.
+         * @return y
+         * @throws IllegalArgumentException if x is outside the range of the contour
+         */
+        double y(long xs) {
+            final int i = node(xs);
+            if (i >= 0) {
+                return y[i];
+            }
+            final int k = piece(xs) << 1;
+            return quadratic(x[k], y[k], x[k + 1], y[k + 1], x[k + 2], y[k + 2], xs);
+        }
+
+        /**
+         * Get the index of the node at x.
+         *
+         * @param xs Bits of s.
+         * @return the node index, or a negative value if x is not a node
+         */
+        private int node(long xs) {
+            return Arrays.binarySearch(x, xs);
+        }
+
+        /**
+         * Evaluate the contour model at s.
+         *
+         * @param v Value s.
+         * @return y
+         * @throws IllegalArgumentException if s is outside the range of the contour
+         */
+        double y(double v) {
+            return y(Double.doubleToRawLongBits(v));
+        }
+
+        /**
+         * Evaluate the contour {@code a_b(s)}: the node a at a node; otherwise the
+         * model y rounded to the nearest integer and clamped to the positive finite doubles.
+         *
+         * @param v Value s.
+         * @return a
+         * @throws IllegalArgumentException if s is outside the range of the contour
+         */
+        double a(double v) {
+            final long xs = Double.doubleToRawLongBits(v);
+            final int i = node(xs);
+            if (i >= 0) {
+                return a[i];
+            }
+            return Double.longBitsToDouble(clamp(Math.round(y(xs))) + ONE);
+        }
+
+        /**
+         * Clamp y to the positive finite doubles: [bits(MIN_VALUE), bits(MAX_VALUE)] - bits(1).
+         *
+         * @param v Value y.
+         * @return the clamped y
+         */
+        static long clamp(long v) {
+            return Math.min(Y_MAX, Math.max(Y_MIN, v));
+        }
+
+        /**
+         * Evaluate the quadratic through the nodes (x_i, y_i), i = 0, 1, 2, at the point x.
+         *
+         * <p>This is the interpolation model of a contour piece (end, mid, end) used to
+         * create (see {@link ContourBuilder}) and reconstruct a contour.
+         *
+         * <p>The point x is expected to be within [x_0, x_2]. Outside this range the result
+         * is an extrapolation.
+         *
+         * @param x0 Node 0 x.
+         * @param y0 Node 0 y.
+         * @param x1 Node 1 x.
+         * @param y1 Node 1 y.
+         * @param x2 Node 2 x.
+         * @param y2 Node 2 y.
+         * @param x Point x.
+         * @return y (not rounded to an integer)
+         */
+        static double quadratic(long x0, double y0, long x1, double y1, long x2, double y2, long x) {
+            // Coordinates relative to x0 to retain precision
+            final double u1 = x1 - x0;
+            final double u2 = x2 - x0;
+            final double u = x - x0;
+            // Lagrange form
+            return y0 * (u - u1) * (u - u2) / (u1 * u2) +
+                   y1 * u * (u - u2) / (u1 * (u1 - u2)) +
+                   y2 * u * (u - u1) / (u2 * (u2 - u1));
         }
     }
 
