@@ -37,6 +37,7 @@ import java.util.function.DoublePredicate;
 import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
+import java.util.function.LongToDoubleFunction;
 import java.util.stream.Stream;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
@@ -9266,6 +9267,51 @@ class HurwitzZetaTest {
         }
 
         /**
+         * Get the coefficients of the quadratic of a piece about the point p:
+         * {@code q(x) ~ q(p) + S (x - p) + A (x - p)^2}.
+         *
+         * <p>This is used to locate the extremes of the quadratic (or of a difference of
+         * quadratics) within an interval. The quadratic is not evaluated with these
+         * coefficients.
+         *
+         * @param j Piece index.
+         * @param p Reference point x.
+         * @return {A, S}
+         */
+        double[] coefficients(int j, long p) {
+            final int k = j << 1;
+            final double u1 = x[k + 1] - x[k];
+            final double u2 = x[k + 2] - x[k];
+            // Newton divided differences: q = y0 + d1 v + A v (v - u1), v = x - x0
+            final double d1 = (y[k + 1] - y[k]) / u1;
+            final double d2 = (y[k + 2] - y[k + 1]) / (u2 - u1);
+            final double a2 = (d2 - d1) / u2;
+            // q'(v) = d1 + A (2v - u1)
+            final double v = p - x[k];
+            return new double[] {a2, d1 + a2 * (2 * v - u1)};
+        }
+
+        /**
+         * Convert a value a to the y coordinate.
+         *
+         * @param v Value a.
+         * @return bits(a) - bits(1)
+         */
+        static long toY(double v) {
+            return Double.doubleToRawLongBits(v) - ONE;
+        }
+
+        /**
+         * Convert a y coordinate to the value a.
+         *
+         * @param v Value y.
+         * @return a
+         */
+        static double toA(long v) {
+            return Double.longBitsToDouble(v + ONE);
+        }
+
+        /**
          * Clamp y to the positive finite doubles: [bits(MIN_VALUE), bits(MAX_VALUE)] - bits(1).
          *
          * @param v Value y.
@@ -9303,6 +9349,267 @@ class HurwitzZetaTest {
                    y1 * u * (u - u2) / (u1 * (u1 - u2)) +
                    y2 * u * (u - u1) / (u2 * (u2 - u1));
         }
+    }
+
+    /**
+     * Create test data for real {@code s} within the domain bounded by two contours of
+     * the zeta function.
+     *
+     * <p>The contours {@code a_b(s)} are piecewise quadratic functions of {@code bits(s)}
+     * created by {@link #testDataContour(int, double, int)}, evaluated with an independent
+     * zeta implementation, and loaded with {@link PiecewiseContour#load(String, int, double)}.
+     * Zeta is decreasing in {@code a}, so the contour {@code 2^bl} is the lower bound on
+     * {@code a} and the contour {@code 2^bu} the upper bound ({@code bl > bu}). A contour file
+     * may be omitted (empty) and the bound is then {@code minA} or {@code maxA}.
+     *
+     * <p>Optional limits (ignored if not positive): {@code [minA, maxA]} clips the bounds on
+     * {@code a} (default: the positive finite doubles); {@code [minS, maxS]} sets the range
+     * of {@code s}, which must be within the range of the contours (default: the common
+     * range of the contours).
+     *
+     * <p>Samples are uniform in {@code x = bits(s)} and {@code y = bits(a)}: every
+     * representable {@code (s, a)} in the band has the same probability. The range of
+     * {@code x} is split at the ends of the contour pieces, so in each piece each bound is
+     * a single quadratic (or a constant). A piece is chosen with probability proportional
+     * to {@code dx * Wmax}, where {@code Wmax} is a bound on the number of doubles {@code a}
+     * in the band for any {@code x} in the piece; {@code x} is uniform in the piece and
+     * accepted with probability {@code W(x) / Wmax}; {@code y} is then uniform in
+     * {@code [ceil(y_lo(x)), floor(y_hi(x))]}. This is exact for the contour model. The bound
+     * is checked for every trial.
+     *
+     * <p>The contour model is within a tolerance of the true contour (see
+     * {@link ContourBuilder}). Samples close to a contour may be just outside the band.
+     * These are valid test data: the reference value is computed independently.
+     *
+     * @param lowerFile Contour file for the lower bound on a (may be empty).
+     * @param bl Lower bound contour target 2^bl.
+     * @param upperFile Contour file for the upper bound on a (may be empty).
+     * @param bu Upper bound contour target 2^bu.
+     * @param eps Relative tolerance for the contour values.
+     * @param samples Number of samples.
+     * @param minS Minimum s (ignored if not positive).
+     * @param maxS Maximum s (ignored if not positive).
+     * @param minA Minimum a (ignored if not positive).
+     * @param maxA Maximum a (ignored if not positive).
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // a >= 1 under the 2^-1075 contour (non-zero result)
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 1, 0",
+        // a < 1 between the 2^108 and 2^-1075 contours (a = 1 - 2^-53)
+        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 0, 0.9999999999999999",
+    })
+    @Disabled("Used to generate test data")
+    void testDataWithinDomainReal(String lowerFile, int bl, String upperFile, int bu,
+        double eps, int samples, double minS, double maxS, double minA, double maxA) throws IOException {
+        final PiecewiseContour lower = lowerFile == null || lowerFile.isEmpty() ?
+            null : PiecewiseContour.load(lowerFile, bl, eps);
+        final PiecewiseContour upper = upperFile == null || upperFile.isEmpty() ?
+            null : PiecewiseContour.load(upperFile, bu, eps);
+        if (lower != null && upper != null) {
+            Assertions.assertTrue(bl > bu, "Lower bound contour must be above the upper bound contour");
+        }
+
+        // Range of s: the common range of the contours, limited by [minS, maxS]
+        double s0 = minS > 0 ? minS : 1;
+        double s1 = maxS > 0 ? maxS : Double.POSITIVE_INFINITY;
+        for (final PiecewiseContour c : new PiecewiseContour[] {lower, upper}) {
+            if (c != null) {
+                Assertions.assertTrue(minS <= 0 || minS >= c.minS(), () -> "minS outside the contour");
+                Assertions.assertTrue(maxS <= 0 || maxS <= c.maxS(), () -> "maxS outside the contour");
+                s0 = Math.max(s0, c.minS());
+                s1 = Math.min(s1, c.maxS());
+            }
+        }
+        Assertions.assertTrue(s0 > 1 && s0 < s1 && s1 < Double.POSITIVE_INFINITY, "Invalid range of s");
+        final long x0 = Double.doubleToRawLongBits(s0);
+        final long x1 = Double.doubleToRawLongBits(s1);
+
+        // Limits on y = bits(a) - bits(1)
+        final long cl = minA > 0 ? PiecewiseContour.toY(minA) : PiecewiseContour.Y_MIN;
+        final long ch = maxA > 0 ? PiecewiseContour.toY(maxA) : PiecewiseContour.Y_MAX;
+        Assertions.assertTrue(cl <= ch, "Invalid range of a");
+
+        // Pieces: split at the ends of the contour pieces
+        final TreeSet<Long> breaks = new TreeSet<>();
+        breaks.add(x0);
+        breaks.add(x1);
+        for (final PiecewiseContour c : new PiecewiseContour[] {lower, upper}) {
+            if (c != null) {
+                for (int i = 0; i < c.size(); i += 2) {
+                    final long x = c.nodeX(i);
+                    if (x0 < x && x < x1) {
+                        breaks.add(x);
+                    }
+                }
+            }
+        }
+        final long[] bx = breaks.stream().mapToLong(Long::longValue).toArray();
+        final int np = bx.length - 1;
+        // Piece i is x in [xa[i], xe[i]] (the shared end is in the piece to the right)
+        final long[] xa = Arrays.copyOf(bx, np);
+        final long[] xe = new long[np];
+        // Bound on the number of doubles a for any x in the piece
+        final double[] wmax = new double[np];
+        final double[] weight = new double[np];
+        int empty = 0;
+        for (int i = 0; i < np; i++) {
+            xe[i] = i == np - 1 ? bx[i + 1] : bx[i + 1] - 1;
+            wmax[i] = widthBound(lower, upper, cl, ch, xa[i], xe[i]);
+            weight[i] = (xe[i] - xa[i] + 1.0) * wmax[i];
+            if (wmax[i] == 0) {
+                empty++;
+            }
+        }
+        final double bound = Arrays.stream(weight).sum();
+        Assertions.assertTrue(bound > 0, "No domain to sample");
+
+        // For consistency we keep the same random source as other tests.
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final SharedStateDiscreteSampler sampler =
+            AliasMethodDiscreteSampler.of(rng::nextLong, Arrays.stream(weight).map(w -> w / bound).toArray());
+        final ArrayList<double[]> data = new ArrayList<>(samples);
+        long trials = 0;
+        while (data.size() < samples) {
+            trials++;
+            final int i = sampler.sample();
+            final long x = rng.nextLong(xa[i], xe[i] + 1);
+            final double s = Double.longBitsToDouble(x);
+            final long lo = lower == null ? cl : Math.max(cl, (long) Math.ceil(lower.y(x)));
+            final long hi = upper == null ? ch : Math.min(ch, (long) Math.floor(upper.y(x)));
+            final long n = hi - lo + 1;
+            if (n <= 0) {
+                continue;
+            }
+            Assertions.assertTrue(n <= wmax[i],
+                () -> String.format("Width above the bound: s=%s, n=%d, bound=%s", s, n, wmax[i]));
+            if (rng.nextDouble() * wmax[i] < n) {
+                data.add(new double[] {s, PiecewiseContour.toA(lo + rng.nextLong(n))});
+            }
+        }
+        final double acceptance = (double) samples / trials;
+
+        // Sort by a then s
+        final Comparator<double[]> cs = Comparator.comparingDouble(x -> x[0]);
+        final Comparator<double[]> ca = Comparator.comparingDouble(x -> x[1]);
+        data.sort(ca.thenComparing(cs));
+
+        // Name the file using the range filters and the bounding contours
+        final StringBuilder name = new StringBuilder(64).append("hzeta_rs_domain");
+        if (minS > 0 || maxS > 0) {
+            name.append("_s").append(shortFormat(s0)).append('_').append(shortFormat(s1));
+        }
+        if (minA > 0 || maxA > 0) {
+            name.append("_a").append(minA > 0 ? shortFormat(minA) : "0")
+                .append('_').append(maxA > 0 ? shortFormat(maxA) : "max");
+        }
+        if (lower != null) {
+            name.append("_2p").append(bl);
+        }
+        if (upper != null) {
+            name.append("_2p").append(bu);
+        }
+        name.append(".txt");
+        try (PrintStream out = getPrintStream(name.toString())) {
+            out.printf("# Real s in [%s, %s]%n", s0, s1);
+            if (lower != null) {
+                out.printf("# Lower bound for a: %s (2^%d); max relative deviation = %.5g; clipped nodes = %d%n",
+                    lowerFile, bl, lower.maxDeviation(), lower.clipped());
+            }
+            if (upper != null) {
+                out.printf("# Upper bound for a: %s (2^%d); max relative deviation = %.5g; clipped nodes = %d%n",
+                    upperFile, bu, upper.maxDeviation(), upper.clipped());
+            }
+            if (minA > 0) {
+                out.printf("# Filtered: a >= %s%n", minA);
+            }
+            if (maxA > 0) {
+                out.printf("# Filtered: a <= %s%n", maxA);
+            }
+            out.printf("# Density: uniform in (bits(s), bits(a))%n");
+            out.printf("# Pieces: %d (empty %d)%n", np, empty);
+            out.printf("# Bound on representable (s, a): %.6g; acceptance %.5f; estimated representable (s, a): %.6g%n",
+                bound, acceptance, bound * acceptance);
+            out.printf("# Samples: %d%n", samples);
+            data.forEach(x -> out.printf("%s, %s%n", x[0], x[1]));
+        }
+    }
+
+    /**
+     * Compute a bound on the number of doubles {@code a} in the band between the lower and
+     * upper bounds for any {@code x} in {@code [xa, xe]}. Each bound is a single quadratic
+     * of a contour in the interval, or a constant if the contour is null; the bounds are
+     * clipped to {@code [cl, ch]}.
+     *
+     * <p>The bound is the minimum of:
+     * <ul>
+     * <li>the maximum of the difference of the quadratics (exact if not clipped);
+     * <li>the maximum of the clipped upper bound minus the minimum of the clipped lower
+     * bound (tight if a limit clips the band).
+     * </ul>
+     * <p>The extremes are evaluated with the contour model at the interval ends and the
+     * integers next to the vertex. A margin allows for rounding.
+     *
+     * @param lower Lower bound contour (or null).
+     * @param upper Upper bound contour (or null).
+     * @param cl Lower limit on y.
+     * @param ch Upper limit on y.
+     * @param xa Start of the interval.
+     * @param xe End of the interval (inclusive).
+     * @return the bound (zero if the band is empty)
+     */
+    private static double widthBound(PiecewiseContour lower, PiecewiseContour upper,
+            long cl, long ch, long xa, long xe) {
+        // Coefficients {A, S} about xa (a constant has none)
+        final double[] kl = lower == null ? new double[2] : lower.coefficients(lower.piece(xa), xa);
+        final double[] kh = upper == null ? new double[2] : upper.coefficients(upper.piece(xa), xa);
+        final LongToDoubleFunction fl = lower == null ? x -> cl : lower::y;
+        final LongToDoubleFunction fh = upper == null ? x -> ch : upper::y;
+        final double[] el = extremes(fl, xa, xe, kl[0], kl[1]);
+        final double[] eh = extremes(fh, xa, xe, kh[0], kh[1]);
+        final double[] ed = extremes(x -> fh.applyAsDouble(x) - fl.applyAsDouble(x), xa, xe,
+            kh[0] - kl[0], kh[1] - kl[1]);
+        final double hi = Math.min(ch, eh[1]);
+        final double lo = Math.max(cl, el[0]);
+        final double w = Math.min(hi - lo, ed[1]);
+        if (w < 0) {
+            // The width is below 1 for every x (floor(hi) < ceil(lo) for w < 0)
+            return 0;
+        }
+        // Count of integers in [ceil(lo), floor(hi)] <= w + 1.
+        // Margin for rounding of the model (relative ~2^-50 of y) and the vertex location.
+        return w + 2 + 0x1.0p-40 * (Math.abs(hi) + Math.abs(lo));
+    }
+
+    /**
+     * Get the minimum and maximum of a quadratic function evaluated at the integers in
+     * {@code [xa, xe]}. The candidates are the ends and the integers either side of the
+     * vertex {@code xa + t}, {@code t = -S / (2A)}.
+     *
+     * @param f Function.
+     * @param xa Start of the interval.
+     * @param xe End of the interval (inclusive).
+     * @param a2 Coefficient A about xa.
+     * @param s1 Coefficient S about xa.
+     * @return {min, max}
+     */
+    private static double[] extremes(LongToDoubleFunction f, long xa, long xe, double a2, double s1) {
+        final double fa = f.applyAsDouble(xa);
+        final double fe = f.applyAsDouble(xe);
+        double min = Math.min(fa, fe);
+        double max = Math.max(fa, fe);
+        if (a2 != 0) {
+            final double t = -s1 / (2 * a2);
+            if (t > 0 && t < xe - xa) {
+                final long xv = xa + (long) t;
+                for (long x = xv; x <= Math.min(xv + 1, xe); x++) {
+                    final double v = f.applyAsDouble(x);
+                    min = Math.min(min, v);
+                    max = Math.max(max, v);
+                }
+            }
+        }
+        return new double[] {min, max};
     }
 
     /**
