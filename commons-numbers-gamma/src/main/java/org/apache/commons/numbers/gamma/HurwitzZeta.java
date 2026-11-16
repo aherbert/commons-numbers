@@ -125,6 +125,18 @@ public final class HurwitzZeta {
      * threshold. The bracket then requires no correction terms and supports any
      * {@code a} without overflow. Equal to 2^-50. */
     private static final double NEGLIGIBLE_C1 = 0x1.0p-50;
+    /** Maximum magnitude of {@code w = (1-s) ln x} to compute {@code x^(1-s)} as the
+     * double-double {@code 1 + expm1(w)}: in the Euler-Maclaurin exit when the tail
+     * dominates, and in the N=0 evaluation (zetaEm0). Near the pole {@code s = 1} the power
+     * is close to 1 and rounding it to a double loses the information in
+     * {@code x^(1-s) - 1 ~ (1-s) ln x}, which determines the O(1) part of the result
+     * {@code x^(1-s) / (s-1)}. */
+    private static final double POLE_W = 0.5;
+    /** Bound to skip the logarithm for the test {@code |w| < POLE_W}: with
+     * {@code x in [2^e, 2^(e+1))} and {@code m = e} if {@code e >= 0} or {@code -e-1} if
+     * {@code e < 0}, then {@code |ln x| >= m ln 2}, so {@code |w| > POLE_W} if
+     * {@code (s-1) m > POLE_W / ln 2 = 0.72135}. Rounded up as a margin for rounding. */
+    private static final double POLE_SKIP = 0.7214;
     /** Threshold used when {@code a < 1} where {@code a^-s} == zeta(s, a) with the smallest supported
      * {@code s = 1 + 2^-52}. Set using zeta(s, 1) * 2^54. No possible evaluation of
      * all remaining terms for any s could be added to {@code a^-s} when {@code a < 1}.
@@ -749,7 +761,14 @@ public final class HurwitzZeta {
             }
         } else {
             final double tail = px * f.hi();
-            if (tail * MIN_SUM_TAIL_RATIO < s0 ||
+            final boolean sumDominates = tail * MIN_SUM_TAIL_RATIO < s0;
+            // Near the pole when the tail dominates: x^(1-s) close to 1 (see polePow).
+            // The logarithm is only computed if |w| can be below POLE_W.
+            final DD pp = sumDominates || (s - 1) * logBound(x) > POLE_SKIP ?
+                null : polePow(s, x, twoSumLow(a, k, x));
+            if (pp != null) {
+                p = pp;
+            } else if (sumDominates ||
                 Math.getExponent(px) > Math.getExponent(x) + Math.getExponent(t)) {
                 // Use the estimate x^(1-s) = x * x^-s, exact apart from the
                 // error of x^-s. This saves a power function. It is used:
@@ -867,6 +886,15 @@ public final class HurwitzZeta {
                 .add(ra.square().multiply(DD.fromQuotient(s, 12)))
                 .add(sum);
         }
+        // Near the pole a^(1-s) is close to 1 (see polePow).
+        // The logarithm is only computed if |w| can be below POLE_W.
+        // Here a > 2 so the bound on |log2(a)| is the exponent e.
+        if ((s - 1) * e <= POLE_SKIP) {
+            final double z = em0Pole(s, a, f);
+            if (z == z) {
+                return z;
+            }
+        }
         // a > 2 so a^(1-s) is not close to 1 and Math.pow is accurate.
         final double p = Math.pow(a, 1 - s);
         if (p < SCALED_SUM_THRESHOLD) {
@@ -950,6 +978,64 @@ public final class HurwitzZeta {
             f = f.add(rx.square().multiply(DD.fromQuotient(s, 12))).add(sum);
         }
         return f;
+    }
+
+    /**
+     * Compute {@code x^(1-s)} close to 1 as the double-double {@code 1 + expm1(w)} with
+     * {@code w = (1-s) ln x}, if {@code |w| < POLE_W}.
+     *
+     * <p>Near the pole {@code s = 1} a power function, or the estimate {@code x * x^-s},
+     * rounds {@code x^(1-s)} close to 1 and loses the information in
+     * {@code x^(1-s) - 1 ~ (1-s) ln x}, which determines the O(1) part of the result
+     * {@code x^(1-s) / (s-1)}. The rounding error is not random when {@code x} is
+     * effectively constant (e.g. {@code a} just below 1 and {@code s - 1 < 2^-48}:
+     * {@code x ~ k + 1}); this created a biased result. The cost (log and expm1) is lower
+     * than a power function; where this replaces the estimate {@code x * x^-s} (no power
+     * function) it is an extra cost.
+     *
+     * <p>This is a separate method to keep the common path of the callers small.
+     *
+     * @param s Argument {@code s}.
+     * @param x Argument {@code x}.
+     * @param xl Round-off of {@code x} ({@code x + xl} is exact).
+     * @return {@code x^(1-s)}, or null if {@code |w| >= POLE_W}
+     */
+    private static DD polePow(double s, double x, double xl) {
+        final double w = (1 - s) * (Math.log(x) + xl / x);
+        if (Math.abs(w) < POLE_W) {
+            return DD.ofSum(1, Math.expm1(w));
+        }
+        return null;
+    }
+
+    /**
+     * Compute the Euler-Maclaurin sum with N=0 near the pole: {@code a^(1-s) * f} with
+     * {@code a^(1-s) = 1 + expm1(w)} in double-double precision (see
+     * {@link #polePow(double, double, double)}).
+     *
+     * <p>This is a separate method to keep the common path of zetaEm0 small.
+     *
+     * @param s Argument {@code s}.
+     * @param a Argument {@code a > 2}.
+     * @param f Euler-Maclaurin bracket.
+     * @return the result, or NaN if {@code |w| >= POLE_W}
+     */
+    private static double em0Pole(double s, double a, DD f) {
+        final DD p = polePow(s, a, 0);
+        return p == null ? Double.NaN : f.multiply(p).hi();
+    }
+
+    /**
+     * Get a lower bound {@code m} on {@code |log2(x)|} for {@code x > 0}:
+     * {@code x in [2^e, 2^(e+1))} gives {@code m = e} if {@code e >= 0}, else {@code -e-1}.
+     * Used to skip a logarithm: {@code |ln x| >= m ln 2}.
+     *
+     * @param x Value (a sub-normal x gives m = 1022, still a lower bound).
+     * @return the bound
+     */
+    private static int logBound(double x) {
+        final int e = Math.getExponent(x);
+        return e >= 0 ? e : -e - 1;
     }
 
     /**

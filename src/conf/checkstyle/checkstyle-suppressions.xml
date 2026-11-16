@@ -46,7 +46,7 @@
   <suppress checks="UnnecessaryParentheses" files=".*[/\\]gamma[/\\]BoostBeta.java" />
   <suppress checks="UnnecessaryParentheses" files=".*[/\\]gamma[/\\]BoostGamma.java" />
   <!-- Table of double-double coefficients with exact rational values in the comments -->
-  <suppress checks="LineLength" files=".*[/\\]gamma[/\\]HurwitzZeta.java" lines="253-305"/>
+  <suppress checks="LineLength" files=".*[/\\]gamma[/\\]HurwitzZeta.java" lines="265-317"/>
   <suppress checks="MethodLength" files=".*[/\\]HurwitzZeta\.java" />
   <!-- The Euler-Maclaurin exit method takes the loop state as scalars. -->
   <suppress checks="ParameterNumber" files=".*[/\\]HurwitzZeta\.java" />
