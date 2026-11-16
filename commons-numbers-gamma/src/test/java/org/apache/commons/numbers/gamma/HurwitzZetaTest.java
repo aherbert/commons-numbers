@@ -7918,7 +7918,7 @@ class HurwitzZetaTest {
         points.sort(cs.thenComparing(ca));
         int current = 0;
         for (int i = 1; i < points.size(); i++) {
-            if (points.get(i)[1] == points.get(current)[1]) {
+            if (points.get(i)[0] == points.get(current)[0]) {
                 // Keep the result closest to t
                 if (Math.abs(points.get(i)[2] - t) < Math.abs(points.get(current)[2] - t)) {
                     points.set(current, null);
