@@ -831,10 +831,10 @@ public class ZetaPerformance {
      *
      * @param s Argument {@code s > 1}
      * @param a Argument {@code a > 0}
-     * @param N Argument {@code n >= 7}
+     * @param n Argument {@code n >= 7}
      * @return zeta(s, a)
      */
-    private static double zetaImp(double s, double a, int N) {
+    private static double zetaImp(double s, double a, final int n) {
         // First term
         final double t0 = Math.pow(a, -s);
 
@@ -857,19 +857,19 @@ public class ZetaPerformance {
         // - Scaling for sub-normal tail terms (no cost)
         // - Adding series terms in magnitude order (no cost)
 
-        double p = Math.pow(a + N, -s);
+        double p = Math.pow(a + n, -s);
 
         // Initialise sum with the first tail term
         double sum = 0.5 * p;
         // S : k in [0, n-1]
         // Note k=0 already computed as t0
-        for (int k = N - 1; k > 0; k--) {
+        for (int k = n - 1; k > 0; k--) {
             // Descending k sums in order of magnitude for increased precision
             sum += Math.pow(a + k, -s);
         }
 
         // I
-        final double ti = Math.pow(a + N, 1 - s) / (s - 1);
+        final double ti = Math.pow(a + n, 1 - s) / (s - 1);
 
         // The dominant term may be t0 when a in [0, 1], or ti when a is large and s is small.
         // Adding in double-double precision handles either magnitude order.
@@ -913,7 +913,7 @@ public class ZetaPerformance {
         double k2 = 1;
 
         // Use to divide by (a+n)^2
-        final double apn = DD.ofSum(a, N).square().hi();
+        final double apn = DD.ofSum(a, n).square().hi();
 
         // The tail requires the most accurate start-point for (a+n)^-(1+s).
         // The tail is expected to be a small contribution to the result.
@@ -921,12 +921,12 @@ public class ZetaPerformance {
         // (a+n)^-s / (a+n).
         // Sub-normal p reduces accuracy
         if (p > Double.MIN_NORMAL) {
-            p = UPSCALE * p / (a + N);
+            p = UPSCALE * p / (a + n);
         } else {
             // Compute in parts with scaling: x^y = x^(y/2) * x^(y/2).
             // This is unlikely to be hit in benchmarks as it requires
             // s > 19 when a = 2^53
-            p = Math.pow(a + N, (-s - 1) * 0.5);
+            p = Math.pow(a + n, (-s - 1) * 0.5);
             p = p * UPSCALE * p;
         }
 
