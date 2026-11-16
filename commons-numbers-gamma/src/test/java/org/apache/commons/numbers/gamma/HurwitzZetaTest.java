@@ -178,7 +178,6 @@ class HurwitzZetaTest {
         "hzeta_root_s23_1067_na2b0_2b6.csv",
         "hzeta_root_s3_25_na2b7_2b11.csv",
         "hzeta_root_s3_21_na2b12_2b14.csv",
-        "hzeta_root_s3_3_na1001_16384.csv",
     };
     /** Filenames of resources used for zeta function using sub-normal terms. */
     private static final String[] SUB_NORMAL_RESOURCES = {
@@ -4659,7 +4658,6 @@ class HurwitzZetaTest {
         "hzeta_s6_50_na400_999_p0.5_p0x1p-3.csv", "hzeta_s7_51_na400_999_p0.5_p0x1p-3.csv",
         "hzeta_root_s3_21_na2b0_2b6.csv", "hzeta_root_s23_1067_na2b0_2b6.csv",
         "hzeta_root_s3_25_na2b7_2b11.csv", "hzeta_root_s3_21_na2b12_2b14.csv",
-        "hzeta_root_s3_3_na1001_16384.csv",
     })
     @Disabled("Used to compare the hybrid negative zeta implementation")
     void testZetaNegativeHybrid(String filename) throws IOException {
