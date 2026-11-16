@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.SplittableRandom;
+import java.util.TreeSet;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
@@ -8501,6 +8502,431 @@ class HurwitzZetaTest {
         try (PrintStream out = getPrintStream(String.format("hzeta_is_2p%d.txt", b))) {
             out.printf("# zeta(s, a) ~ 2^%d%n", b);
             points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
+        }
+    }
+
+    /** Upper limit of s for a real s contour. Above this one ulp of a changes zeta(s, a)
+     * by more than ~1e-6 relative (s * 2^-52), so a contour node cannot be validated. */
+    private static final double CONTOUR_MAX_S = 0x1.0p32;
+
+    /**
+     * Create a contour {@code a_b(s)} of the zeta function {@code zeta(s, a) = 2^b} for
+     * real {@code s} as a piecewise quadratic function of {@code bits(s)}.
+     *
+     * <p>Zeta is strictly decreasing in {@code a} for any {@code s > 1}, so for each
+     * {@code s} the value {@code a_b(s)} is unique. It is found by bisection on the
+     * bits of {@code a} using the scaled test implementation (any target 2^b with
+     * {@code -1075 <= b < 918}). Values of {@code a} above {@code MAX_VALUE} are clipped to
+     * {@code MAX_VALUE}. The contour must be monotonic in {@code s}.
+     *
+     * <p>The coordinates are {@code x = bits(s)} and {@code y = bits(a)}. The function
+     * {@code y(x)} has slope discontinuities where {@code s} or {@code a} is a power of 2
+     * (bits are linear within a binade), and where the contour is clipped. These are
+     * forced breakpoints. Between breakpoints the interval is subdivided until a quadratic
+     * through the ends and midpoint predicts the contour at the quarter points within a
+     * relative tolerance. The tolerance is relative to the distance from {@code a = 1} in
+     * doubles; {@code a = 1} is within any band of contours with
+     * {@code b <= 0 <= 52 < b'} as {@code 1 <= zeta(s, 1) <= 2^52}.
+     *
+     * <p>The rows (s, a) are written sorted by {@code s} as: end, mid, end, mid, ..., end.
+     * Each (end, mid, end) triple defines one quadratic piece. The rows are recorded to
+     * file for independent evaluation.
+     *
+     * @param b Contour target 2^b.
+     * @param tol Relative tolerance for the quadratic interpolation.
+     * @param maxDepth Maximum depth of the subdivision.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // Upper bound on a: zeta(s, a) >= 2^-1075 is a non-zero double result
+        "-1075, 1e-6, 30",
+        // Lower bound on a < 1: above 2^108 zeta(s, a) = a^-s in double-double precision
+        "108, 1e-6, 30",
+    })
+    @Disabled("Used to generate test data")
+    void testDataContour(int b, double tol, int maxDepth) throws IOException {
+        Assertions.assertTrue(-1075 <= b && b < 918, "Target outside the scaled range");
+        final ContourBuilder builder = new ContourBuilder(b, tol, maxDepth);
+        builder.build(Math.nextUp(1.0), CONTOUR_MAX_S);
+
+        try (PrintStream out = getPrintStream(String.format("hzeta_rs_2p%d.txt", b))) {
+            out.printf("# zeta(s, a) ~ 2^%d%n", b);
+            out.printf("# Piecewise quadratic contour a_b(s) for real s in [%s, %s]%n",
+                Math.nextUp(1.0), CONTOUR_MAX_S);
+            out.println("# Rows sorted by s: end, mid, end, ..., end. Each (end, mid, end) is a piece.");
+            out.println("# Rows with a = MAX_VALUE are clipped (zeta(s, MAX_VALUE) > 2^b).");
+            builder.write(out);
+        }
+    }
+
+    /**
+     * Build an approximation of the contour {@code zeta(s, a) = 2^b} for real {@code s}:
+     * a piecewise quadratic {@code a_b(s)} that gives, for any {@code s} in the range, the
+     * value {@code a} where {@code zeta(s, a) ~ 2^b}. The contour is a function of {@code s}
+     * as zeta is strictly decreasing in {@code a} for {@code s > 1}.
+     *
+     * <p>The coordinates are {@code x = bits(s)} and {@code y = bits(a) - bits(1)} (the
+     * distance from {@code a = 1} in doubles). Each piece is the quadratic through the
+     * nodes (end, mid, end); each node is a root of {@code zeta(s, a) = 2^b} to 1 ulp in
+     * {@code a}. A piece is accepted when the quadratic predicts the nodes at the quarter
+     * points within a relative tolerance of the distance from {@code a = 1}. Otherwise the
+     * interval of {@code s} is split until the tolerance is achieved or the maximum depth is
+     * reached (the number of pieces at the maximum depth is reported).
+     *
+     * <p>The tolerance is on the position of the contour, not on the value of zeta. It
+     * bounds the fraction of a band between two contours that is misplaced when sampling
+     * uniformly in the doubles. Zeta is sensitive to {@code a}, so {@code zeta(s, a)} on the
+     * quadratic deviates from {@code 2^b} by more than the tolerance (with a tolerance of
+     * 1e-6 the maximum relative deviation was measured as ~1e-4 for {@code 2^-1075} and
+     * ~2e-5 for {@code 2^108}).
+     *
+     * <p>Where {@code a_b(s) > MAX_VALUE} the contour is clipped to {@code MAX_VALUE}.
+     *
+     * <p>Important: the nodes are points (s, a) with {@code zeta(s, a) ~ 2^b} found using the
+     * test implementation of zeta. They must be evaluated independently using a reference
+     * implementation of the zeta function, and validated as close to {@code 2^b}, before
+     * use. The validated contour can then be used to sample the domain of the zeta function
+     * bounded by the contour, i.e. points where the result is approximately above or below
+     * {@code 2^b}.
+     *
+     * @see #testDataContour(int, double, int)
+     */
+    private static final class ContourBuilder {
+        /** Bits of 1.0: origin for the y coordinate. */
+        private static final long ONE = Double.doubleToRawLongBits(1.0);
+        /** Exponent class of a clipped value. */
+        private static final int CLIP = Double.MAX_EXPONENT + 1;
+
+        /** Scaled zeta function. */
+        private final DoubleBinaryOperator zeta;
+        /** Scaled target. */
+        private final double t;
+        /** Contour target 2^b. */
+        private final int b;
+        /** Relative tolerance. */
+        private final double tol;
+        /** Maximum depth. */
+        private final int maxDepth;
+        /** Rows (s, a) sorted by s: end, mid, end, ..., end. */
+        private final ArrayList<double[]> rows = new ArrayList<>();
+        /** Number of breakpoints at s = 2^k. */
+        private int breakS;
+        /** Number of breakpoints at a = 2^k. */
+        private int breakA;
+        /** Number of breakpoints at the clip value. */
+        private int breakClip;
+        /** Number of breakpoints removed as too close to the previous breakpoint. */
+        private int merged;
+        /** Maximum relative error at the quarter points of the accepted pieces. */
+        private double maxErr;
+        /** Maximum depth reached. */
+        private int depth;
+        /** Number of subdivisions stopped at the maximum depth. */
+        private int maxDepthCount;
+        /** Number of zeta evaluations. */
+        private long evaluations;
+
+        /**
+         * @param b Contour target 2^b.
+         * @param tol Relative tolerance.
+         * @param maxDepth Maximum depth.
+         */
+        ContourBuilder(int b, double tol, int maxDepth) {
+            // Scaling by 2^106 allows a target down to 2^-1075 with a normal number
+            final Context context = Context.DOUBLE_REF.addOptions(Context.SCALED_RESULT);
+            this.zeta = (s, a) -> {
+                evaluations++;
+                return HurwitzZetaTest.zeta(s, a, context);
+            };
+            this.t = Math.scalb(1.0, b + 106);
+            this.b = b;
+            this.tol = tol;
+            this.maxDepth = maxDepth;
+        }
+
+        /**
+         * Build the contour for s in [s0, s1].
+         *
+         * @param s0 Lower bound.
+         * @param s1 Upper bound.
+         */
+        void build(double s0, double s1) {
+            // Breakpoints in x = bits(s), sorted
+            final long x0 = Double.doubleToRawLongBits(s0);
+            final long x1 = Double.doubleToRawLongBits(s1);
+            final TreeSet<Long> breaks = new TreeSet<>();
+            breaks.add(x0);
+            breaks.add(x1);
+            // s = 2^k
+            // Count only new breakpoints (s1 may be a power of 2)
+            for (int k = Math.getExponent(s0) + 1; k <= Math.getExponent(s1); k++) {
+                if (breaks.add(Double.doubleToRawLongBits(Math.scalb(1.0, k)))) {
+                    breakS++;
+                }
+            }
+            // a = 2^k (or the clip value) between the classes at the ends.
+            // This assumes the contour is monotonic (checked at the end).
+            final int c0 = exponentClass(solveA(s0));
+            final int c1 = exponentClass(solveA(s1));
+            for (int k = Math.min(c0, c1) + 1; k <= Math.max(c0, c1); k++) {
+                final double a = k == CLIP ? Double.MAX_VALUE : Math.scalb(1.0, k);
+                if (breaks.add(solveS(a, x0, x1))) {
+                    if (k == CLIP) {
+                        breakClip++;
+                    } else {
+                        breakA++;
+                    }
+                }
+            }
+
+            // Merge breakpoints too close to subdivide (the kink is then inside a piece).
+            // The end points are kept.
+            final long[] xs = breaks.stream().mapToLong(Long::longValue).toArray();
+            int n = 1;
+            for (int i = 1; i < xs.length; i++) {
+                if (xs[i] - xs[n - 1] < 4) {
+                    if (i == xs.length - 1) {
+                        // Keep the end point
+                        xs[n - 1] = xs[i];
+                    }
+                    continue;
+                }
+                xs[n++] = xs[i];
+            }
+            merged = xs.length - n;
+
+            // Subdivide each interval between breakpoints
+            rows.add(node(xs[0]));
+            for (int i = 1; i < n; i++) {
+                final long xa = xs[i - 1];
+                final long xb = xs[i];
+                // Midpoint of non-negative values: the unsigned shift is exact (sum < 2^64)
+                final long xm = (xa + xb) >>> 1;
+                refine(rows.get(rows.size() - 1), node(xm), node(xb), 1);
+            }
+
+            // Check the contour is monotonic. If the ends are equal it must be constant.
+            final int sign = Double.compare(rows.get(rows.size() - 1)[1], rows.get(0)[1]);
+            for (int i = 1; i < rows.size(); i++) {
+                final double[] p = rows.get(i - 1);
+                final double[] q = rows.get(i);
+                // Distinct s is required: a piece with equal s is not a quadratic
+                Assertions.assertTrue(p[0] < q[0], "s not strictly increasing");
+                final int c = Double.compare(q[1], p[1]);
+                Assertions.assertTrue(sign == 0 ? c == 0 : c * sign >= 0,
+                    () -> "Contour not monotonic: " + Arrays.toString(p) + " " + Arrays.toString(q));
+            }
+        }
+
+        /**
+         * Write the summary as comment lines, then the rows.
+         *
+         * @param out Output.
+         */
+        void write(PrintStream out) {
+            out.printf("# Breakpoints: s = 2^k %d; a = 2^k %d; clip %d; merged %d%n",
+                breakS, breakA, breakClip, merged);
+            out.printf("# Tolerance: %s (quarter points, relative to the distance from a = 1 in doubles)%n", tol);
+            out.printf("# Max relative interpolation error at the quarter points: %.5g%n", maxErr);
+            out.printf("# Pieces: %d (max depth %d / %d; pieces at the max depth %d)%n",
+                (rows.size() - 1) / 2, depth, maxDepth, maxDepthCount);
+            out.printf("# Zeta evaluations: %d%n", evaluations);
+            rows.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
+        }
+
+        /**
+         * Refine the interval with nodes (end, mid, end). The left end is already in the rows.
+         * Adds the mid and right end of each accepted piece to the rows.
+         *
+         * @param p0 Left node (s, a).
+         * @param pm Middle node.
+         * @param p1 Right node.
+         * @param level Depth.
+         */
+        private void refine(double[] p0, double[] pm, double[] p1, int level) {
+            depth = Math.max(depth, level);
+            final long x0 = bits(p0[0]);
+            final long xm = bits(pm[0]);
+            final long x1 = bits(p1[0]);
+            if (xm - x0 < 2 || x1 - xm < 2) {
+                // Cannot subdivide
+                rows.add(pm);
+                rows.add(p1);
+                return;
+            }
+            final double[] pl = node((x0 + xm) >>> 1);
+            final double[] pr = node((xm + x1) >>> 1);
+            // Interpolation error at the quarter points, relative to the distance from a = 1
+            final double el = Math.abs(quadratic(p0, pm, p1, bits(pl[0])) - y(pl));
+            final double er = Math.abs(quadratic(p0, pm, p1, bits(pr[0])) - y(pr));
+            final double scale = Stream.of(p0, pl, pm, pr, p1)
+                .mapToDouble(p -> Math.abs(y(p))).min().getAsDouble();
+            final double err = Math.max(el, er) / scale;
+            if (err <= tol || level >= maxDepth) {
+                if (err > tol) {
+                    maxDepthCount++;
+                }
+                // Accept as two pieces: (p0, pl, pm), (pm, pr, p1)
+                maxErr = Math.max(maxErr, err);
+                rows.add(pl);
+                rows.add(pm);
+                rows.add(pr);
+                rows.add(p1);
+                return;
+            }
+            refine(p0, pl, pm, level + 1);
+            refine(pm, pr, p1, level + 1);
+        }
+
+        /**
+         * Create the node (s, a_b(s)) at x = bits(s).
+         *
+         * @param x Bits of s.
+         * @return the node
+         */
+        private double[] node(long x) {
+            final double s = Double.longBitsToDouble(x);
+            return new double[] {s, solveA(s)};
+        }
+
+        /**
+         * Solve zeta(s, a) = 2^b for a by bisection on the bits of a.
+         * Returns the double closest to the target of the two that bracket it.
+         * Returns MAX_VALUE if zeta(s, MAX_VALUE) is above the target.
+         *
+         * <p>Bisection on the bits is used in preference to the {@link BrentSolver}:
+         * <ul>
+         * <li>The bracket spans many orders of magnitude (a from ~2^-108 to MAX_VALUE).
+         * Bisection on the bits is a bisection of log(a) and takes at most 64 steps. The
+         * Brent bisection step halves the linear interval and the interpolation steps
+         * are poor as zeta is close to a power law in a.
+         * <li>The result is one of the two adjacent doubles that bracket the root. The Brent
+         * solver stops with a bracket up to 2 ulp wide (its minimum tolerance is ulp(b)).
+         * <li>Only the sign of zeta - 2^b is used. Near the root the difference is at the
+         * level of the rounding error in zeta, which makes interpolation unreliable.
+         * </ul>
+         * <p>The cost is at most 64 zeta evaluations per root. A faster solver would make no
+         * practical difference to a data generator.
+         *
+         * @param s Argument s.
+         * @return a
+         */
+        double solveA(double s) {
+            // g(a) = zeta(s, a) - t is decreasing in a
+            final double gMax = zeta.applyAsDouble(s, Double.MAX_VALUE) - t;
+            if (gMax >= 0) {
+                return Double.MAX_VALUE;
+            }
+            // Lower bound: zeta(s, a) > a^-s >= 2^b with a = 2^(-b/s) (with a margin)
+            long lo = b < 0 ? ONE : bits(Math.pow(2, (double) -b / s) * (1 - 0x1.0p-20));
+            long hi = bits(Double.MAX_VALUE);
+            double gLo = zeta.applyAsDouble(s, Double.longBitsToDouble(lo)) - t;
+            double gHi = gMax;
+            Assertions.assertTrue(gLo >= 0, () -> "Lower bound not above the target: s=" + s);
+            while (hi - lo > 1) {
+                final long mid = (lo + hi) >>> 1;
+                final double g = zeta.applyAsDouble(s, Double.longBitsToDouble(mid)) - t;
+                if (g >= 0) {
+                    lo = mid;
+                    gLo = g;
+                } else {
+                    hi = mid;
+                    gHi = g;
+                }
+            }
+            return Double.longBitsToDouble(gLo <= -gHi ? lo : hi);
+        }
+
+        /**
+         * Solve zeta(s, a) = 2^b for s in bits [x0, x1] by bisection on the bits of s.
+         * The function must change sign once in the interval. Returns the bits of the
+         * lower of the two adjacent doubles that bracket the root.
+         *
+         * <p>Bisection on the bits is used in preference to the {@link BrentSolver} for the
+         * reasons given in {@link #solveA(double)}: the bracket spans many orders of
+         * magnitude (s - 1 from 2^-52 to 2^32); the result is within 1 ulp of the root;
+         * and only the sign of zeta - 2^b is used.
+         *
+         * @param a Argument a.
+         * @param x0 Lower bound for the bits of s.
+         * @param x1 Upper bound for the bits of s.
+         * @return bits of s
+         */
+        long solveS(double a, long x0, long x1) {
+            long lo = x0;
+            long hi = x1;
+            final boolean signLo = zeta.applyAsDouble(Double.longBitsToDouble(lo), a) >= t;
+            final boolean signHi = zeta.applyAsDouble(Double.longBitsToDouble(hi), a) >= t;
+            Assertions.assertNotEquals(signLo, signHi, () -> "No sign change for a=" + a);
+            while (hi - lo > 1) {
+                final long mid = (lo + hi) >>> 1;
+                if ((zeta.applyAsDouble(Double.longBitsToDouble(mid), a) >= t) == signLo) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            return lo;
+        }
+
+        /**
+         * Evaluate the quadratic through the nodes (x_i, y_i), i = 0, 1, 2, at the point x.
+         * A node (s, a) has the coordinates {@code x = bits(s)} and
+         * {@code y = bits(a) - bits(1)}.
+         *
+         * <p>This is the interpolation model of a contour piece (end, mid, end). It decides
+         * the subdivision of the contour; the sampler must use the same model to reconstruct
+         * the contour from the nodes.
+         *
+         * <p>The point x is expected to be within [x_0, x_2]. Outside this range the result
+         * is an extrapolation.
+         *
+         * @param p0 Node 0 (s, a).
+         * @param p1 Node 1 (s, a).
+         * @param p2 Node 2 (s, a).
+         * @param x Bits of s.
+         * @return y (not rounded to an integer)
+         */
+        private static double quadratic(double[] p0, double[] p1, double[] p2, long x) {
+            // Coordinates relative to x0 to retain precision
+            final long x0 = bits(p0[0]);
+            final double u1 = bits(p1[0]) - x0;
+            final double u2 = bits(p2[0]) - x0;
+            final double u = x - x0;
+            // Lagrange form
+            return y(p0) * (u - u1) * (u - u2) / (u1 * u2) +
+                   y(p1) * u * (u - u2) / (u1 * (u1 - u2)) +
+                   y(p2) * u * (u - u1) / (u2 * (u2 - u1));
+        }
+
+        /**
+         * Get the y coordinate of the node relative to a = 1.
+         *
+         * @param p Node (s, a).
+         * @return bits(a) - bits(1)
+         */
+        private static double y(double[] p) {
+            return bits(p[1]) - ONE;
+        }
+
+        /**
+         * Get the bits of a positive double.
+         *
+         * @param x Value.
+         * @return the bits
+         */
+        private static long bits(double x) {
+            return Double.doubleToRawLongBits(x);
+        }
+
+        /**
+         * Get the exponent class: the exponent, or CLIP for MAX_VALUE.
+         *
+         * @param a Value.
+         * @return the class
+         */
+        private static int exponentClass(double a) {
+            return a == Double.MAX_VALUE ? CLIP : Math.getExponent(a);
         }
     }
 
