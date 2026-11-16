@@ -5552,6 +5552,64 @@ class HurwitzZetaTest {
         Assertions.assertEquals(z, HurwitzZeta.value(s, a));
     }
 
+    @ParameterizedTest
+    @MethodSource
+    void testZetaExtremes(double s, double a, double z) {
+        TestUtils.assertEquals(z, HurwitzZeta.value(s, a), 2);
+    }
+
+    static Stream<Arguments> testZetaExtremes() {
+        final double min = Double.MIN_VALUE;
+        final double minNormal = Double.MIN_NORMAL;
+        final double max = Double.MAX_VALUE;
+        final double below1 = Math.nextDown(1.0);
+        final double above1 = Math.nextUp(1.0);
+        final double inf = Double.POSITIVE_INFINITY;
+        // s in [above1, max]; a in [min, minNormal, below1, 1, above1, max].
+        // a = 1 is computed by RiemannZeta.
+        // A result outside the double range is commented with its value to 3 significant
+        // figures, or the natural logarithm if too large or small to write as a decimal.
+        return Stream.of(
+            // Reference values from mpmath version 1.4.1.
+            // Patched to address issue #1198
+            Arguments.of(above1, min, inf), // 2.02e+323
+            Arguments.of(above1, minNormal, 4.494232837156496e307),
+            Arguments.of(above1, below1, 4503599627370497.0),
+            Arguments.of(above1, 1.0, 4503599627370497.0),
+            Arguments.of(above1, above1, 4503599627370497.0),
+            Arguments.of(above1, max, 4503599627369786.0),
+            Arguments.of(max, min, inf), // log(z) = 1.34e+311
+            Arguments.of(max, minNormal, inf), // log(z) = 1.27e+311
+            Arguments.of(max, below1, inf), // log(z) = 2.00e+292
+            Arguments.of(max, 1.0, 1.0),
+            Arguments.of(max, above1, 0.0), // log(z) = -3.99e+292
+            Arguments.of(max, max, 0.0) // log(z) = -1.28e+311
+        );
+    }
+
+    /**
+     * Test the function is monotonic in {@code a} at {@code a = 1}, where the evaluation
+     * switches to the Riemann zeta function: zeta is decreasing in {@code a}, so
+     * {@code zeta(s, below1) >= zeta(s, 1) >= zeta(s, above1)}, where {@code below1} and
+     * {@code above1} are the doubles adjacent to 1.
+     *
+     * <p>The values of {@code s} are the extremes and the switch points of either method:
+     * the threshold of {@code s} where the Riemann zeta function is 1 (~53), and the
+     * single-term threshold of the Hurwitz zeta function (350).
+     */
+    @ParameterizedTest
+    @ValueSource(doubles = {1.0000000000000002, 1.5, 2, 4, 16, 36, 52.99999999999999, 53,
+        53.000000000670404, 53.00000000067041, 64, 349.99999999999994, 350, 1e10, Double.MAX_VALUE})
+    void testZetaMonotonicAtOne(double s) {
+        final double below1 = Math.nextDown(1.0);
+        final double above1 = Math.nextUp(1.0);
+        final double z0 = HurwitzZeta.value(s, below1);
+        final double z1 = HurwitzZeta.value(s, 1);
+        final double z2 = HurwitzZeta.value(s, above1);
+        Assertions.assertTrue(z0 >= z1, () -> "zeta(s, below1) < zeta(s, 1): " + z0 + " < " + z1);
+        Assertions.assertTrue(z1 >= z2, () -> "zeta(s, 1) < zeta(s, above1): " + z1 + " < " + z2);
+    }
+
     /**
      * Spot tests for the zeta function to check various points in the domain and extreme values.
      */
