@@ -144,9 +144,11 @@ class HurwitzZetaTest {
         "hzeta_domain_2p-1022.csv",
         "hzeta_domain_2p-1075.csv",
         // a < 1
-        "hzeta_sm1-52_8_a-53_0.csv",
-        "hzeta_sm1-52_0_a-106_0_t0b0_106.csv",
-        "hzeta_s1_9_a-106_0_t0b0_106.csv",
+        "hzeta_rs_domain_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_sm1_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_1ma_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_sm1_1ma_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_sm1_1ma_s1p2p-52_1p2p-44_a2p-1_1m2p-53_2p108_2p-1075.csv",
         "hzeta_s0_9_a-53_0_t0b106_1100.csv",
         "hzeta_s8_50_1ma-53_-1_t0b0_1024.csv",
     };
@@ -204,14 +206,29 @@ class HurwitzZetaTest {
     private static final String[] DOMAIN_RESOURCES = {
         "hzeta_domain_2p-1022.csv",
         "hzeta_domain_2p-1075.csv",
+        // Samples from testDataWithinDomainReal. a in [1, 2^53]: densities uniform in
+        // (bits(s), bits(a)), (bits(s-1), bits(a)), (bits(s), bits(a-1)), (bits(s-1), bits(a-1))
+        "hzeta_rs_domain_a1_2p53_2p-1075.csv",
+        "hzeta_rs_domain_sm1_a1_2p53_2p-1075.csv",
+        "hzeta_rs_domain_am1_a1_2p53_2p-1075.csv",
+        "hzeta_rs_domain_sm1_am1_a1_2p53_2p-1075.csv",
+        // a > 2^53
+        "hzeta_rs_domain_a2p53_max_2p-1075.csv",
+        "hzeta_rs_domain_sm1_a2p53_max_2p-1075.csv",
     };
     /** Filenames of resources containing samples from the domain {@code a < 1}.
      * Note: The first file is reused to sample from the domain in the JMH
      * performance test (ZetaPerformance in the examples-jmh module). */
     private static final String[] DOMAIN_A01_RESOURCES = {
-        "hzeta_sm1-52_8_a-53_0.csv",
-        "hzeta_sm1-52_0_a-106_0_t0b0_106.csv",
-        "hzeta_s1_9_a-106_0_t0b0_106.csv",
+        // Samples from testDataWithinDomainReal between the 2^108 and 2^-1075 contours.
+        // Densities uniform in (bits(s), bits(a)), (bits(s-1), bits(a)), (bits(s), bits(1-a)),
+        // (bits(s-1), bits(1-a)); then the pole: s-1 in [2^-52, 2^-44], a in [0.5, 1)
+        "hzeta_rs_domain_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_sm1_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_1ma_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_sm1_1ma_a0_1m2p-53_2p108_2p-1075.csv",
+        "hzeta_rs_domain_sm1_1ma_s1p2p-52_1p2p-44_a2p-1_1m2p-53_2p108_2p-1075.csv",
+        // Not covered by the band: zeta(s, a) = a^-s (above 2^108 to overflow) and s > 2^32
         "hzeta_s0_9_a-53_0_t0b106_1100.csv",
         "hzeta_s8_50_1ma-53_-1_t0b0_1024.csv",
     };
@@ -3101,7 +3118,7 @@ class HurwitzZetaTest {
     @ValueSource(strings = {
         "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
         "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
-        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_sm1-52_8_a-53_0.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_rs_domain_a0_1m2p-53_2p108_2p-1075.csv",
         "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
         "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
@@ -3182,7 +3199,7 @@ class HurwitzZetaTest {
     @ValueSource(strings = {
         "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
         "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
-        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_sm1-52_8_a-53_0.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_rs_domain_a0_1m2p-53_2p108_2p-1075.csv",
         "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
         "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",
@@ -3275,7 +3292,7 @@ class HurwitzZetaTest {
     @ValueSource(strings = {
         "hzeta_2p-1020.csv", "hzeta_2p-1021.csv", "hzeta_2p-1022.csv", "hzeta_2p-1023.csv",
         "hzeta_2p-1049.csv", "hzeta_2p-1065.csv", "hzeta_2p-1075.csv",
-        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_sm1-52_8_a-53_0.csv",
+        "hzeta_domain_2p-1022.csv", "hzeta_domain_2p-1075.csv", "hzeta_rs_domain_a0_1m2p-53_2p108_2p-1075.csv",
         "hzeta_is_2p-1075.csv", "hzeta_is2_11_a1_1.csv", "hzeta_is2_11_a40_41.csv",
         "hzeta_s1_4_a0_1.csv", "hzeta_s1_4_a1_8.csv", "hzeta_s1_4_a1e-16_1e-14.csv",
         "hzeta_s1_4_a8_32.csv", "hzeta_s1_4_a32_2147483648.csv",

@@ -291,7 +291,7 @@ public class ZetaPerformance {
      *
      * <p>The source is either a named set ({@code domain} for {@code a >= 1};
      * {@code domainA01} for {@code a < 1}), or a colon-delimited list of resource
-     * filenames, e.g. {@code -p source=hzeta_s1_9_a-106_0_t0b0_106.csv}.
+     * filenames, e.g. {@code -p source=hzeta_rs_domain_sm1_a0_1m2p-53_2p108_2p-1075.csv}.
      *
      * <p>Use {@code -p integerA=true} to sample the integer domain {@code a} in
      * {@code [1, 2^31)}, e.g. the use case of the zeta and Zipf distributions in
@@ -309,18 +309,20 @@ public class ZetaPerformance {
         /** Minimum number of rows in the bracket to sample from. */
         private static final int MIN_ROWS = 100;
         /** Domain data for a >= 1: zeta(s, a) above 2^-1022 and 2^-1075.
-         * Note: These are the DOMAIN_RESOURCES test resources of HurwitzZetaTest. */
+         * Note: These are the first two DOMAIN_RESOURCES test resources of HurwitzZetaTest:
+         * uniform in (bits(s), bits(a)). The others use other densities or target the region
+         * a > 2^53 and would bias the sample. */
         private static final String[] DOMAIN = {
             "hzeta_domain_2p-1022.csv",
             "hzeta_domain_2p-1075.csv",
         };
         /** Domain data for a in (0, 1).
          * Note: This is the first of the DOMAIN_A01_RESOURCES test resources of
-         * HurwitzZetaTest: a log-uniform sample of the domain created in the same way
-         * as the data for {@code a >= 1}. The other resources target special regions
-         * (e.g. the single power region, or s near 1) and would bias the sample. */
+         * HurwitzZetaTest: uniform in (bits(s), bits(a)) between the zeta(s, a) contours
+         * 2^108 and 2^-1075. The other resources use other densities or target special
+         * regions (e.g. the single power region, or s near 1) and would bias the sample. */
         private static final String[] DOMAIN_A01 = {
-            "hzeta_sm1-52_8_a-53_0.csv",
+            "hzeta_rs_domain_a0_1m2p-53_2p108_2p-1075.csv",
         };
 
         /** The size of the data. */
