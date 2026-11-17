@@ -15,7 +15,7 @@
 import argparse
 import sys
 import os
-from mpmath import mp, mpf, mpc, zeta, fsum, floor, __version__ as version
+from mpmath import mp, mpf, mpc, zeta, fsum, floor, nstr, __version__ as version
 import inspect
 import mpmath.functions.zeta as _mpzeta
 
@@ -93,7 +93,13 @@ parser.add_argument("--min-digits", type=int, default=30,
     help="a < 0: digits that must agree at dps and 2*dps (default: %(default)s)")
 parser.add_argument("--max-sum-terms", type=int, default=1 << 20,
     help="a < 0: maximum terms for the sum method (default: %(default)s)")
+parser.add_argument("--digits", type=int, default=0,
+    help="Significant digits of the output value; 0 for the working precision "
+    "(default: %(default)s). Files used only to test double results need ~25 "
+    "(reference rounding < 5e-9 ulp); use the default for double-double tests")
 args = parser.parse_args()
+if args.digits < 0 or args.digits > args.dps:
+  parser.error(f'--digits {args.digits} must be in [0, dps={args.dps}]')
 mp.dps = args.dps
 mp.pretty = True
 
@@ -120,6 +126,8 @@ for filename in args.data:
           if negative:
             print(f'# a < 0: {args.negative} with zeta at positive arguments; '
                   f'dps={args.dps} and {2 * args.dps} agree to {args.min_digits} digits', file=f2)
+          if args.digits:
+            print(f'# Output: {args.digits} significant digits', file=f2)
         continue
       s, a = parse(line)
       if not selected(a):
@@ -137,6 +145,6 @@ for filename in args.data:
       n += 1
       if abs(float(z)) < 2.2250738585072014e-308:
         sn += 1
-      print(f'{s}, {a}, {z}', file=f2)
+      print(f'{s}, {a}, {nstr(z, args.digits) if args.digits else z}', file=f2)
   if sn:
     print(f'{filename} sub-normal results {sn} / {n} ({100 * sn / n:.3}%)')
