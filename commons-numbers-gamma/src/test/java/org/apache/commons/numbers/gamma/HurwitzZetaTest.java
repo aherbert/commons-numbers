@@ -2447,16 +2447,51 @@ class HurwitzZetaTest {
         return p * UPSCALE_1022 * p;
     }
 
-    /** Exit type of the last call to the dynamic zeta implementation: trap or zero. */
-    private static final int DYN_EXIT_TRAP = 0;
+    /** Exit type of the last call to the dynamic zeta implementation: single term
+     * {@code a^-s} (s >= SINGLE_TERM_S or {@code a^-s >= LARGE_T0}). */
+    private static final int DYN_EXIT_SINGLE_TERM = 0;
+    /** Exit type: zero result. */
+    private static final int DYN_EXIT_ZERO = 1;
+    /** Exit type: Euler-Maclaurin sum with N=0 ({@link #zetaEm0}) with no corrections
+     * (asymptotic approximation for large a). */
+    private static final int DYN_EXIT_EM0_ASYMPTOTIC = 2;
     /** Exit type: Euler-Maclaurin sum with N=0 ({@link #zetaEm0}). */
-    private static final int DYN_EXIT_EM0 = 1;
+    private static final int DYN_EXIT_EM0 = 3;
     /** Exit type: remainder of the forward sum is negligible. */
-    private static final int DYN_EXIT_REMAINDER = 2;
+    private static final int DYN_EXIT_REMAINDER = 4;
     /** Exit type: Euler-Maclaurin tail converged at x = a + k. */
-    private static final int DYN_EXIT_EM = 3;
+    private static final int DYN_EXIT_EM = 5;
     /** Exit type: Euler-Maclaurin tail forced at the maximum N. */
-    private static final int DYN_EXIT_FORCED = 4;
+    private static final int DYN_EXIT_FORCED = 6;
+    /** Names of the exit types of the dynamic zeta implementation (indexed by type). */
+    private static final String[] DYN_EXIT_NAMES = {
+        "single-term", "zero", "em0-asymptotic", "em0", "remainder", "em", "forced",
+    };
+    /** Method for {@code x^(1-s)} at an Euler-Maclaurin exit: power function. */
+    private static final int DYN_POW_DIRECT = 0;
+    /** Method for {@code x^(1-s)}: estimate {@code x * x^-s} (tail share below the
+     * estimate ratio threshold, or directPow off). */
+    private static final int DYN_POW_ESTIMATE = 1;
+    /** Method for {@code x^(1-s)}: estimate {@code x * x^-s} as the mantissa product
+     * carries (carry rule). */
+    private static final int DYN_POW_CARRY = 2;
+    /** Method for {@code x^(1-s)}: near the pole {@code 1 + expm1((1-s) ln x)}. */
+    private static final int DYN_POW_POLE = 3;
+    /** Method for {@code x^(1-s)}: scaled sum, sub-normal {@code x^(1-s)} from the exact
+     * square of the half power (split rule). */
+    private static final int DYN_POW_SPLIT_SQUARE = 4;
+    /** Method for {@code x^(1-s)}: scaled sum, power function of a normal {@code x^(1-s)}. */
+    private static final int DYN_POW_SCALED = 5;
+    /** Method for {@code x^(1-s)}: split power (sub-normal {@code x^(1-s)} recomputed as
+     * {@code x^((1-s)/2) * 2^1022 * x^((1-s)/2)}). */
+    private static final int DYN_POW_SPLIT = 6;
+    /** Names of the methods for {@code x^(1-s)} (indexed by method). */
+    private static final String[] DYN_POW_NAMES = {
+        "direct", "estimate", "carry", "pole", "split-square", "scaled", "split",
+    };
+    /** Method for {@code x^(1-s)} at an Euler-Maclaurin exit (N=0 or N > 0) of the last
+     * call to the dynamic zeta implementation; -1 for other exits. Used for testing. */
+    private static int dynamicPowMethod;
     /** Exit type of the last call to the dynamic zeta implementation. Used for testing. */
     private static int dynamicExit;
     /** Exit k (the value of N) of the last call to the dynamic zeta implementation.
@@ -2744,6 +2779,65 @@ class HurwitzZetaTest {
             return new DynamicContext(m, m0, mStep, maxN, useSum, directPow, skip, estimateRatio, carry, use, pole);
         }
 
+        /**
+         * Create a context from a specification: {@code default}, or comma-separated
+         * {@code key=value} options applied to {@link #DEFAULT}. Keys: {@code m},
+         * {@code maxN}, {@code schedule} ({@code m0:step}), {@code useSum},
+         * {@code directPow}, {@code skip}, {@code ratio} (estimate ratio), {@code carry},
+         * {@code splitRule}, {@code pole}. Example: {@code carry=false,m=8}.
+         *
+         * @param spec Specification.
+         * @return the context
+         */
+        static DynamicContext parse(String spec) {
+            DynamicContext dc = DEFAULT;
+            if ("default".equals(spec)) {
+                return dc;
+            }
+            for (final String option : spec.split(",")) {
+                final String[] kv = option.split("=");
+                Assertions.assertEquals(2, kv.length, () -> "Invalid option: " + option);
+                final String key = kv[0].trim();
+                final String v = kv[1].trim();
+                switch (key) {
+                case "m":
+                    dc = dc.withM(Integer.parseInt(v));
+                    break;
+                case "maxN":
+                    dc = dc.withMaxN(Integer.parseInt(v));
+                    break;
+                case "schedule":
+                    final String[] p = v.split(":");
+                    dc = dc.withSchedule(Integer.parseInt(p[0]), Integer.parseInt(p[1]));
+                    break;
+                case "useSum":
+                    dc = dc.withUseSum(Boolean.parseBoolean(v));
+                    break;
+                case "directPow":
+                    dc = dc.withDirectPow(Boolean.parseBoolean(v));
+                    break;
+                case "skip":
+                    dc = dc.withSkip(Boolean.parseBoolean(v));
+                    break;
+                case "ratio":
+                    dc = dc.withEstimateRatio(Double.parseDouble(v));
+                    break;
+                case "carry":
+                    dc = dc.withCarry(Boolean.parseBoolean(v));
+                    break;
+                case "splitRule":
+                    dc = dc.withSplitRule(Boolean.parseBoolean(v));
+                    break;
+                case "pole":
+                    dc = dc.withPole(Boolean.parseBoolean(v));
+                    break;
+                default:
+                    Assertions.fail("Unknown option: " + key);
+                }
+            }
+            return dc;
+        }
+
         @Override
         public String toString() {
             return (skip ? "skip " : "") +
@@ -2799,6 +2893,7 @@ class HurwitzZetaTest {
         dynamicSkipped = 0;
         dynamicTailShare = Double.NaN;
         dynamicAmp = Double.NaN;
+        dynamicPowMethod = -1;
         final int m = Math.min(Math.max(0, dc.m), F.length - 1);
 
         // k = 0 for a > 2: Euler-Maclaurin sum with N=0 (S_0 = 0).
@@ -2809,8 +2904,11 @@ class HurwitzZetaTest {
         if (firstEmK == 1) {
             final double z = zetaEm0(s, a, Math.max(0, dc.mk(0)), true, dc.pole);
             if (!Double.isNaN(z)) {
-                dynamicExit = forwardExitK == -3 ? DYN_EXIT_TRAP : DYN_EXIT_EM0;
-                if (dynamicExit == DYN_EXIT_EM0) {
+                dynamicExit = forwardExitK == -3 ? DYN_EXIT_ZERO :
+                    forwardExitK == -2 ? DYN_EXIT_EM0_ASYMPTOTIC : DYN_EXIT_EM0;
+                if (dynamicExit != DYN_EXIT_ZERO) {
+                    dynamicPowMethod = dynamicPole ? DYN_POW_POLE :
+                        forwardEm0P < SCALED_SUM_THRESHOLD ? DYN_POW_SPLIT : DYN_POW_DIRECT;
                     // forwardEm0Terms is the first term below the threshold
                     dynamicEmTerms = forwardEm0Terms - 1;
                     dynamicTailShare = 1;
@@ -2829,7 +2927,7 @@ class HurwitzZetaTest {
         // First term
         double t = HurwitzZeta.safePow(a, -s);
         forwardPowCount = 1;
-        dynamicExit = DYN_EXIT_TRAP;
+        dynamicExit = DYN_EXIT_SINGLE_TERM;
         if (t >= LARGE_T0 || s >= SINGLE_TERM_S) {
             return t;
         }
@@ -2849,6 +2947,7 @@ class HurwitzZetaTest {
             forwardPowCount++;
             t = ht * UPSCALE_1022 * ht;
             if (t == 0) {
+                dynamicExit = DYN_EXIT_ZERO;
                 return 0;
             }
             scaled = true;
@@ -2927,6 +3026,7 @@ class HurwitzZetaTest {
                     // Estimated tail share of the result
                     final double tailEst = pxe * f.hi();
                     boolean direct = dc.directPow && !(tailEst * dc.estimateRatio < s0);
+                    dynamicPowMethod = DYN_POW_ESTIMATE;
                     DD pd;
                     if (dc.directPow && scaled && dc.splitRule) {
                         if (pxe < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
@@ -2934,6 +3034,7 @@ class HurwitzZetaTest {
                             final double h = ht * 0x1.0p511;
                             px = x.multiply(DD.ofProduct(h, h));
                             direct = false;
+                            dynamicPowMethod = DYN_POW_SPLIT_SQUARE;
                         } else {
                             // Normal x^(1-s): a power function is within its 1 ulp spec
                             direct = true;
@@ -2946,22 +3047,27 @@ class HurwitzZetaTest {
                         px = pd;
                         direct = false;
                         dynamicPole = true;
+                        dynamicPowMethod = DYN_POW_POLE;
                     } else if (direct && !scaled && dc.carry &&
                         Math.getExponent(pxe) > Math.getExponent(x.hi()) + Math.getExponent(t)) {
                         // m(x) * m(t) >= 2: the estimate ulp error is <= that of t
                         direct = false;
+                        dynamicPowMethod = DYN_POW_CARRY;
                     }
                     if (direct) {
                         // Note: s < 350 so no requirement for safePow
                         if (scaled && pxe < SCALED_SUM_THRESHOLD * UPSCALE_1022) {
                             // Sub-normal x^(1-s)
                             px = DD.of(scaledPow(pow, a, k, 1 - s));
+                            dynamicPowMethod = DYN_POW_SPLIT;
                         } else if (scaled) {
                             px = DD.of(UPSCALE_1022 * pow.apply(a, k, 1 - s));
                             forwardPowCount++;
+                            dynamicPowMethod = DYN_POW_SCALED;
                         } else {
                             px = DD.of(pow.apply(a, k, 1 - s));
                             forwardPowCount++;
+                            dynamicPowMethod = DYN_POW_DIRECT;
                         }
                     }
                     dynamicExit = force ? DYN_EXIT_FORCED : DYN_EXIT_EM;
@@ -3277,6 +3383,152 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Record the decisions and error of the dynamic zeta implementation for each row of a
+     * reference file. Used to plot the behaviour of the function over the domain.
+     *
+     * <p>No assertions are made: the accuracy of the production implementation is tested
+     * against the reference data elsewhere, and the default context matches the production
+     * implementation. Output: {@code target/zeta_dynamic_<context>_<file>.csv} with a header
+     * row and the columns:
+     *
+     * <ul>
+     * <li>{@code s, a, z}: arguments and result
+     * <li>{@code ulp_error}: signed error relative to the reference (0 if the result is the
+     * double closest to the reference)
+     * <li>{@code exit}: exit type (see {@link #DYN_EXIT_NAMES}, listed in the header)
+     * <li>{@code k}: exit k (N) for the remainder and Euler-Maclaurin exits; else 0
+     * <li>{@code pows}: number of power function calls
+     * <li>{@code em_terms}: correction terms used at an Euler-Maclaurin exit; else -1
+     * <li>{@code wasted}: correction terms evaluated in failed convergence checks
+     * <li>{@code switch_k}: term k at which the sum switched to scaling; else -1
+     * <li>{@code pole}: 1 if {@code x^(1-s)} was computed as {@code 1 + expm1(w)}
+     * <li>{@code pow_method}: method for {@code x^(1-s)} at an Euler-Maclaurin exit (see
+     * {@link #DYN_POW_NAMES}, listed in the header); else -1
+     * <li>{@code tail_share}: share of the result from the tail at an Euler-Maclaurin exit
+     * <li>{@code amp}: amplification of the ulp error of {@code x^(1-s)} in the result at an
+     * Euler-Maclaurin exit (tail share * m(result) / m(x^(1-s)))
+     * <li>{@code prod}: 1 if the result is bitwise equal to the production implementation
+     * ({@link HurwitzZeta#zetaImp(double, double)})
+     * </ul>
+     *
+     * @param context Context specification (see {@link DynamicContext#parse(String)}).
+     * @param filename Reference data filename.
+     * @throws IOException if an I/O error occurs
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // Domain samples (a >= 1)
+        "default, hzeta_domain_2p-1022.csv",
+        "default, hzeta_domain_2p-1075.csv",
+        "default, hzeta_rs_domain_a1_2p53_2p-1075.csv",
+        "default, hzeta_rs_domain_sm1_a1_2p53_2p-1075.csv",
+        "default, hzeta_rs_domain_am1_a1_2p53_2p-1075.csv",
+        "default, hzeta_rs_domain_sm1_am1_a1_2p53_2p-1075.csv",
+        "default, hzeta_rs_domain_a2p53_max_2p-1075.csv",
+        "default, hzeta_rs_domain_sm1_a2p53_max_2p-1075.csv",
+        // Domain samples (a < 1)
+        "default, hzeta_rs_domain_a0_1m2p-53_2p108_2p-1075.csv",
+        "default, hzeta_rs_domain_sm1_a0_1m2p-53_2p108_2p-1075.csv",
+        "default, hzeta_rs_domain_1ma_a0_1m2p-53_2p108_2p-1075.csv",
+        "default, hzeta_rs_domain_sm1_1ma_a0_1m2p-53_2p108_2p-1075.csv",
+        "default, hzeta_rs_domain_sm1_1ma_s1p2p-52_1p2p-44_a2p-1_1m2p-53_2p108_2p-1075.csv",
+    })
+    @Disabled("Used to record the decisions of the dynamic N zeta implementation")
+    void testDataZetaDynamic(String context, String filename) throws IOException {
+        final DynamicContext dc = DynamicContext.parse(context);
+        final String token = context.replace('=', '-').replace(',', '_').replace(':', '-');
+        final String name = String.format("zeta_dynamic_%s_%s", token, filename);
+        final int nExit = DYN_EXIT_NAMES.length;
+        final int nPow = DYN_POW_NAMES.length;
+        final TestUtils.ErrorStatistics[] exitStats = new TestUtils.ErrorStatistics[nExit];
+        final long[] exitPows = new long[nExit];
+        final long[] powMethods = new long[nPow];
+        for (int i = 0; i < nExit; i++) {
+            exitStats[i] = new TestUtils.ErrorStatistics();
+        }
+        final TestUtils.ErrorStatistics all = new TestUtils.ErrorStatistics();
+        int n = 0;
+        int prod = 0;
+        try (DataReader in = new DataReader(filename);
+             PrintStream out = getPrintStream(name)) {
+            out.printf("# Source: %s%n", filename);
+            out.printf("# Context: %s (%s)%n", context, dc);
+            out.printf("# exit: %s%n", codes(DYN_EXIT_NAMES));
+            out.printf("# pow_method: %s%n", codes(DYN_POW_NAMES));
+            out.println("s,a,z,ulp_error,exit,k,pows,em_terms,wasted,switch_k,pole,pow_method,tail_share,amp,prod");
+            while (in.next()) {
+                final double s = in.getDouble(0);
+                final double a = in.getDouble(1);
+                if (!(a > 0 && s > 1)) {
+                    continue;
+                }
+                final BigDecimal expected = in.getBigDecimal(2);
+                final double z = zetaDynamic(s, a, dc);
+                // Read the diagnostics before any other evaluation
+                final int exit = dynamicExit;
+                final int k = exit == DYN_EXIT_REMAINDER || exit == DYN_EXIT_EM || exit == DYN_EXIT_FORCED ?
+                    dynamicExitK : 0;
+                final int pows = forwardPowCount;
+                final int emTerms = dynamicEmTerms;
+                final int wasted = dynamicWastedTerms;
+                final int switchK = dynamicSwitchK;
+                final boolean pole = dynamicPole;
+                final int method = dynamicPowMethod;
+                final double share = dynamicTailShare;
+                final double amp = dynamicAmp;
+                final double e = TestUtils.assertEquals(expected, z, -Double.MAX_VALUE, null, () -> "");
+                final boolean same = Double.compare(z, HurwitzZeta.zetaImp(s, a)) == 0;
+                n++;
+                if (same) {
+                    prod++;
+                }
+                all.add(e);
+                exitStats[exit].add(e);
+                exitPows[exit] += pows;
+                if (method >= 0) {
+                    powMethods[method]++;
+                }
+                out.printf("%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%s,%s,%d%n",
+                    s, a, z, e, exit, k, pows, emTerms, wasted, switchK, pole ? 1 : 0, method,
+                    share, amp, same ? 1 : 0);
+            }
+        }
+        report("%s %s: n=%d max %.3f rms %.4f; production match %d%n",
+            filename, dc, n, all.getMaxAbs(), all.getRMS(), prod);
+        for (int i = 0; i < nExit; i++) {
+            if (exitStats[i].size() != 0) {
+                report("  %-15s n=%6d (%5.1f%%) pow %5.2f max %.3f rms %.4f%n", DYN_EXIT_NAMES[i],
+                    exitStats[i].size(), 100.0 * exitStats[i].size() / n,
+                    (double) exitPows[i] / exitStats[i].size(), exitStats[i].getMaxAbs(), exitStats[i].getRMS());
+            }
+        }
+        final StringBuilder sb = new StringBuilder("  x^(1-s):");
+        for (int i = 0; i < nPow; i++) {
+            if (powMethods[i] != 0) {
+                sb.append(' ').append(DYN_POW_NAMES[i]).append(' ').append(powMethods[i]);
+            }
+        }
+        report("%s%n", sb);
+    }
+
+    /**
+     * List the names with their code (index), e.g. "0=a 1=b".
+     *
+     * @param names Names.
+     * @return the list
+     */
+    private static String codes(String[] names) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < names.length; i++) {
+            if (i != 0) {
+                sb.append(' ');
+            }
+            sb.append(i).append('=').append(names[i]);
+        }
+        return sb.toString();
+    }
+
+    /**
      * Compare the dynamic zeta implementation with the forward summation zeta
      * implementation (default context) on reference data with {@code a > 0}.
      *
@@ -3329,7 +3581,7 @@ class HurwitzZetaTest {
         final TestUtils.ErrorStatistics[] all = new TestUtils.ErrorStatistics[nc];
         final TestUtils.ErrorStatistics[] sub = new TestUtils.ErrorStatistics[nc];
         final long[] pows = new long[nc];
-        final long[][] exits = new long[nc][5];
+        final long[][] exits = new long[nc][DYN_EXIT_NAMES.length];
         final long[] wasted = new long[nc];
         final String[] worst = new String[nc];
         final double[] worstE = new double[nc];
@@ -3339,7 +3591,7 @@ class HurwitzZetaTest {
         }
         // Default context: histogram of exit N; mean pow by a band and s band
         final int maxN = DynamicContext.DEFAULT.maxN;
-        final long[][] histN = new long[5][maxN + 2];
+        final long[][] histN = new long[DYN_EXIT_NAMES.length][maxN + 2];
         final String[] aBands = {"a<1", "[1,2)", "[2,4)", "[4,8)", "[8,16)", "[16,64)", ">=64"};
         final String[] sBands = {"(1,2]", "(2,4]", "(4,16]", "(16,64]", "(64,350)", ">=350"};
         final long[][] bandN = new long[aBands.length][sBands.length];
@@ -3420,7 +3672,7 @@ class HurwitzZetaTest {
                     if (i == iDefault && dynamicEmTerms >= 0) {
                         final int tm = dynamicEmTerms;
                         final int tb = tm <= 2 ? tm : tm <= 4 ? 3 : tm <= 8 ? 4 : tm <= 12 ? 5 : 6;
-                        termStats[dynamicExit == DYN_EXIT_EM0 ? 0 : 1][tb].add(e);
+                        termStats[dynamicExit == DYN_EXIT_EM0 || dynamicExit == DYN_EXIT_EM0_ASYMPTOTIC ? 0 : 1][tb].add(e);
                         int b = 0;
                         while (dynamicTailShare >= shareLimits[b]) {
                             b++;
@@ -3452,7 +3704,8 @@ class HurwitzZetaTest {
                 report("%59s", "");
             } else {
                 report(" | trap %5.1f%% em0 %5.1f%% rem %5.1f%% em %5.1f%% forced %5.1f%% | wasted %5.2f",
-                    100.0 * exits[i][DYN_EXIT_TRAP] / n, 100.0 * exits[i][DYN_EXIT_EM0] / n,
+                    100.0 * (exits[i][DYN_EXIT_SINGLE_TERM] + exits[i][DYN_EXIT_ZERO]) / n,
+                    100.0 * (exits[i][DYN_EXIT_EM0_ASYMPTOTIC] + exits[i][DYN_EXIT_EM0]) / n,
                     100.0 * exits[i][DYN_EXIT_REMAINDER] / n, 100.0 * exits[i][DYN_EXIT_EM] / n,
                     100.0 * exits[i][DYN_EXIT_FORCED] / n, (double) wasted[i] / n);
             }
