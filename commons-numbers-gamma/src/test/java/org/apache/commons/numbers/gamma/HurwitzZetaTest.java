@@ -9663,10 +9663,23 @@ class HurwitzZetaTest {
      */
     @ParameterizedTest
     @CsvSource({
-        // a >= 1 under the 2^-1075 contour (non-zero result)
-        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 1, 0, VALUE, VALUE",
-        // a < 1 between the 2^108 and 2^-1075 contours (a = 1 - 2^-53)
-        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 50000, 0, 0, 0, 0.9999999999999999, VALUE, VALUE",
+        // a in [1, 2^53] under the 2^-1075 contour (non-zero result).
+        // Densities: (s, a), (s-1, a), (s, a-1), (s-1, a-1).
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 1, 9007199254740992, VALUE, VALUE",
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 1, 9007199254740992, MINUS_ONE, VALUE",
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 1, 9007199254740992, VALUE, MINUS_ONE",
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 1, 9007199254740992, MINUS_ONE, MINUS_ONE",
+        // a > 2^53 under the 2^-1075 contour (s < ~21). Densities: (s, a), (s-1, a).
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 2500, 0, 0, 9007199254740992, 0, VALUE, VALUE",
+        "'', 0, hzeta_rs_2p-1075.csv, -1075, 1e-6, 2500, 0, 0, 9007199254740992, 0, MINUS_ONE, VALUE",
+        // a < 1 between the 2^108 and 2^-1075 contours (a <= 1 - 2^-53).
+        // Densities: (s, a), (s-1, a), (s, 1-a), (s-1, 1-a).
+        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 0, 0.9999999999999999, VALUE, VALUE",
+        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 0, 0.9999999999999999, MINUS_ONE, VALUE",
+        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 0, 0.9999999999999999, VALUE, ONE_MINUS",
+        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 75000, 0, 0, 0, 0.9999999999999999, MINUS_ONE, ONE_MINUS",
+        // Pole: s-1 in [2^-52, 2^-44], a in [0.5, 1 - 2^-53]
+        "hzeta_rs_2p108.csv, 108, hzeta_rs_2p-1075.csv, -1075, 1e-6, 5000, 0, 1.0000000000000568, 0.5, 0.9999999999999999, MINUS_ONE, ONE_MINUS",
     })
     @Disabled("Used to generate test data")
     void testDataWithinDomainReal(String lowerFile, int bl, String upperFile, int bu,
@@ -9788,11 +9801,11 @@ class HurwitzZetaTest {
         final StringBuilder name = new StringBuilder(64).append("hzeta_rs_domain")
             .append(sc.token("s")).append(ac.token("a"));
         if (minS > 0 || maxS > 0) {
-            name.append("_s").append(shortFormat(s0)).append('_').append(shortFormat(s1));
+            name.append("_s").append(nameFormat(s0)).append('_').append(nameFormat(s1));
         }
         if (minA > 0 || maxA > 0) {
-            name.append("_a").append(minA > 0 ? shortFormat(minA) : "0")
-                .append('_').append(maxA > 0 ? shortFormat(maxA) : "max");
+            name.append("_a").append(minA > 0 ? nameFormat(minA) : "0")
+                .append('_').append(maxA > 0 ? nameFormat(maxA) : "max");
         }
         if (lower != null) {
             name.append("_2p").append(bl);
@@ -10112,6 +10125,41 @@ class HurwitzZetaTest {
             i[0] += step;
             return Double.longBitsToDouble(i[0]);
         };
+    }
+
+    /**
+     * Format the double for a file name. The value is identified exactly where possible:
+     * integers up to 2^20; powers of 2 as {@code 2pk}; {@code 1 +/- 2^k} as {@code 1p2pk}
+     * and {@code 1m2pk}; otherwise the shortest decimal representation of the double (no
+     * rounding to an integer, unlike {@link #shortFormat(double)}).
+     *
+     * @param d the double (finite, positive)
+     * @return the string
+     */
+    private static String nameFormat(double d) {
+        if (d == Math.rint(d) && d <= 0x1.0p20) {
+            return Long.toString((long) d);
+        }
+        if (isPowerOf2(d)) {
+            return "2p" + Math.getExponent(d);
+        }
+        if (d > 1 && isPowerOf2(d - 1)) {
+            return "1p2p" + Math.getExponent(d - 1);
+        }
+        if (d < 1 && isPowerOf2(1 - d)) {
+            return "1m2p" + Math.getExponent(1 - d);
+        }
+        return Double.toString(d).replaceFirst("\\.0$", "").replaceFirst("\\.0E", "E");
+    }
+
+    /**
+     * Test if the value is a normal power of 2.
+     *
+     * @param d the double
+     * @return true if a power of 2
+     */
+    private static boolean isPowerOf2(double d) {
+        return d >= Double.MIN_NORMAL && d == Math.scalb(1.0, Math.getExponent(d));
     }
 
     /**
