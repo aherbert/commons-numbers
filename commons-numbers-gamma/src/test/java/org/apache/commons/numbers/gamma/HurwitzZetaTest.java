@@ -149,8 +149,13 @@ class HurwitzZetaTest {
         "hzeta_rs_domain_1ma_a0_1m2p-53_2p108_2p-1075.csv",
         "hzeta_rs_domain_sm1_1ma_a0_1m2p-53_2p108_2p-1075.csv",
         "hzeta_rs_domain_sm1_1ma_s1p2p-52_1p2p-44_a2p-1_1m2p-53_2p108_2p-1075.csv",
-        "hzeta_s0_9_a-53_0_t0b106_1100.csv",
-        "hzeta_s8_50_1ma-53_-1_t0b0_1024.csv",
+        // a < 1 where zeta = a^-s: between the 2^1024 and 2^108 contours ((s, a), (s, 1-a),
+        // (s-1, a)); above the overflow contour (2^1100 to 2^1024); and s > 2^32 (2^108 to 2^0)
+        "hzeta_rs_domain_2p1024_2p108.csv",
+        "hzeta_rs_domain_1ma_a2p-1_1m2p-53_2p1024_2p108.csv",
+        "hzeta_rs_domain_sm1_2p1024_2p108.csv",
+        "hzeta_rs_domain_2p1100_2p1024.csv",
+        "hzeta_rs_domain_1ma_s2p32_max_a2p-1_1m2p-53_2p108_2p0.csv",
         // Overflow contour zeta(s, a) ~ 2^1024
         "hzeta_2p1024.csv",
     };
@@ -230,9 +235,13 @@ class HurwitzZetaTest {
         "hzeta_rs_domain_1ma_a0_1m2p-53_2p108_2p-1075.csv",
         "hzeta_rs_domain_sm1_1ma_a0_1m2p-53_2p108_2p-1075.csv",
         "hzeta_rs_domain_sm1_1ma_s1p2p-52_1p2p-44_a2p-1_1m2p-53_2p108_2p-1075.csv",
-        // Not covered by the band: zeta(s, a) = a^-s (above 2^108 to overflow) and s > 2^32
-        "hzeta_s0_9_a-53_0_t0b106_1100.csv",
-        "hzeta_s8_50_1ma-53_-1_t0b0_1024.csv",
+        // Not covered by the band: zeta(s, a) = a^-s (testDataWithinPowerBand): above 2^108 to
+        // overflow ((s, a), (s, 1-a), (s-1, a)); above overflow; s > 2^32 (2^108 to 2^0)
+        "hzeta_rs_domain_2p1024_2p108.csv",
+        "hzeta_rs_domain_1ma_a2p-1_1m2p-53_2p1024_2p108.csv",
+        "hzeta_rs_domain_sm1_2p1024_2p108.csv",
+        "hzeta_rs_domain_2p1100_2p1024.csv",
+        "hzeta_rs_domain_1ma_s2p32_max_a2p-1_1m2p-53_2p108_2p0.csv",
     };
 
     // For the configurable double implementation these constants are from the main class
@@ -9068,6 +9077,137 @@ class HurwitzZetaTest {
             out.printf("# Rows estimated above the overflow threshold: %d%n", above);
             out.printf("# Rows far from the threshold (|a^-s / 2^1024 - 1| > 2^-40): %d%n", far);
             rows.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
+        }
+    }
+
+    /**
+     * Create test data for real {@code s} and {@code a < 1} within the band between two
+     * contours {@code zeta(s, a) = 2^b} with {@code b >= 108}.
+     *
+     * <p>For {@code b >= 108} the contour is {@code a_b(s) = 2^(-b/s)}: the result is
+     * {@code zeta(s, a) = a^-s + zeta(s, 1 + a)} with {@code zeta(s, 1 + a) <= 2^52 + 1},
+     * which is below {@code 2^-56} relative to {@code a^-s >= 2^108}. For {@code s >= 350}
+     * the same holds for any target {@code b >= 0} (single term: the remainder is below
+     * {@code 2^-56} relative), so a lower target {@code bu < 108} is allowed when
+     * {@code minS >= 350}. So in the band
+     * {@code zeta(s, a) = a^-s} in double precision and the contours are computed directly
+     * (no contour file is required). The lower bound on {@code a} is the larger target
+     * {@code 2^bl}. A band with {@code bl > 1024} contains results that overflow.
+     *
+     * <p>Samples are uniform in the coordinates (bits(t(s)), bits(t(a))) for the chosen
+     * transforms (see {@link Coordinate}): x is uniform in its range and accepted with
+     * probability {@code W(x) / Wmax}, where {@code W(x)} is the number of coordinates
+     * {@code y} in the band at {@code x}; then y is uniform in the band. {@code Wmax} is the
+     * maximum width over a grid of x with a margin, and is checked for every trial. The
+     * bounds use {@code Math.pow(2, -b / s)} (about 1 ulp), so samples may be just outside
+     * the band; these are valid data (the reference value is computed independently).
+     *
+     * @param bl Lower bound on a: contour target 2^bl (bl > bu).
+     * @param bu Upper bound on a: contour target 2^bu (bu >= 108; or bu >= 0 with minS >= 350).
+     * @param samples Number of samples.
+     * @param minS Minimum s (ignored if not positive).
+     * @param maxS Maximum s (ignored if not positive).
+     * @param minA Minimum a (ignored if not positive).
+     * @param maxA Maximum a (ignored if not positive; default 1 - 2^-53).
+     * @param sc Coordinate for s (VALUE or MINUS_ONE).
+     * @param ac Coordinate for a (VALUE or ONE_MINUS).
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // a < 1 between the 2^1024 and 2^108 contours: zeta = a^-s (finite).
+        // Densities: (s, a), (s, 1-a) with a >= 0.5 (large s), (s-1, a) (pole).
+        "1024, 108, 10000, 0, 0, 0, 0, VALUE, VALUE",
+        "1024, 108, 10000, 0, 0, 0.5, 0, VALUE, ONE_MINUS",
+        "1024, 108, 2500, 0, 0, 0, 0, MINUS_ONE, VALUE",
+        // Above the overflow contour: infinite results
+        "1100, 1024, 2000, 0, 0, 0, 0, VALUE, VALUE",
+        // s > 2^32 (beyond the contour model of testDataWithinDomainReal): zeta = a^-s for
+        // any result (single term). Density (s, 1-a) with a >= 0.5.
+        "108, 0, 5000, 4294967296, 0, 0.5, 0, VALUE, ONE_MINUS",
+    })
+    @Disabled("Used to generate test data")
+    void testDataWithinPowerBand(int bl, int bu, int samples, double minS, double maxS,
+        double minA, double maxA, Coordinate sc, Coordinate ac) throws IOException {
+        Assertions.assertTrue(bl > bu && (bu >= 108 || bu >= 0 && minS >= 350),
+            "Requires bl > bu >= 108, or bl > bu >= 0 with minS >= 350");
+        Assertions.assertNotEquals(Coordinate.ONE_MINUS, sc, "s > 1");
+        Assertions.assertNotEquals(Coordinate.MINUS_ONE, ac, "a < 1");
+        final double a0 = minA > 0 ? minA : Double.MIN_VALUE;
+        final double a1 = maxA > 0 ? maxA : Math.nextDown(1.0);
+        // s range: from 1 + 2^-52 to where the lower bound reaches the maximum a
+        final double s0 = minS > 0 ? minS : Math.nextUp(1.0);
+        final double s1 = maxS > 0 ? maxS : -bl * Math.log(2) / Math.log1p(a1 - 1);
+        final long[] xr = sc.range(s0, s1);
+        // Width of the band in the coordinate y at the coordinate x: {y0, y1}
+        final java.util.function.LongFunction<long[]> band = x -> {
+            final double s = sc.toV(x);
+            final double lo = Math.max(a0, Math.pow(2, -bl / s));
+            final double hi = Math.min(a1, Math.pow(2, -bu / s));
+            if (hi < lo) {
+                return null;
+            }
+            return ac == Coordinate.VALUE ?
+                new long[] {Double.doubleToRawLongBits(lo), Double.doubleToRawLongBits(hi)} :
+                ac.range(lo, hi);
+        };
+        // Bound on the width from a grid of x (the width is smooth in x)
+        long wmax = 0;
+        final int grid = 100000;
+        for (int i = 0; i <= grid; i++) {
+            final long[] r = band.apply(xr[0] + (long) ((double) i / grid * (xr[1] - xr[0])));
+            if (r != null) {
+                wmax = Math.max(wmax, r[1] - r[0] + 1);
+            }
+        }
+        wmax = (long) (wmax * 1.01) + 2;
+        final long bound = wmax;
+
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final ArrayList<double[]> data = new ArrayList<>(samples);
+        long trials = 0;
+        while (data.size() < samples) {
+            trials++;
+            final long x = rng.nextLong(xr[0], xr[1] + 1);
+            final double s = sc.toV(x);
+            final long[] r = band.apply(x);
+            if (r == null) {
+                continue;
+            }
+            final long n = r[1] - r[0] + 1;
+            if (n <= 0) {
+                continue;
+            }
+            Assertions.assertTrue(n <= bound,
+                () -> String.format("Width above the bound: s=%s, n=%d, bound=%d", s, n, bound));
+            if (rng.nextDouble() * bound < n) {
+                final long y = r[0] + rng.nextLong(n);
+                data.add(new double[] {s, ac == Coordinate.VALUE ? Double.longBitsToDouble(y) : ac.toV(y)});
+            }
+        }
+        final double acceptance = (double) samples / trials;
+
+        // Sort by a then s
+        data.sort(Comparator.<double[]>comparingDouble(k -> k[1]).thenComparingDouble(k -> k[0]));
+
+        final StringBuilder name = new StringBuilder(64).append("hzeta_rs_domain")
+            .append(sc.token("s")).append(ac.token("a"));
+        if (minS > 0 || maxS > 0) {
+            name.append("_s").append(nameFormat(s0)).append('_').append(maxS > 0 ? nameFormat(s1) : "max");
+        }
+        if (minA > 0 || maxA > 0) {
+            name.append("_a").append(nameFormat(a0)).append('_').append(nameFormat(a1));
+        }
+        name.append("_2p").append(bl).append("_2p").append(bu).append(".txt");
+        try (PrintStream out = getPrintStream(name.toString())) {
+            out.printf("# Real s in [%s, %s]%n", s0, s1);
+            out.printf("# a in [%s, %s]%n", a0, a1);
+            out.printf("# Lower bound for a: a^-s = 2^%d%n", bl);
+            out.printf("# Upper bound for a: a^-s = 2^%d%n", bu);
+            out.println("# In the band zeta(s, a) = a^-s in double precision");
+            out.printf("# Density: uniform in (bits(%s), bits(%s))%n", sc.label("s"), ac.label("a"));
+            out.printf("# Width bound: %d; acceptance %.5f%n", bound, acceptance);
+            out.printf("# Samples: %d%n", samples);
+            data.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
         }
     }
 
