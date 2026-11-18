@@ -47,6 +47,9 @@
   <suppress checks="SummaryJavadoc" files="[\\/]examples[\\/].*" />
 
   <!-- Selection -->
+  <suppress checks="IllegalCatch" files=".*[/\\]core[/\\]FMASupport\.java" />
+
+  <!-- Selection -->
   <suppress checks="ParameterNumber" files=".*[/\\]arrays[/\\]QuickSelect.java" />
   <suppress checks="ParameterNumber" files=".*[/\\]jmh[/\\]arrays[/\\]Partition.java" />
   <suppress checks="ParameterNumber" files=".*[/\\]jmh[/\\]arrays[/\\]Sorting.java" />
