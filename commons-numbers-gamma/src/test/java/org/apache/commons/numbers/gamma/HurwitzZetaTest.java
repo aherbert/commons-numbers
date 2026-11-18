@@ -7620,7 +7620,8 @@ class HurwitzZetaTest {
             }
             DoubleSupplier nextA;
             if (samples < 0) {
-                nextA = createRange(samples, 0.5, ua, uniform);
+                // Negative samples: enumerate |samples| values
+                nextA = createRange(-samples, 0.5, ua, uniform);
             } else {
                 nextA = createSampler(rng, 0.5, ua, uniform);
             }
@@ -8931,6 +8932,201 @@ class HurwitzZetaTest {
             out.printf("# zeta(s, a) ~ 2^%d%n", b);
             points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
         }
+    }
+
+    /**
+     * Create the overflow contour {@code zeta(s, a) ~ 2^1024} for real {@code s} and
+     * {@code a < 1}. Points just above the contour (smaller {@code a} or larger {@code s})
+     * have an infinite result; points below it a finite result. Testing against the contour
+     * asserts the function can compute the largest finite results and returns infinity
+     * when the result overflows (the a < 1 counterpart of the 2^-1075 contour for a > 1).
+     *
+     * <p>On this contour {@code zeta(s, a) = a^-s} in double precision:
+     * {@code zeta(s, a) = a^-s + zeta(s, 1 + a)} with
+     * {@code zeta(s, 1 + a) <= zeta(s, 1) <= 1 / (s - 1) + 1 <= 2^52 + 1}, which is below
+     * {@code 2^-970} relative to {@code a^-s ~ 2^1024}. The roots therefore solve
+     * {@code a^-s = 2^1024}, i.e. {@code s log2(a) = -1024}, and do not depend on the zeta
+     * implementation. The power is evaluated as {@code (a^(-s/2) * 2^-512)^2} using
+     * {@link HurwitzZeta#safePow(double, double)} (accurate for large {@code s} near
+     * {@code a = 1}); this has an error of a few ulp, so a root is within about 1 ulp of
+     * the closest double where one ulp changes the result by less than this (small
+     * {@code s} at fixed {@code s}: one ulp of {@code a} changes {@code a^-s} by
+     * {@code s ulp(a) / a}). The independent evaluation decides on which side of the
+     * overflow threshold each point lies.
+     *
+     * <p>The contour runs from {@code s = 1 + 2^-52} (a ~ 2^-1024, sub-normal) to
+     * {@code a = 1 - 2^-53} (s ~ 6.39e18). Roots are found for {@code n} values in each of:
+     * <ul>
+     * <li>{@code a} uniform in its bits (solve for s): small {@code a} with {@code s} near 1;
+     * <li>{@code a} in [0.5, 1) uniform in the bits of {@code 1 - a} (solve for s): large
+     * {@code s} ({@code 1 - a ~ 1024 ln 2 / s}), including {@code s > 2^31} where
+     * {@code safePow} corrects {@code Math.pow};
+     * <li>{@code s} uniform in its bits (solve for a).
+     * </ul>
+     * The ranges include their end points. Near {@code a = 1} one ulp of {@code a} changes
+     * {@code a^-s} by a large factor ({@code exp(709 / k)} at {@code 1 - a = k 2^-53}), so a
+     * root in {@code a} at fixed {@code s} can have a result far from {@code 2^1024}; these
+     * rows are valid data (a clearly finite or infinite result) and are counted in the
+     * header. Roots in {@code s} at fixed {@code a} are always near the threshold (one ulp
+     * of {@code s} changes the result by ~1.6e-13 relative).
+     *
+     * <p>The rows (s, a) are written sorted by {@code s}; duplicates are removed.
+     *
+     * @param n Number of points for each enumeration.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {1000})
+    @Disabled("Used to generate test data")
+    void testDataOverflowDomain(int n) throws IOException {
+        final double minS = Math.nextUp(1.0);
+        final double maxA = Math.nextDown(1.0);
+        final double minA = overflowRootA(minS);
+        final double maxS = overflowRootS(maxA);
+        final ArrayList<double[]> points = new ArrayList<>();
+
+        // Uniform in bits(a): solve s
+        final DoubleSupplier nextA = createRange(n, minA, maxA, false);
+        for (int i = 0; i < n; i++) {
+            final double a = nextA.getAsDouble();
+            points.add(new double[] {overflowRootS(a), a});
+        }
+        // a in [0.5, 1): uniform in bits(1 - a): solve s. 1 - a is exact.
+        final DoubleSupplier nextD = createRange(n, 0x1.0p-53, 0.5, false);
+        for (int i = 0; i < n; i++) {
+            final double a = 1 - nextD.getAsDouble();
+            points.add(new double[] {overflowRootS(a), a});
+        }
+        // Uniform in bits(s): solve a
+        final DoubleSupplier nextS = createRange(n, minS, maxS, false);
+        for (int i = 0; i < n; i++) {
+            final double s = nextS.getAsDouble();
+            points.add(new double[] {s, overflowRootA(s)});
+        }
+
+        // Sort by s then a; remove duplicates; a must be non-decreasing with s
+        points.sort(Comparator.<double[]>comparingDouble(k -> k[0]).thenComparingDouble(k -> k[1]));
+        final ArrayList<double[]> rows = new ArrayList<>();
+        int above = 0;
+        int far = 0;
+        for (final double[] p : points) {
+            if (!rows.isEmpty()) {
+                final double[] q = rows.get(rows.size() - 1);
+                if (q[0] == p[0] && q[1] == p[1]) {
+                    continue;
+                }
+                Assertions.assertTrue(q[1] <= p[1],
+                    () -> "Contour not monotonic: " + Arrays.toString(q) + " " + Arrays.toString(p));
+            }
+            rows.add(p);
+            // Estimate of an infinite result: a^-s >= 2^1024 (1 - 2^-54)
+            final double r = overflowRatio(p[0], p[1]);
+            if (r >= 1 - 0x1.0p-54) {
+                above++;
+            }
+            // Far from the threshold: |a^-s / 2^1024 - 1| > 2^-40
+            if (!(Math.abs(r - 1) <= 0x1.0p-40)) {
+                far++;
+            }
+        }
+
+        try (PrintStream out = getPrintStream("hzeta_2p1024.txt")) {
+            out.println("# zeta(s, a) ~ 2^1024");
+            out.println("# Overflow contour for a < 1: a^-s = 2^1024 (zeta = a^-s in double precision)");
+            out.printf("# s in [%s, %s]%n", minS, maxS);
+            out.printf("# a in [%s, %s]%n", minA, maxA);
+            out.println("# Roots of a^-s = 2^1024:");
+            out.printf("#   %d with a uniform in bits(a) (solve s)%n", n);
+            out.printf("#   %d with a in [0.5, 1) uniform in bits(1 - a) (solve s)%n", n);
+            out.printf("#   %d with s uniform in bits(s) (solve a)%n", n);
+            out.printf("# Rows: %d (duplicates removed)%n", rows.size());
+            out.printf("# Rows estimated above the overflow threshold: %d%n", above);
+            out.printf("# Rows far from the threshold (|a^-s / 2^1024 - 1| > 2^-40): %d%n", far);
+            rows.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
+        }
+    }
+
+    /**
+     * Compute {@code a^-s / 2^1024} as {@code (a^(-s/2) * 2^-512)^2}. The half power is
+     * finite where the result is finite (up to {@code 2^1024 * 2^1024}).
+     *
+     * @param s Argument s.
+     * @param a Argument a (in (0, 1)).
+     * @return the ratio
+     */
+    private static double overflowRatio(double s, double a) {
+        final double q = HurwitzZeta.safePow(a, -0.5 * s) * 0x1.0p-512;
+        return q * q;
+    }
+
+    /**
+     * Find {@code a} with {@code a^-s ~ 2^1024}: the closer of the two adjacent doubles
+     * that bracket the root (using {@link #overflowRatio(double, double)}, which is
+     * decreasing in {@code a}).
+     *
+     * @param s Argument s.
+     * @return a
+     */
+    private static double overflowRootA(double s) {
+        // Initial estimate a = 2^(-1024/s); then walk to the bracket
+        double lo = Math.min(Math.nextDown(1.0), Math.pow(2, -1024 / s));
+        double rlo = overflowRatio(s, lo);
+        int steps = 0;
+        // Move down until the ratio is at or above 1
+        while (rlo < 1) {
+            lo = Math.nextDown(lo);
+            rlo = overflowRatio(s, lo);
+            Assertions.assertTrue(++steps < 1000, () -> "No bracket for s=" + s);
+        }
+        // Move up while the next ratio is still at or above 1
+        double hi = Math.nextUp(lo);
+        double rhi = overflowRatio(s, hi);
+        while (rhi >= 1 && hi < 1) {
+            lo = hi;
+            rlo = rhi;
+            hi = Math.nextUp(hi);
+            rhi = overflowRatio(s, hi);
+            Assertions.assertTrue(++steps < 1000, () -> "No bracket for s=" + s);
+        }
+        if (hi >= 1) {
+            return lo;
+        }
+        return rlo - 1 <= 1 - rhi ? lo : hi;
+    }
+
+    /**
+     * Find {@code s} with {@code a^-s ~ 2^1024}: the closer of the two adjacent doubles
+     * that bracket the root (using {@link #overflowRatio(double, double)}, which is
+     * increasing in {@code s} for {@code a < 1}).
+     *
+     * @param a Argument a (in (0, 1)).
+     * @return s
+     */
+    private static double overflowRootS(double a) {
+        // Initial estimate s = -1024 ln(2) / ln(a); then walk to the bracket
+        final double lna = a > 0.5 ? Math.log1p(a - 1) : Math.log(a);
+        double hi = Math.max(Math.nextUp(1.0), -1024 * Math.log(2) / lna);
+        double rhi = overflowRatio(hi, a);
+        int steps = 0;
+        // Move up until the ratio is at or above 1
+        while (rhi < 1) {
+            hi = Math.nextUp(hi);
+            rhi = overflowRatio(hi, a);
+            Assertions.assertTrue(++steps < 1000, () -> "No bracket for a=" + a);
+        }
+        // Move down while the previous ratio is still at or above 1
+        double lo = Math.nextDown(hi);
+        double rlo = overflowRatio(lo, a);
+        while (rlo >= 1 && lo > 1) {
+            hi = lo;
+            rhi = rlo;
+            lo = Math.nextDown(lo);
+            rlo = overflowRatio(lo, a);
+            Assertions.assertTrue(++steps < 1000, () -> "No bracket for a=" + a);
+        }
+        if (lo <= 1) {
+            return hi;
+        }
+        return rhi - 1 <= 1 - rlo ? hi : lo;
     }
 
     /** Upper limit of s for a real s contour. Above this one ulp of a changes zeta(s, a)
@@ -10363,37 +10559,106 @@ class HurwitzZetaTest {
         return () -> Double.longBitsToDouble(bits + rng.nextLong(range));
     }
 
+    @Test
+    void testCreateRange() {
+        // Bits: first a, n-th b, steps differ by at most 1, then exhausted
+        for (final double[] ab : new double[][] {{Math.nextUp(1.0), 0x1.0p53}, {0x1.0p-53, 0.5},
+                                                 {1.0, Math.nextUp(Math.nextUp(1.0))}}) {
+            for (final int n : new int[] {2, 3, 7, 1000}) {
+                final long range = Double.doubleToRawLongBits(ab[1]) - Double.doubleToRawLongBits(ab[0]);
+                if (n - 1 > range) {
+                    continue;
+                }
+                final DoubleSupplier s = createRange(n, ab[0], ab[1], false);
+                long previous = Double.doubleToRawLongBits(s.getAsDouble());
+                Assertions.assertEquals(Double.doubleToRawLongBits(ab[0]), previous);
+                final long q = range / (n - 1);
+                for (int i = 1; i < n; i++) {
+                    final long x = Double.doubleToRawLongBits(s.getAsDouble());
+                    final long step = x - previous;
+                    Assertions.assertTrue(step == q || step == q + 1, "step");
+                    previous = x;
+                }
+                Assertions.assertEquals(Double.doubleToRawLongBits(ab[1]), previous);
+                Assertions.assertThrows(AssertionError.class, s::getAsDouble);
+            }
+        }
+        // Uniform: last value is b exactly
+        final DoubleSupplier u = createRange(11, 0, 1, true);
+        for (int i = 0; i < 10; i++) {
+            Assertions.assertEquals(i * 0.1, u.getAsDouble(), 1e-15);
+        }
+        Assertions.assertEquals(1.0, u.getAsDouble());
+        Assertions.assertThrows(AssertionError.class, u::getAsDouble);
+        // n = 2 gives the end points
+        for (final boolean uniform : new boolean[] {true, false}) {
+            final DoubleSupplier s = createRange(2, 0.25, 0.75, uniform);
+            Assertions.assertEquals(0.25, s.getAsDouble());
+            Assertions.assertEquals(0.75, s.getAsDouble());
+            // n = 1 requires a == b
+            Assertions.assertEquals(0.5, createRange(1, 0.5, 0.5, uniform).getAsDouble());
+            Assertions.assertThrows(AssertionError.class, () -> createRange(1, 0.5, 0.75, uniform));
+            // Invalid
+            Assertions.assertThrows(AssertionError.class, () -> createRange(0, 0.5, 0.75, uniform));
+            Assertions.assertThrows(AssertionError.class, () -> createRange(-3, 0.5, 0.75, uniform));
+            Assertions.assertThrows(AssertionError.class, () -> createRange(3, 0.75, 0.5, uniform));
+        }
+        // Bits require a >= 0 (and not -0.0)
+        Assertions.assertThrows(AssertionError.class, () -> createRange(3, -1, 1, false));
+        Assertions.assertThrows(AssertionError.class, () -> createRange(3, -0.0, 1, false));
+    }
+
     /**
-     * Enumerates the range. The enumeration can be log-uniform in the range or uniform.
+     * Enumerates the range [a, b] with {@code n} values. The first call to the returned
+     * supplier returns {@code a} and the {@code n}-th call returns {@code b}. Further calls
+     * raise an assertion error. The enumeration can be uniform in the value or uniform in
+     * the bits of the value (log-uniform within each binade).
      *
-     * <p>When log uniform the upper bound may not be reached as the step increment
-     * is the range in bits divided by (n-1). If not an exact factor then the upper
-     * limit after {@code n} may not be b. The points in bits for i in [0, n-1]:
-     * {@code a <= a + i * (range / (n - 1)) <= b}.
+     * <p>Uniform: value {@code i} is {@code a + i * (b - a) / (n - 1)}; the last value
+     * is {@code b} exactly (the computed value may differ from b by rounding).
      *
+     * <p>Bits: the range of the bits {@code R = bits(b) - bits(a)} is split into
+     * {@code n - 1} steps of {@code q = R / (n - 1)} with remainder {@code r}. Value
+     * {@code i} has the bits {@code bits(a) + i * q + floor(i * r / (n - 1))}: the
+     * remainder is spread evenly over the steps (steps differ by at most 1) and value
+     * {@code n - 1} is {@code b}. This requires {@code a} to be positive (or +0.0) so the
+     * bits are ordered as the values.
+     *
+     * <p>{@code n = 1} requires {@code a == b}.
+     *
+     * @param n number of values to generate (at least 1)
      * @param a the lower bound (inclusive)
-     * @param b the upper bound (exclusive)
-     * @param uniform if true enumerate from a uniform distribution.
+     * @param b the upper bound (inclusive)
+     * @param uniform if true enumerate uniformly in the value; otherwise in the bits
      * @return the double supplier
      */
     private static DoubleSupplier createRange(int n, double a, double b, boolean uniform) {
+        Assertions.assertTrue(n >= 1, () -> "Number of values must be at least 1: " + n);
+        Assertions.assertTrue(a <= b, () -> "Invalid range: [" + a + ", " + b + "]");
+        if (n == 1) {
+            Assertions.assertEquals(a, b, "A single value requires a == b");
+        }
+        final int[] i = {-1};
+        final int last = n - 1;
         if (uniform) {
-            final int[] i = {-1};
-            final double range = b - a;
-            final double step = n == 0 ? range : range / (Math.abs((double) n) - 1);
+            final double step = last == 0 ? 0 : (b - a) / last;
             return () -> {
-                i[0]++;
-                return a + i[0] * step;
+                final int k = ++i[0];
+                Assertions.assertTrue(k <= last, "Range exhausted");
+                return k == last ? b : a + k * step;
             };
         }
-        // limiting log-uniform distribution
-        final long bits = Double.doubleToLongBits(a);
-        final long range = Double.doubleToLongBits(b) - bits;
-        final long step = n == 0 ? range : range / (Math.abs((long) n) - 1);
-        final long[] i = {bits - step};
+        Assertions.assertTrue(Double.doubleToRawLongBits(a) >= 0 && Double.isFinite(b),
+            () -> "Bits enumeration requires 0 <= a <= b < inf: [" + a + ", " + b + "]");
+        final long bits = Double.doubleToRawLongBits(a);
+        final long range = Double.doubleToRawLongBits(b) - bits;
+        final long q = last == 0 ? 0 : range / last;
+        final long r = last == 0 ? 0 : range % last;
         return () -> {
-            i[0] += step;
-            return Double.longBitsToDouble(i[0]);
+            final int k = ++i[0];
+            Assertions.assertTrue(k <= last, "Range exhausted");
+            // k * r < n^2 cannot overflow
+            return Double.longBitsToDouble(bits + k * q + (last == 0 ? 0 : k * r / last));
         };
     }
 
