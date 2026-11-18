@@ -31,6 +31,15 @@ final class TestUtils {
     private static final long POSITIVE_ZERO_DOUBLE_BITS = Double.doubleToRawLongBits(+0.0);
     /** Negative zero bits. */
     private static final long NEGATIVE_ZERO_DOUBLE_BITS = Double.doubleToRawLongBits(-0.0);
+    /** 2^1024. The next value after MAX_VALUE in the double format with unlimited exponent. */
+    private static final BigDecimal TWO_POW_1024 = new BigDecimal(Double.MAX_VALUE)
+        .add(new BigDecimal(Math.ulp(Double.MAX_VALUE)));
+    /** ulp(MAX_VALUE) = 2^971. */
+    private static final BigDecimal ULP_MAX_VALUE = new BigDecimal(Math.ulp(Double.MAX_VALUE));
+    /** 2^1025. The upper limit of an expected value at the overflow margin. */
+    private static final BigDecimal TWO_POW_1025 = TWO_POW_1024.add(TWO_POW_1024);
+    /** Lower bound of the top binade of finite doubles: 2^1023. */
+    private static final double TOP_BINADE = 0x1.0p1023;
     /** Set this to true to report all deviations to System out when the maximum ULPs is negative. */
     private static boolean reportAllDeviations = false;
 
@@ -342,10 +351,11 @@ final class TestUtils {
      * Assert the two numbers are equal within the provided units of least precision.
      *
      * <p>This method is for values that can be computed to arbitrary precision.
-     * It raises an exception when the actual value is not finite and the expected value
-     * has a non-infinite representation; or the actual value is finite and the expected
-     * value has a infinite representation. In this case the computed ulp difference
-     * is infinite.
+     * If one of the actual value and the double representation of the expected value
+     * is infinite and the other is finite, the error is measured at the overflow margin
+     * (values within one binade of 2^1024); otherwise it is infinite and an exception
+     * is raised (see
+     * {@link #assertEquals(BigDecimal, double, double, DoubleConsumer, Supplier)}).
      *
      * <p>This method expresses the error relative the units in the last place of the
      * expected value when converted to a {@code double} type
@@ -371,10 +381,11 @@ final class TestUtils {
      * Assert the two numbers are equal within the provided units of least precision.
      *
      * <p>This method is for values that can be computed to arbitrary precision.
-     * It raises an exception when the actual value is not finite and the expected value
-     * has a non-infinite representation; or the actual value is finite and the expected
-     * value has a infinite representation. In this case the computed ulp difference
-     * is infinite.
+     * If one of the actual value and the double representation of the expected value
+     * is infinite and the other is finite, the error is measured at the overflow margin
+     * (values within one binade of 2^1024); otherwise it is infinite and an exception
+     * is raised (see
+     * {@link #assertEquals(BigDecimal, double, double, DoubleConsumer, Supplier)}).
      *
      * <p>This method expresses the error relative the units in the last place of the
      * expected value when converted to a {@code double} type
@@ -401,11 +412,21 @@ final class TestUtils {
      * Assert the two numbers are equal within the provided units of least
      * precision.
      *
-     * <p>This method is for values that can be computed to arbitrary precision. It
-     * raises an exception when the actual value is not finite and the expected
-     * value has a non-infinite representation; or the actual value is finite and
-     * the expected value has a infinite representation. In this case the computed
-     * ulp difference is infinite.
+     * <p>This method is for values that can be computed to arbitrary precision.
+     *
+     * <p>A mismatch between an infinite and a finite value is measured only at the
+     * overflow margin: the values have the same sign; the finite value (actual, or
+     * the double representation of the expected value) is in the top binade
+     * [2^1023, MAX_VALUE]; and if the expected value is the infinite one, its magnitude
+     * is below 2^1025. Here infinity is treated as 2^1024, the next value after
+     * MAX_VALUE, and the error is measured in ulps of MAX_VALUE (2^971). For example
+     * an expected value of MAX_VALUE and an actual value of infinity has an error of
+     * 1 ulp; an expected value of
+     * 2^1024 + 2^970 (which rounds to infinity) and an actual value of MAX_VALUE has an
+     * error of -1.5 ulp. This allows rounding errors at the overflow threshold to be
+     * judged. Any other mismatch between an infinite and a finite value (including NaN,
+     * opposite signs, and an expected value of at least 2^1025: a definite overflow)
+     * has an infinite error and raises an exception.
      *
      * <p>This method expresses the error relative the units in the last place (ulp)
      * of the expected value when converted to a {@code double} type. If the actual
@@ -452,6 +473,16 @@ final class TestUtils {
             // Binary equal. This will match infinity if expected is very large.
             equal = true;
             delta = 0;
+        } else if (isOverflowMargin(expected, e, actual)) {
+            // One value is infinite and the other is finite within one binade of 2^1024
+            // with the same sign. Treat infinity as 2^1024 (the next value after MAX_VALUE)
+            // and measure the error in ulps of MAX_VALUE. This allows judging rounding
+            // errors at the overflow threshold.
+            final BigDecimal x = Double.isInfinite(actual) ?
+                (actual > 0 ? TWO_POW_1024 : TWO_POW_1024.negate()) :
+                new BigDecimal(actual);
+            delta = x.subtract(expected).divide(ULP_MAX_VALUE, MathContext.DECIMAL64).doubleValue();
+            equal = Math.abs(delta) <= Math.abs(maxUlps);
         } else if (!Double.isFinite(e) || !Double.isFinite(actual)) {
             // No representable delta between infinite and non-infinite values
             equal = false;
@@ -551,6 +582,27 @@ final class TestUtils {
         }
 
         return delta;
+    }
+
+    /**
+     * Test if the values are at the overflow margin: they have the same sign; one is
+     * infinite and the other is finite in the top binade [2^1023, MAX_VALUE]; and if the
+     * expected value is the infinite one its magnitude is below 2^1025.
+     *
+     * @param expected expected value
+     * @param e expected value as a double
+     * @param actual actual value
+     * @return true if at the overflow margin
+     */
+    private static boolean isOverflowMargin(BigDecimal expected, double e, double actual) {
+        if (Double.isInfinite(e)) {
+            return Double.isFinite(actual) && Math.abs(actual) >= TOP_BINADE && (e > 0) == (actual > 0) &&
+                expected.abs().compareTo(TWO_POW_1025) < 0;
+        }
+        if (Double.isInfinite(actual)) {
+            return Double.isFinite(e) && Math.abs(e) >= TOP_BINADE && (e > 0) == (actual > 0);
+        }
+        return false;
     }
 
     /**

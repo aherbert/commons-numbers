@@ -168,6 +168,76 @@ class TestUtilsTest {
     }
 
     @Test
+    void testBigDecimalAssertEqualsOverflowMargin() {
+        final double inf = Double.POSITIVE_INFINITY;
+        final double max = Double.MAX_VALUE;
+        final BigDecimal ulp = new BigDecimal(Math.ulp(max));
+        final BigDecimal bdmax = new BigDecimal(max);
+        // 2^1024: treated as the value of infinity
+        final BigDecimal two1024 = bdmax.add(ulp);
+        final BigDecimal half = new BigDecimal("0.5");
+        final BigDecimal quarter = new BigDecimal("0.25");
+
+        for (final int sign : new int[] {1, -1}) {
+            final BigDecimal sbdmax = sign > 0 ? bdmax : bdmax.negate();
+            final BigDecimal s2 = sign > 0 ? two1024 : two1024.negate();
+            final BigDecimal sulp = sign > 0 ? ulp : ulp.negate();
+            final double sinf = sign * inf;
+            final double smax = sign * max;
+
+            // Expected rounds to MAX_VALUE; actual is infinity
+            Assertions.assertThrows(AssertionError.class, () -> TestUtils.assertEquals(sbdmax, sinf, 0.5));
+            Assertions.assertEquals(sign, TestUtils.assertEquals(sbdmax, sinf, 1));
+            // Expected 1/4 ulp above MAX_VALUE (rounds to MAX_VALUE)
+            final BigDecimal e1 = sbdmax.add(sulp.multiply(quarter));
+            Assertions.assertEquals(sign * 0.75, TestUtils.assertEquals(e1, sinf, 1));
+
+            // Expected rounds to infinity: at the rounding threshold MAX_VALUE + ulp/2
+            final BigDecimal e2 = sbdmax.add(sulp.multiply(half));
+            Assertions.assertEquals(sinf, e2.doubleValue());
+            Assertions.assertEquals(0, TestUtils.assertEquals(e2, sinf, 0));
+            Assertions.assertEquals(-sign * 0.5, TestUtils.assertEquals(e2, smax, 0.5));
+            // Expected 2^1024 (1 + 2^-53): 1.5 ulp above MAX_VALUE
+            final BigDecimal e3 = s2.add(sulp.multiply(half));
+            Assertions.assertThrows(AssertionError.class, () -> TestUtils.assertEquals(e3, smax, 1));
+            Assertions.assertEquals(-sign * 1.5, TestUtils.assertEquals(e3, smax, 1.5));
+            final double below = sign > 0 ? Math.nextDown(max) : Math.nextUp(-max);
+            Assertions.assertEquals(-sign * 2.5, TestUtils.assertEquals(e3, below, 2.5));
+
+            // Just below 2^1025: large finite error (2^1025 - ulp/2 - MAX_VALUE = (2^53 + 0.5) ulp)
+            final BigDecimal s2x2 = s2.add(s2);
+            final BigDecimal below2 = s2x2.subtract(sulp.multiply(half));
+            Assertions.assertEquals(-sign * (0x1.0p53 + 0.5), failedError(below2, smax));
+            // At or above 2^1025 (definite overflow): infinite error
+            Assertions.assertEquals(-sign * inf, failedError(s2x2, smax));
+            Assertions.assertEquals(-sign * inf, failedError(new BigDecimal(sign > 0 ? "1e310" : "-1e310"), smax));
+
+            // Finite value below the top binade: no margin, infinite error
+            final double small = sign * 0x1.0p1022;
+            Assertions.assertEquals(sign * inf, failedError(new BigDecimal(small), sinf));
+            Assertions.assertEquals(-sign * inf, failedError(e2, small));
+        }
+
+        // Opposite signs: no margin
+        Assertions.assertEquals(-inf, failedError(bdmax, -inf));
+        Assertions.assertEquals(inf, failedError(bdmax.negate(), inf));
+    }
+
+    /**
+     * Assert the values are not equal within 1 ulp and return the error.
+     *
+     * @param expected Expected value
+     * @param actual Actual value
+     * @return the error
+     */
+    private static double failedError(BigDecimal expected, double actual) {
+        final double[] error = {Double.NaN};
+        Assertions.assertThrows(AssertionError.class,
+            () -> TestUtils.assertEquals(expected, actual, 1, e -> error[0] = e, null));
+        return error[0];
+    }
+
+    @Test
     void testErrorStatistics() {
         final ErrorStatistics stats = new ErrorStatistics();
         assertErrorStatistics(stats, 0, Double.NaN, Double.NaN);
