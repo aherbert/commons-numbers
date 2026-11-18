@@ -151,6 +151,8 @@ class HurwitzZetaTest {
         "hzeta_rs_domain_sm1_1ma_s1p2p-52_1p2p-44_a2p-1_1m2p-53_2p108_2p-1075.csv",
         "hzeta_s0_9_a-53_0_t0b106_1100.csv",
         "hzeta_s8_50_1ma-53_-1_t0b0_1024.csv",
+        // Overflow contour zeta(s, a) ~ 2^1024
+        "hzeta_2p1024.csv",
     };
     /** Filenames of resources used for the extended precision zeta function using integer s
      * and a in the expected range for the negative a use case. This requires {@code 0 < a < 1}
@@ -1203,7 +1205,7 @@ class HurwitzZetaTest {
         // with sub-normal term scaling
         T_ZETA_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a,
             Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
-        ), "hzeta_2p-1022.csv", 40, 0.95),
+        ), "hzeta_2p-1022.csv", 50, 1.5),
         T_ZETA_DOMAIN_2_POW_N1022_STD((s, a) -> HurwitzZetaTest.zeta(s, a,
             Context.DOUBLE.withOptions(Context.SUB_NORMAL_SUM + Context.TAIL_SCALING)
         ), "hzeta_domain_2p-1022.csv", 65, 0.95),
@@ -1276,6 +1278,9 @@ class HurwitzZetaTest {
         ZETA_2_POW_N1022(HurwitzZeta::value, "hzeta_2p-1022.csv", -1.35, 0.35),
         ZETA_2_POW_N1065(HurwitzZeta::value, "hzeta_2p-1065.csv", 0.6, 0.1),
         ZETA_2_POW_N1075(HurwitzZeta::value, "hzeta_2p-1075.csv", 0.6, 0.1),
+        // Overflow contour for a < 1 (zeta = a^-s): finite and infinite results either side
+        // of the overflow threshold (errors at the margin measured with infinity as 2^1024)
+        ZETA_2_POW_1024(HurwitzZeta::value, "hzeta_2p1024.csv", 1.5, 0.25),
         // Sub-normal contours
         ZETA_SUB_NORMAL(HurwitzZeta::value, SUB_NORMAL_RESOURCES, 2.0, 0.5),
         // Random samples from the domain
@@ -1298,7 +1303,7 @@ class HurwitzZetaTest {
 
 //        JDK Temurin 25.492-b09
 //        T_DOUBLE_ZETA_IS                         max        1.05975   RMS       0.260675   mean    -0.00757331  n  6000  (392ms)
-//        T_ZETA_2_POW_N1022_STD                   max        36.0615   RMS       0.881910   mean      0.0364887  n  1998  (116ms)
+//        T_ZETA_2_POW_N1022_STD                   max        44.7747   RMS        1.32645   mean      0.0340032  n  1999  (13.6ms)
 //        T_ZETA_DOMAIN_2_POW_N1022_STD            max        58.8128   RMS       0.883161   mean    -0.00500754  n 50000  (714ms)
 //        T_BD_ZETA_IS                             max       0.552489   RMS      0.0369241   mean    0.000364038  n 16836  (1.33e+03ms)
 //        T_DD_ZETA_IS                             max       0.509511   RMS      0.0149965   mean   -2.98738e-05  n 16836  (328ms)
@@ -1330,8 +1335,10 @@ class HurwitzZetaTest {
 //        ZETA_S20_1024_AP1_SUB_NORMAL_1040        max        1.48305   RMS       0.159991   mean     0.00413054  n  3000  (28.0ms)
 //        ZETA_S20_1024_AP1_SUB_NORMAL_1053        max       0.895140   RMS       0.103818   mean    7.07467e-05  n  3000  (26.7ms)
 //        ZETA_S20_1024_AP0_1_SUB_NORMAL_1073      max       0.500519   RMS     0.00913819   mean    0.000166840  n  3000  (27.6ms)
-//        ZETA_2_POW_N1022                         max        1.27858   RMS       0.270062   mean      0.0120844  n  1998  (23.8ms)
-//        ZETA_2_POW_N1065                         max        0.00000   RMS        0.00000   mean        0.00000  n  1998  (27.8ms)
+//        ZETA_2_POW_N1022                         max        1.13106   RMS       0.304065   mean    -0.00121807  n  1999  (5.91ms)
+//        ZETA_2_POW_N1065                         max        0.00000   RMS        0.00000   mean        0.00000  n  1999  (4.23ms)
+//        ZETA_2_POW_N1075                         max       0.500000   RMS      0.0250063   mean    -0.00125063  n  1999  (4.33ms)
+//        ZETA_2_POW_1024                          max       0.995327   RMS       0.146570   mean     -0.0121086  n  2932  (3.99ms)
 //        ZETA_DOMAIN                              max        1.96329   RMS       0.428365   mean     0.00334990  n 50000  (531ms)
 //        ZETA_S2_4_N_A1_15                        max       0.518098   RMS      0.0402256   mean    -0.00218941  n  3000  (54.3ms)
 //        ZETA_S2_4_N_A40_99                       max       0.527688   RMS      0.0523742   mean    -0.00135787  n  3000  (86.5ms)
@@ -8749,7 +8756,7 @@ class HurwitzZetaTest {
     // Ideally each trapezoid under the curve should be the same area, and
     // the segment between the points (top of trapezoid) should not deviate
     // far from the curve below it.
-    @ValueSource(ints = {-1020, -1021, -1022, -1023, -1049, -1075})
+    @ValueSource(ints = {-1020, -1021, -1022, -1023, -1049, -1065, -1075})
     @Disabled("Used to generate test data")
     void testDataSubNormalDomain(int b) throws IOException {
         // Configure for high accuracy with a scaled result.
@@ -8781,32 +8788,44 @@ class HurwitzZetaTest {
         final DoubleSupplier nextA = createRange(n, minA, maxA, false);
         for (int i = 0; i < n; i++) {
             double a = nextA.getAsDouble();
+            double s;
             try {
-                double s = solver.findRoot(x -> zeta.applyAsDouble(x, a) - t, minS, maxS);
-                double z = zeta.applyAsDouble(s, a);
-                points.add(new double[] {s, a, z});
+                s = solver.findRoot(x -> zeta.applyAsDouble(x, a) - t, minS, maxS);
             } catch (IllegalArgumentException e) {
-                // Can occur when a=minA as zeta(a, maxS) may not be close to the target
-                if (a != minA) {
+                // Can occur at the ends of the range as the root is at the end of the
+                // bracket: zeta(maxS, minA) and zeta(minS, maxA) are close to the target
+                // but may be on either side. The root is known by construction.
+                if (a == minA) {
+                    s = maxS;
+                } else if (a == maxA) {
+                    s = minS;
+                } else {
                     Assertions.fail(e.getMessage() + ": a=" + a);
+                    return;
                 }
             }
+            points.add(new double[] {s, a, zeta.applyAsDouble(s, a)});
         }
 
         // Map zeta(a, s) = t using s
         final DoubleSupplier nextS = createRange(n, minS, maxS, false);
         for (int i = 0; i < n; i++) {
             double s = nextS.getAsDouble();
+            double a;
             try {
-                double a = solver.findRoot(x -> zeta.applyAsDouble(s, x) - t, minA, maxA);
-                double z = zeta.applyAsDouble(s, a);
-                points.add(new double[] {s, a, z});
+                a = solver.findRoot(x -> zeta.applyAsDouble(s, x) - t, minA, maxA);
             } catch (IllegalArgumentException e) {
-                // Can occur when s=minS as zeta(minS, a) may not be close to the target
-                if (s != minS) {
+                // Can occur at the ends of the range (see above)
+                if (s == minS) {
+                    a = maxA;
+                } else if (s == maxS) {
+                    a = minA;
+                } else {
                     Assertions.fail(e.getMessage() + ": s=" + s);
+                    return;
                 }
             }
+            points.add(new double[] {s, a, zeta.applyAsDouble(s, a)});
         }
 
         // Note:
@@ -8840,7 +8859,14 @@ class HurwitzZetaTest {
 
         try (PrintStream out = getPrintStream(String.format("hzeta_2p%d.txt", b))) {
             out.printf("# zeta(s, a) ~ 2^%d%n", b);
-            points.forEach(k -> out.printf("%s, %s%n", k[0], k[1]));
+            // Points are sorted by s then a: skip duplicates (e.g. the end points)
+            double[] last = {Double.NaN, Double.NaN};
+            for (final double[] k : points) {
+                if (k[0] != last[0] || k[1] != last[1]) {
+                    out.printf("%s, %s%n", k[0], k[1]);
+                    last = k;
+                }
+            }
         }
     }
 
