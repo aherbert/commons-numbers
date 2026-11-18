@@ -72,4 +72,76 @@
     </plugins>
   </build>
 
+  <profiles>
+    <profile>
+      <!-- On Java 8 we cannot test FMA support -->
+      <id>no-fma-support</id>
+      <activation>
+        <jdk>(,9)</jdk>
+      </activation>
+      <properties>
+        <!-- No FMA code paths can be reached. Everything else should be tested.
+          These values should be raised as the codebase expands.  -->
+        <commons.jacoco.instructionRatio>0.96</commons.jacoco.instructionRatio>
+        <commons.jacoco.methodRatio>0.96</commons.jacoco.methodRatio>
+        <commons.jacoco.branchRatio>0.96</commons.jacoco.branchRatio>
+        <commons.jacoco.lineRatio>0.96</commons.jacoco.lineRatio>
+        <commons.jacoco.complexityRatio>0.96</commons.jacoco.complexityRatio>
+      </properties>
+    </profile>
+    <profile>
+      <!-- On Java 9+ we test with and without FMA support -->
+      <id>fma-support</id>
+      <activation>
+        <jdk>[9,)</jdk>
+      </activation>
+      <properties>
+        <!-- With use of -XX:+/-UseFMA we still cannot hit all paths.
+          The exception block around the MethodHandle call in FMASupport.fma
+          cannot be reached. Everything else is tested. -->
+        <commons.jacoco.instructionRatio>0.99</commons.jacoco.instructionRatio>
+        <commons.jacoco.lineRatio>0.99</commons.jacoco.lineRatio>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>dd-no-use-fma</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <!-- argLine is set by jacoco so pass its settings through -->
+                  <argLine>${argLine} -XX:-UseFMA</argLine>
+                  <includes>
+                    <include>**/DDTest</include>
+                    <include>**/ExtendedPrecisionTest</include>
+                  </includes>
+                </configuration>
+              </execution>
+              <execution>
+                <id>dd-use-fma</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <!-- argLine is set by jacoco so pass its settings through -->
+                  <argLine>${argLine} -XX:+UseFMA</argLine>
+                  <includes>
+                    <include>**/DDTest</include>
+                    <include>**/ExtendedPrecisionTest</include>
+                  </includes>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
 </project>
