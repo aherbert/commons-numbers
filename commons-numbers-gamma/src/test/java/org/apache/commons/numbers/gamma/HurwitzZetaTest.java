@@ -132,6 +132,16 @@ class HurwitzZetaTest {
     private static final int[] M = new int[107];
     /** Retain the number of terms used from the tail series in the test implementation. */
     private static int lastM = 0;
+    /** The exit k (number of forward terms) of the last BigDecimal zeta evaluation. */
+    private static int lastN;
+    /** Set if the last BigDecimal zeta evaluation used the remainder exit. */
+    private static boolean lastRemainderExit;
+    /** ln(2). */
+    private static final double LN2 = Math.log(2);
+    /** One half. */
+    private static final BigDecimal BD_HALF = new BigDecimal("0.5");
+    /** Math context for low precision estimates. */
+    private static final MathContext MC_ESTIMATE = new MathContext(10);
     /** Filenames of resources used for the test zeta function. */
     private static final String[] TEST_RESOURCES = {
 //        "hzeta_s1_4_a1_8.csv",
@@ -3921,6 +3931,25 @@ class HurwitzZetaTest {
     /**
      * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}.
      *
+     * <p>Uses a dynamic number of forward terms N: the terms {@code (a+k)^-s} are computed
+     * in ascending k and kept. At each x = a + k the Euler-Maclaurin tail is tested: it
+     * converges at the first term that cannot change the result (below
+     * {@code eps * estimate}); it fails if a term is not smaller than the previous term
+     * (divergence) or after M terms. On failure the term at x is added to the forward sum
+     * and the tail is tested at x + 1. The context N is the maximum k: the tail at
+     * {@code a + N} is used truncated at its smallest term (forced exit).
+     *
+     * <p>Before each forward term the remainder exit is tested: the sum of the terms
+     * {@code (a+j)^-s} for {@code j >= k} is bounded by {@code (a+k)^-s (1 + (a+k)/(s-1))}.
+     * If the bound is below {@code eps * estimate} the result is the sum of the kept terms.
+     * The test uses logarithms in double precision (no power and no underflow). At k = 1
+     * this is the single term case (large s, or a large first term when a < 1) for any
+     * domain; a fixed threshold on s is only valid inside the domain of zeta.
+     *
+     * <p>On exit the kept terms are summed in ascending order of magnitude at the
+     * MathContext precision. The convergence tests use a low precision running estimate
+     * of the sum (only the magnitude is required).
+     *
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be positive.
      *
@@ -3931,81 +3960,102 @@ class HurwitzZetaTest {
      * @return zeta(s, a)
      */
     private static BigDecimal zeta(int s, BigDecimal a, BigDecimal a0, Context c) {
-        final int n = c.getN();
+        final int maxN = c.getN();
+        final int m = c.getM();
         final MathContext mc = c.getMathContext();
-        BigDecimal apn = a.add(BigDecimal.valueOf(n));
-        BigDecimal p = apn.pow(-s, mc);
-
-        // Initialise sum with the first tail term
-        BigDecimal sum = p.multiply(new BigDecimal(0.5));
-        // S : k in [0, n-1]
-        for (int k = n - 1; k > 0; k--) {
-            // Descending k sums in order of magnitude for increased precision
-            sum = sum.add(a.add(BigDecimal.valueOf(k)).pow(-s, mc), mc);
-        }
-        // First term may be provided
-        final BigDecimal t0 = a0 == null ? a.pow(-s, mc) : a0;
-
-        // I : (a+p)^(1-s) / (s-1)
-        final BigDecimal ti = apn.pow(1 - s, mc).divide(BigDecimal.valueOf(s - 1), mc);
-
-        // Add in magnitude order. When a in [0, 1] it may be the dominant term
-        if (t0.compareTo(ti) > 0) {
-            sum = sum.add(ti, mc).add(t0, mc);
-        } else {
-            sum = sum.add(t0, mc).add(ti, mc);
-        }
-
-        // T
-        // The following recycles the power term p: (a+n)^-(2k-1+s).
-        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
-        // The first power is (a+n)^-(1+s) not (a+n)^-1.
-
-        // The function testTailConvergenceModel examines the parameter space
-        // and verifies convergence is possible for the provided n and m.
-
-        // Rising factorial term : (s)_{2k-1}
-        BigDecimal f = BigDecimal.valueOf(s);
-
-        // Alternative implementations for (a+n)^-(2k-1+s).
-
-        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
-        p = apn.pow(-(1 + s), mc);
-        // Compute using the power function
+        final BigDecimal eps = new BigDecimal(c.getEps());
+        final BigDecimal s1 = BigDecimal.valueOf(s - 1);
         final boolean usePow = c.isSet(Context.TAIL_POW);
-        if (!usePow) {
-            // Divide by (a+n)^2 using multiplication
-            apn = apn.pow(-2, mc);
-        }
+        // Forward terms (a+k)^-s
+        final BigDecimal[] terms = new BigDecimal[maxN + 1];
+        // Low precision estimate of the forward sum
+        BigDecimal estimate = BigDecimal.ZERO;
+        final double logEps = Math.log(c.getEps());
+        final double ad = a.doubleValue();
+        lastRemainderExit = false;
+        for (int k = 0;; k++) {
+            if (k != 0) {
+                // Remainder exit: sum_{j>=k} (a+j)^-s <= (a+k)^-s (1 + (a+k)/(s-1))
+                final double xk = ad + k;
+                final double logRem = -s * Math.log(xk) + Math.log1p(xk / (s - 1));
+                if (logRem <= logEps + log2(estimate) * LN2) {
+                    lastN = k;
+                    lastRemainderExit = true;
+                    // Sum in ascending order of magnitude: terms k-1 .. 0
+                    BigDecimal sum = terms[k - 1];
+                    for (int i = k - 2; i >= 0; i--) {
+                        sum = sum.add(terms[i], mc);
+                    }
+                    return sum;
+                }
+            }
+            final BigDecimal x = a.add(BigDecimal.valueOf(k));
+            // x^-s; the first term may be provided
+            final BigDecimal px = k == 0 && a0 != null ? a0 : x.pow(-s, mc);
+            terms[k] = px;
+            // Integral term I = x^(1-s) / (s-1) and the first tail term x^-s / 2
+            final BigDecimal ti = px.multiply(x, mc).divide(s1, mc);
+            final BigDecimal th = px.multiply(BD_HALF);
+            final BigDecimal stop = estimate.add(ti, MC_ESTIMATE).add(th, MC_ESTIMATE).multiply(eps, MC_ESTIMATE);
 
-        // Sum of an alternating series as each F changes sign.
-        // Sum until terms will not impact the result: stop at a term below eps * sum.
-        // The stop uses the context epsilon (not the MathContext precision) so the tail
-        // length is set by the target precision of the result; the MathContext precision
-        // controls the rounding of the sum.
-        BigDecimal tsum = BigDecimal.ZERO;
-        final BigDecimal stop = sum.abs().multiply(new BigDecimal(c.getEps()), mc);
-        int i;
-        for (i = 0; i < c.getM(); i++) {
-            final BigDecimal t = f.multiply(p, mc).multiply(FBD[i], mc);
-            // Stop before a term that cannot change the result
-            if (t.abs().compareTo(stop) <= 0) {
-                break;
+            // T: sum_j B_2j / (2j)! (s)_(2j-1) x^-(2j-1+s), alternating in sign
+            final boolean force = k >= maxN;
+            // Rising factorial term : (s)_{2j-1}
+            BigDecimal f = BigDecimal.valueOf(s);
+            // (x)^-(2j-1+s), initialised to x^-(1+s)
+            BigDecimal p = px.divide(x, mc);
+            final BigDecimal x2 = usePow ? null : BigDecimal.ONE.divide(x.multiply(x), mc);
+            BigDecimal tsum = BigDecimal.ZERO;
+            BigDecimal previous = null;
+            boolean converged = false;
+            int j;
+            for (j = 0; j < m; j++) {
+                final BigDecimal t = f.multiply(p, mc).multiply(FBD[j], mc);
+                final BigDecimal at = t.abs();
+                // Stop before a term that cannot change the result
+                if (at.compareTo(stop) <= 0) {
+                    converged = true;
+                    break;
+                }
+                // Divergence: the term is not smaller than the previous term
+                if (previous != null && at.compareTo(previous) >= 0) {
+                    break;
+                }
+                previous = at;
+                tsum = tsum.add(t, mc);
+                // p = x^-(2j-1+s)
+                p = usePow ? x.pow(-(2 * j + 3 + s), mc) : p.multiply(x2, mc);
+                // f = s * (s+1) * (s+2) * ... * (s+2j-2)
+                f = f.multiply(BigDecimal.valueOf((s + (2L * j) + 1) * (s + (2L * j) + 2)), mc);
             }
-            tsum = tsum.add(t, mc);
-            // p = (a+n)^-(2k-1+s)
-            if (usePow) {
-                p = apn.pow(-(2 * i + 3 + s), mc);
-            } else {
-                p = p.multiply(apn, mc);
+            // Exit with the Euler-Maclaurin tail at x = a + k. Either the tail converged
+            // (a term cannot change the result: truncate there), or k reached the maximum
+            // N (forced: the tail is truncated at its smallest term, or after M terms).
+            // The context N and M are chosen for the worst case of convergence over the
+            // supported domain of zeta (testTailConvergenceModel). The other exit, when
+            // the forward sum alone is the result (e.g. large s, or a dominant a^-s for
+            // a < 1), is the remainder exit at the start of the loop.
+            if (converged || force) {
+                // Used to histogram convergence when testing
+                M[j]++;
+                lastN = k;
+                // Sum in ascending order of magnitude: T, x^-s / 2, terms k-1 .. 1
+                BigDecimal sum = tsum.add(th, mc);
+                for (int i = k - 1; i > 0; i--) {
+                    sum = sum.add(terms[i], mc);
+                }
+                // When a in [0, 1] t0 may be the dominant term. Add I and t0 in magnitude order.
+                if (k == 0) {
+                    return sum.add(ti, mc);
+                }
+                final BigDecimal t0 = terms[0];
+                if (t0.compareTo(ti) > 0) {
+                    return sum.add(ti, mc).add(t0, mc);
+                }
+                return sum.add(t0, mc).add(ti, mc);
             }
-            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-            // compute the multiplicand as a long as it cannot overflow when M is small
-            f = f.multiply(BigDecimal.valueOf((s + (2L * i) + 1) * (s + (2L * i) + 2)), mc);
+            estimate = estimate.add(px, MC_ESTIMATE);
         }
-        // Used to histogram convergence when testing
-        M[i]++;
-        return sum.add(tsum, mc);
     }
 
     /**
