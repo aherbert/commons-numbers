@@ -875,12 +875,21 @@ class HurwitzZetaTest {
 
         // TODO - re-optimise. Requires better test data
 
+        // The tail stops at a term below epsilon relative to the sum. The BigDecimal
+        // contexts are used as references more accurate than the target precision:
+        // epsilon is 7-10 bits beyond the target (double 53 + 7; double-double 106 + 10;
+        // quad-double 212 + 10). The tests require this: e.g. T_BD_ZETA_2_POW_N1075
+        // (0.001 ulp at 106 bits) fails at 2^-113; BD_DOUBLE fails at 2^-56.
+
         /** Context for double precision using the BigDecimal zeta implementation. */
-        static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(18));
+        static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(18))
+            .withEpsilon(0x1p-60);
         /** Context for double-double precision using the BigDecimal zeta implementation. */
-        static final Context BD_DOUBLE_DOUBLE = Context.of(17, 30).withMathContext(new MathContext(36));
+        static final Context BD_DOUBLE_DOUBLE = Context.of(17, 30).withMathContext(new MathContext(36))
+            .withEpsilon(0x1p-116);
         /** Context for quad-double precision using the BigDecimal zeta implementation. */
-        static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70));
+        static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70))
+            .withEpsilon(0x1p-222);
 
         /** Default epsilon for the series summations. */
         private static final double EPS = 0x1p-56;
@@ -3952,9 +3961,8 @@ class HurwitzZetaTest {
         // This incorporates the factor for T, (a+n)^-s, into the sum terms.
         // The first power is (a+n)^-(1+s) not (a+n)^-1.
 
-        // *** This must work for all s where (a+n)^-s is not an underflow ***
-        // The function testTailConvergence examines the parameter space in DD arithmetic
-        // and verifies convergence is possible for the provided n.
+        // The function testTailConvergenceModel examines the parameter space
+        // and verifies convergence is possible for the provided n and m.
 
         // Rising factorial term : (s)_{2k-1}
         BigDecimal f = BigDecimal.valueOf(s);
@@ -3971,15 +3979,17 @@ class HurwitzZetaTest {
         }
 
         // Sum of an alternating series as each F changes sign.
-        // Sum until terms will not impact the result.
+        // Sum until terms will not impact the result: stop at a term below eps * sum.
+        // The stop uses the context epsilon (not the MathContext precision) so the tail
+        // length is set by the target precision of the result; the MathContext precision
+        // controls the rounding of the sum.
         BigDecimal tsum = BigDecimal.ZERO;
-        final int stop = sum.scale() + mc.getPrecision() + 1;
+        final BigDecimal stop = sum.abs().multiply(new BigDecimal(c.getEps()), mc);
         int i;
         for (i = 0; i < c.getM(); i++) {
             final BigDecimal t = f.multiply(p, mc).multiply(FBD[i], mc);
-            // Stop before a term that cannot change the result.
-            // Bigger scale is a smaller value
-            if (t.scale() >= stop) {
+            // Stop before a term that cannot change the result
+            if (t.abs().compareTo(stop) <= 0) {
                 break;
             }
             tsum = tsum.add(t, mc);
@@ -5667,6 +5677,8 @@ class HurwitzZetaTest {
 
             final Context c = Context.of(n, FBD.length)
                 .withMathContext(new MathContext(digits))
+                // Tail stop: the target precision with a 3-bit margin
+                .withEpsilon(Math.scalb(1.0, -(scale + 3)))
                 .withOptions(options);
             final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
                 @Override
