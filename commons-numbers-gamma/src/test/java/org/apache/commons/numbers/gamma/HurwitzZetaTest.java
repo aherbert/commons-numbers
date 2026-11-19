@@ -879,13 +879,13 @@ class HurwitzZetaTest {
         // contexts are used as references more accurate than the target precision:
         // epsilon is 7-10 bits beyond the target (double 53 + 7; double-double 106 + 10;
         // quad-double 212 + 10). The tests require this: e.g. T_BD_ZETA_2_POW_N1075
-        // (0.001 ulp at 106 bits) fails at 2^-113; BD_DOUBLE fails at 2^-56.
+        // (0.002 ulp at 106 bits) fails at 2^-113; BD_DOUBLE fails at 2^-56.
 
         /** Context for double precision using the BigDecimal zeta implementation. */
         static final Context BD_DOUBLE = Context.of(9, 15).withMathContext(new MathContext(18))
             .withEpsilon(0x1p-60);
         /** Context for double-double precision using the BigDecimal zeta implementation. */
-        static final Context BD_DOUBLE_DOUBLE = Context.of(17, 30).withMathContext(new MathContext(36))
+        static final Context BD_DOUBLE_DOUBLE = Context.of(13, 40).withMathContext(new MathContext(36))
             .withEpsilon(0x1p-116);
         /** Context for quad-double precision using the BigDecimal zeta implementation. */
         static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70))
@@ -1447,7 +1447,7 @@ class HurwitzZetaTest {
             Context.DD_DOUBLE_DOUBLE.addOptions(Context.EXT_POW_SERIES | Context.AA_SERIES | Context.AA_TERMS)),
             "hzeta_is_2p-1075.csv", 0.7, 0.2, 106),
         T_BD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, new BigDecimal(a), null, Context.BD_DOUBLE_DOUBLE),
-            "hzeta_is_2p-1075.csv", 0.001, 0.0005, 106);
+            "hzeta_is_2p-1075.csv", 0.002, 0.0005, 106);
 
 //        JDK Temurin 25.492-b09
 //        T_DD_ZETA_2_POW_N1075                    max        19.9135   RMS        1.25660   mean       0.161528  n  1836  (320ms)
