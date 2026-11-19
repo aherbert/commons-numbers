@@ -7698,6 +7698,483 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Model of the convergence of the Euler-Maclaurin tail of zeta(s, a) at x = a + n
+     * after a forward sum of n terms. All quantities are logarithms, so no term can
+     * underflow or overflow for any s or a.
+     *
+     * <p>The k-th tail term is {@code T_k = |B_2k| / (2k)! (s)_(2k-1) x^-(s+2k-1)}.
+     * Dividing by the integral term {@code x^(1-s) / (s-1)} removes the power:
+     * <pre>
+     * R_k(s, x) = |B_2k| / (2k)! (s-1)_(2k) x^-2k
+     * </pre>
+     * <p>with {@code |B_2k| / (2k)! = 2 zeta(2k) / (2 pi)^2k}. The result relative to
+     * the integral term is
+     * <pre>
+     * w = (s-1) x^(s-1) zeta(s, a)
+     * </pre>
+     * <p>A tail of at most M significant terms (terms that can change the result) can
+     * be truncated at relative precision eps if, for some {@code k <= M + 1}:
+     * <pre>
+     * R_k(s, x) <= eps * w
+     * </pre>
+     * <p>Term k cannot change the result and is omitted; it is evaluated to stop the
+     * tail. This is the convergence test of the implementations divided by x^(1-s).
+     * They compare the term to the result without the tail, which is up to 1 bit
+     * stricter (the converging tail is positive and below the first term).
+     *
+     * <p>R_k decreases with x and w increases with x, so the test is monotone in
+     * x = a + n for real n. For {@code w = 1} (the tail dominates) the smallest x has a
+     * closed form per k: {@code x_k = (|B_2k| / (2k)! (s-1)_(2k) / eps)^(1/2k)}.
+     */
+    private static final class TailModel {
+        /** log(2 pi). */
+        private static final double LOG_2PI = Math.log(2 * Math.PI);
+        /** Cache of log(|B_2k| / (2k)!) for k = 1, 2, ... (index k-1). */
+        private static double[] logF = {};
+
+        /** The value s. */
+        private final double s;
+        /** log(s - 1). */
+        private final double logSm1;
+        /** log(|B_2k| / (2k)! (s-1)_(2k)) for k = 1..M+1 (index k-1). */
+        private final double[] c;
+
+        /**
+         * @param s the value s
+         * @param m the maximum number of significant tail terms M
+         */
+        TailModel(double s, int m) {
+            this.s = s;
+            logSm1 = Math.log(s - 1);
+            // Terms 1..M can be added; term M + 1 can stop the tail
+            final int terms = m + 1;
+            final double[] f = getLogF(terms);
+            c = new double[terms];
+            // log (s-1)_(2k) = sum_{i<2k} log(s-1+i)
+            double lp = 0;
+            double t = s - 1;
+            for (int k = 0; k < terms; k++) {
+                lp += Math.log(t) + Math.log(t + 1);
+                t += 2;
+                c[k] = f[k] + lp;
+            }
+        }
+
+        /**
+         * Gets log(|B_2k| / (2k)!) for k = 1..m (index k-1).
+         *
+         * @param m the number of terms
+         * @return the factors
+         */
+        private static synchronized double[] getLogF(int m) {
+            if (logF.length < m) {
+                final double[] f = Arrays.copyOf(logF, m);
+                for (int k = logF.length; k < m; k++) {
+                    final int k2 = 2 * (k + 1);
+                    f[k] = Math.log(2 * RiemannZeta.value(k2)) - k2 * LOG_2PI;
+                }
+                logF = f;
+            }
+            return logF;
+        }
+
+        /**
+         * Find the term k with the minimum log(R_k) at x.
+         *
+         * @param lx log(x)
+         * @return k (1-based)
+         */
+        int minK(double lx) {
+            int k = 0;
+            double min = logR(1, lx);
+            for (int i = 1; i < c.length; i++) {
+                final double v = logR(i + 1, lx);
+                if (v < min) {
+                    min = v;
+                    k = i;
+                }
+            }
+            return k + 1;
+        }
+
+        /**
+         * Compute log(R_k) at x.
+         *
+         * @param k the term (1-based)
+         * @param lx log(x)
+         * @return log(R_k)
+         */
+        double logR(int k, double lx) {
+            return c[k - 1] - 2 * k * lx;
+        }
+
+        /**
+         * The smallest x where the tail converges within M terms when the tail
+         * dominates the result (w = 1).
+         *
+         * @param logEps log(eps)
+         * @return x*
+         */
+        double xStar(double logEps) {
+            double min = Double.POSITIVE_INFINITY;
+            for (int i = 0; i < c.length; i++) {
+                min = Math.min(min, (c[i] - logEps) / (2 * (i + 1)));
+            }
+            return Math.exp(min);
+        }
+
+        /**
+         * Test if the tail at x converges to the relative precision eps.
+         *
+         * @param x the value x = a + n
+         * @param logZeta log(zeta(s, a))
+         * @param logEps log(eps)
+         * @return true if converged
+         */
+        boolean converged(double x, double logZeta, double logEps) {
+            final double lx = Math.log(x);
+            // log(eps * w)
+            final double stop = logEps + logSm1 + (s - 1) * lx + logZeta;
+            return logR(minK(lx), lx) <= stop;
+        }
+
+        /**
+         * Find the smallest integer n >= 0 where the tail at x = a + n converges to the
+         * relative precision eps.
+         *
+         * @param a the value a
+         * @param logZeta log(zeta(s, a))
+         * @param logEps log(eps)
+         * @param maxN the maximum n
+         * @return n (or -1 if n > maxN)
+         */
+        int minN(double a, double logZeta, double logEps, int maxN) {
+            for (int n = 0; n <= maxN; n++) {
+                if (converged(a + n, logZeta, logEps)) {
+                    return n;
+                }
+            }
+            return -1;
+        }
+
+        /**
+         * Find the smallest real n where the tail at x = a + n converges to the
+         * relative precision eps, given the smallest integer n.
+         * Uses bisection in (n - 1, n] (the test is monotone in x).
+         *
+         * @param a the value a
+         * @param logZeta log(zeta(s, a))
+         * @param logEps log(eps)
+         * @param n the smallest integer n
+         * @return real n
+         */
+        double realN(double a, double logZeta, double logEps, int n) {
+            if (n == 0) {
+                return 0;
+            }
+            // lo fails, hi converges
+            double lo = n - 1;
+            double hi = n;
+            while (hi - lo > 1e-6) {
+                final double mid = (lo + hi) * 0.5;
+                if (converged(a + mid, logZeta, logEps)) {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            return hi;
+        }
+
+        /**
+         * Compute log(zeta(s, a)) with relative accuracy ~2^-60 in zeta.
+         * Uses the forward sum until the tail converges (exact Euler-Maclaurin bracket),
+         * or the remainder bound is negligible.
+         *
+         * @param a the value a
+         * @return log(zeta(s, a))
+         */
+        double logZeta(double a) {
+            final double logEps = -60 * Math.log(2);
+            double logS = Double.NEGATIVE_INFINITY;
+            // The limit on n is a guard on the runtime. Realistic n is less than 100
+            // (max 28 for zeta and psi domains with s up to 1e12).
+            for (int n = 0; n < (1 << 24); n++) {
+                final double x = a + n;
+                final double lx = Math.log(x);
+                // Integral term: x^(1-s) / (s-1)
+                final double logI = (1 - s) * lx - logSm1;
+                final int kk = minK(lx);
+                if (logR(kk, lx) <= logEps) {
+                    // Bracket * (s-1): 1 + (s-1)/(2x) + sum_k (-1)^(k+1) R_k
+                    double b = 0;
+                    for (int k = kk; k >= 1; k--) {
+                        final double t = Math.exp(logR(k, lx));
+                        b += (k & 1) == 1 ? t : -t;
+                    }
+                    b += (s - 1) / (2 * x);
+                    return logAddExp(logS, logI + Math.log1p(b));
+                }
+                // Remainder exit: tail <= x^(1-s) / (s-1) + x^-s
+                if (logI + Math.log1p((s - 1) / x) <= logS + logEps) {
+                    return logAddExp(logS, logI);
+                }
+                logS = logAddExp(logS, -s * lx);
+            }
+            throw new AssertionError("logZeta did not converge: s=" + s + ", a=" + a);
+        }
+
+        /**
+         * Find the a where log(zeta(s, a)) = target. Zeta is strictly decreasing in a.
+         * The result is clipped to [MIN_VALUE, MAX_VALUE].
+         *
+         * @param target the target log(zeta)
+         * @return a
+         */
+        double solveA(double target) {
+            // Bisection on log2(a)
+            double lo = -1074;
+            double hi = Math.log(Double.MAX_VALUE) / Math.log(2);
+            if (logZeta(Double.MIN_VALUE) <= target) {
+                return Double.MIN_VALUE;
+            }
+            if (logZeta(Double.MAX_VALUE) >= target) {
+                return Double.MAX_VALUE;
+            }
+            for (int i = 0; i < 64; i++) {
+                final double mid = (lo + hi) * 0.5;
+                if (logZeta(Math.pow(2, mid)) > target) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            return Math.min(Double.MAX_VALUE, Math.pow(2, (lo + hi) * 0.5));
+        }
+
+        /**
+         * Compute log(exp(p) + exp(q)): the log of a sum of two values given as logs.
+         *
+         * <p>p and q are logs of values that can be far outside the double range
+         * (e.g. log(2^-8500)), so exp(p) and exp(q) cannot be formed directly. Factor out
+         * the larger value, with {@code max = max(p, q)} and {@code min = min(p, q)}:
+         * <pre>
+         * log(exp(p) + exp(q)) = log(exp(max) * (1 + exp(min - max)))
+         *                      = max + log(1 + exp(min - max))
+         * </pre>
+         * <p>{@code d = min - max <= 0}, so {@code exp(d)} is in [0, 1] and cannot
+         * overflow; if it underflows to 0 the smaller value is negligible and the result
+         * is max.
+         *
+         * @param p the log of the first value
+         * @param q the log of the second value
+         * @return log(exp(p) + exp(q))
+         */
+        static double logAddExp(double p, double q) {
+            final double max = Math.max(p, q);
+            // Avoid fall-through when min(p, q) - max = -inf - -inf = NaN
+            if (max == Double.NEGATIVE_INFINITY) {
+                return max;
+            }
+            return max + Math.log1p(Math.exp(Math.min(p, q) - max));
+        }
+    }
+
+    /**
+     * Test the log(zeta) of the tail model against reference contours.
+     * The model is used to define the domain of {@link #testTailConvergenceModel}.
+     *
+     * @param filename the reference file
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"hzeta_is_2p-1075.csv", "hzeta_is_2p108.csv", "hzeta_2p-1075.csv",
+        "hzeta_rs_2p108.csv"})
+    void testTailModelLogZeta(String filename) {
+        // Maximum number of tail terms M: a realistic tail size for the zeta implementation
+        // (the double-double Context implementations use M = 30)
+        final int m = 30;
+        final double ln2 = Math.log(2);
+        double max = 0;
+        try (DataReader in = new DataReader(filename)) {
+            while (in.next()) {
+                final double s = in.getDouble(0);
+                final double a = in.getDouble(1);
+                final double expected = log2(in.getBigDecimal(2));
+                final double actual = new TailModel(s, m).logZeta(a) / ln2;
+                final double d = Math.abs(actual - expected);
+                max = Math.max(max, d / Math.abs(expected));
+                Assertions.assertEquals(expected, actual, Math.abs(expected) * 1e-13,
+                    () -> String.format("log2 zeta(%s, %s)", s, a));
+            }
+        } catch (final IOException ex) {
+            Assertions.fail("Failed to load data: " + filename, ex);
+        }
+        report("%s: max relative error in log2(zeta) %.3g%n", filename, max);
+    }
+
+    /**
+     * Compute log2 of a positive BigDecimal (also outside the double range).
+     *
+     * @param v the value
+     * @return log2(v)
+     */
+    private static double log2(BigDecimal v) {
+        // v = u * 10^-scale. log2(u) = log2(u >> shift) + shift.
+        // Keep 62 significant bits of u. This is not a limit on the precision of the log:
+        // any number of bits from 54 to 1023 works. Fewer than 1024 bits so doubleValue()
+        // cannot overflow (u above ~308 digits); more than the 53 bits of a double so the
+        // truncation by the shift (relative error < 2^-61) is below double precision.
+        final BigInteger u = v.unscaledValue();
+        final int shift = Math.max(0, u.bitLength() - 62);
+        return Math.log(u.shiftRight(shift).doubleValue()) / Math.log(2) + shift -
+            v.scale() * (Math.log(10) / Math.log(2));
+    }
+
+    /**
+     * Use the {@link TailModel} to find the number of forward sum terms N required so
+     * that an Euler-Maclaurin tail of at most M terms has a term that does not change
+     * the result at relative precision 2^-b.
+     *
+     * <p>All quantities are logarithms (including log zeta from the model), so no value
+     * can underflow and the model applies to any domain. The domain is defined for each s by a range of the target function
+     * {@code f(s, a) = g(s) zeta(s, a)}: {@code 2^bLo <= f <= 2^bHi} (an infinite bound is
+     * ignored), clipped to [minA, maxA]. Zeta is decreasing in a, so {@code bHi} gives the
+     * lower limit of a. For zeta {@code g = 1}. For the polygamma function
+     * {@code psi(n, x) = (-1)^(n+1) n! zeta(n+1, x)}: s = n + 1, a = x and {@code g = (s-1)!}.
+     *
+     * <p>M is the maximum number of significant tail terms. The implementations (production
+     * and the {@link Context} implementations) stop at the first term that cannot change
+     * the result and omit it, so that term may be term M + 1.
+     *
+     * <p>The a range is enumerated uniformly in log(a) for each s. The smallest real n
+     * where the tail converges at x = a + n is found for each (s, a); the implementation
+     * requires the integer N = ceil(n). Reports the parameters for the test with the
+     * maximum N, and the real n and s where it occurs. Writes the maximum n per s to
+     * {@code target/tail_model_<name>.csv}.
+     *
+     * @param name the name of the test case
+     * @param psi true to use the polygamma target function
+     * @param minS the minimum s
+     * @param maxS the maximum s
+     * @param sCount the number of s (uniform in the bits of s); 0 to enumerate integers
+     * @param bHi the log2 of the upper bound on f
+     * @param bLo the log2 of the lower bound on f
+     * @param minA the minimum a
+     * @param maxA the maximum a
+     * @param aCount the number of a for each s
+     * @param m the maximum number of significant tail terms M
+     * @param b the relative precision 2^-b
+     * @param expectedN the expected maximum N (integer)
+     */
+    @ParameterizedTest
+    @CsvSource({
+        // M is the maximum number of significant tail terms; the term that stops the tail
+        // cannot change the result and is omitted (it may be term M + 1).
+        // The comment is the maximum real n (the implementation requires N = ceil(n)) and its s.
+
+        // Validation against testTailConvergence (same domain: real s, a in [25, 130],
+        // zeta scaled by 2^106 is non-zero). Its tail of m terms includes the stopping term:
+        // model M = m - 1. It reports real n: m=15 b=53 5.92; m=26 b=53 5.76; m=15 b=55 6.19;
+        // m=18 b=63 7.02; m=26 b=106 12.37. Integer N agrees except m=18 b=63 (N=8): an
+        // artefact. Its double tail terms use pow(x, -(1+s)) ~ 2^-1075 which rounds up to
+        // MIN_VALUE before scaling (s=192.77, a=39.75: exact ratio at n=6.9 is 0.91).
+        // The model's real n is 0.07-0.14 lower on all rows (worst cases have sub-normal terms).
+        "val_m14_b53, false, 1.0001, 400, 2000, Infinity, -1180, 25, 130, 400, 14, 53, 6", // n=5.78 s=217.25
+        "val_m25_b53, false, 1.0001, 400, 2000, Infinity, -1180, 25, 130, 400, 25, 53, 6", // n=5.65 s=227.67
+        "val_m14_b55, false, 1.0001, 400, 2000, Infinity, -1180, 25, 130, 400, 14, 55, 7", // n=6.06 s=215.06
+        "val_m17_b63, false, 1.0001, 400, 2000, Infinity, -1180, 25, 130, 400, 17, 63, 7", // n=6.89 s=217.80
+        "val_m25_b106, false, 1.0001, 400, 2000, Infinity, -1180, 25, 130, 400, 25, 106, 13", // n=12.30 s=208.48
+
+        // Production: M = 16, 2^-56 on the domain below the 2^-1075 contour
+        // (measured exit k = 7 at a in [8.4, 39.5], s in [46, 208]).
+        "zeta_rs_m16_b56, false, 1.0000000000000002, 4294967296, 4000, Infinity, -1075, " +
+            "4.9e-324, 1.7976931348623157e308, 400, 16, 56, 7", // n=6.04 s=205.04
+
+        // Double-double: integer s on the domain between the 2^108 and 2^-1075 contours
+        // (BD_DOUBLE_DOUBLE tuning).
+        "zeta_is_m26_b106, false, 2, 1837, 0, 108, -1075, 4.9e-324, 1.7976931348623157e308, 400, 26, 106, 13", // n=12.12 s=196
+        "zeta_is_m30_b106, false, 2, 1837, 0, 108, -1075, 4.9e-324, 1.7976931348623157e308, 400, 30, 106, 12", // n=11.66 s=203
+        "zeta_is_m30_b110, false, 2, 1837, 0, 108, -1075, 4.9e-324, 1.7976931348623157e308, 400, 30, 110, 13", // n=12.21 s=201
+        "zeta_is_m53_b110, false, 2, 1837, 0, 108, -1075, 4.9e-324, 1.7976931348623157e308, 400, 53, 110, 12", // n=11.93 s=212
+
+        // Polygamma psi(n, x), n = s - 1, on the domain 2^-1075 <= |psi| <= 2^1024.
+        // The band is near x ~ n/e for large n. N is bounded and falls for large n.
+        "psi_rs_m16_b56, true, 2, 1048576, 2000, 1024, -1075, 4.9e-324, 1.7976931348623157e308, 400, 16, 56, 7", // n=6.05 s=1019.65
+        "psi_rs_m30_b106, true, 2, 1048576, 2000, 1024, -1075, 4.9e-324, 1.7976931348623157e308, 400, 30, 106, 12", // n=11.68 s=1093.15
+    })
+    @Disabled("Used to study the tail convergence")
+    void testTailConvergenceModel(String name, boolean psi, double minS, double maxS, int sCount,
+            double bHi, double bLo, double minA, double maxA, int aCount, int m, int b,
+            int expectedN) throws IOException {
+        final double ln2 = Math.log(2);
+        final double logEps = -b * ln2;
+        final int maxN = 1 << 16;
+        final DoubleSupplier nextS;
+        final int count;
+        if (sCount == 0) {
+            final double[] next = {Math.ceil(minS)};
+            count = (int) (Math.floor(maxS) - next[0] + 1);
+            nextS = () -> next[0]++;
+        } else {
+            count = sCount;
+            nextS = createRange(sCount, minS, maxS, false);
+        }
+        // Overall maximum: s, a, n, log2 zeta
+        double[] max = {0, 0, -1, 0};
+        try (PrintStream out = getPrintStream("tail_model_" + name + ".csv")) {
+            out.printf("# psi=%b s=[%s, %s] count=%d f in [2^%s, 2^%s] a in [%s, %s] aCount=%d M=%d b=%d%n",
+                psi, minS, maxS, sCount, bLo, bHi, minA, maxA, aCount, m, b);
+            out.println("s,a_lo,a_hi,x_star,n,a,log2_zeta");
+            for (int i = 0; i < count; i++) {
+                final double s = nextS.getAsDouble();
+                final TailModel model = new TailModel(s, m);
+                final double logG = psi ? LogGamma.value(s) : 0;
+                double aLo = Double.isInfinite(bHi) ? minA : Math.max(minA, model.solveA(bHi * ln2 - logG));
+                double aHi = Double.isInfinite(bLo) ? maxA : Math.min(maxA, model.solveA(bLo * ln2 - logG));
+                if (aLo > aHi) {
+                    // Empty domain
+                    continue;
+                }
+                // Enumerate log(a)
+                final double la = Math.log(aLo);
+                final double lb = Math.log(aHi);
+                final int na = aLo == aHi ? 1 : aCount;
+                // Maximum for this s: a, n, log zeta
+                double[] row = {0, -1, 0};
+                for (int j = 0; j < na; j++) {
+                    final double a = j == 0 ? aLo :
+                        j == na - 1 ? aHi : Math.exp(la + (lb - la) * j / (na - 1));
+                    final double lz = model.logZeta(a);
+                    final int n = model.minN(a, lz, logEps, maxN);
+                    Assertions.assertTrue(n >= 0, () -> String.format("No convergence: s=%s, a=%s", s, a));
+                    // Real n is in (n-1, n]: only refine if it can exceed the maximum
+                    if (n > row[1]) {
+                        final double rn = model.realN(a, lz, logEps, n);
+                        if (rn > row[1]) {
+                            row = new double[] {a, rn, lz};
+                        }
+                    }
+                }
+                final double z = row[2] / ln2;
+                out.printf("%s,%s,%s,%s,%.6f,%s,%.6g%n", s, aLo, aHi, model.xStar(logEps),
+                    row[1], row[0], z);
+                if (row[1] > max[2]) {
+                    max = new double[] {s, row[0], row[1], z};
+                }
+            }
+        }
+        // The implementation requires an integer N
+        final int n = (int) Math.ceil(max[2]);
+        report("\"%s, %b, %s, %s, %d, %s, %s, %s, %s, %d, %d, %d, %d\", // n=%.2f s=%s%n",
+            name, psi, minS, maxS, sCount, bHi, bLo, minA, maxA, aCount, m, b, n, max[2], max[0]);
+        // The implementations stop at the first tail term that cannot change the result
+        // and omit it. M is the maximum number of significant tail terms (the stopping
+        // term may be term M + 1). Assert the N required for a tail of at most M
+        // significant terms.
+        Assertions.assertEquals(expectedN, n, name);
+    }
+
+    /**
      * Assert that the tail fails to converge. This uses failure cases accrued during testing.
      * It ensures that cases that failed the test implementation can be reviewed if
      * the implementation changes.
