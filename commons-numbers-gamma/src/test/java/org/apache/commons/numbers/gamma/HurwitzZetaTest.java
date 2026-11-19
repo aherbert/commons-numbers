@@ -862,7 +862,7 @@ class HurwitzZetaTest {
         /** Context for double precision using the DD zeta implementation.
          * Uses standard DD pow for all terms. Converge the tail beyond 53-bits. */
         static final Context DD_DOUBLE = Context.of(9, 15)
-            .withEpsilon(0x1p-55).withOptions(1);
+            .withEpsilon(0x1p-58).withOptions(1);
         /** Context for double-double precision using the DD zeta implementation.
          * Uses DDMath only for the most important terms. Note that using
          * DDMath for the series, or using accurate add do not improve the error
@@ -883,7 +883,7 @@ class HurwitzZetaTest {
         static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70));
 
         /** Default epsilon for the series summations. */
-        private static final double EPS = 0x1p-53;
+        private static final double EPS = 0x1p-56;
         /** Default math context for extended precision BigDecimal implementation. */
         private static final MathContext MC = MathContext.DECIMAL128;
         /** Default options. Configured for the double implementation:
@@ -2007,10 +2007,11 @@ class HurwitzZetaTest {
         int i;
         for (i = 0; i < c.getM(); i++) {
             final double t = f * p * F[i];
-            tsum += t;
+            // Stop before a term that cannot change the result
             if (Math.abs(t) <= stop) {
                 break;
             }
+            tsum += t;
             // Update (a+n)^-(2k-1+s)
             p /= apn;
             // f = s * (s+1) * (s+2) * ... * (s+2k-2)
@@ -3972,15 +3973,16 @@ class HurwitzZetaTest {
         // Sum of an alternating series as each F changes sign.
         // Sum until terms will not impact the result.
         BigDecimal tsum = BigDecimal.ZERO;
-        final int stop = sum.scale() + mc.getPrecision();
+        final int stop = sum.scale() + mc.getPrecision() + 1;
         int i;
         for (i = 0; i < c.getM(); i++) {
             final BigDecimal t = f.multiply(p, mc).multiply(FBD[i], mc);
-            tsum = tsum.add(t, mc);
+            // Stop before a term that cannot change the result.
             // Bigger scale is a smaller value
             if (t.scale() >= stop) {
                 break;
             }
+            tsum = tsum.add(t, mc);
             // p = (a+n)^-(2k-1+s)
             if (usePow) {
                 p = apn.pow(-(2 * i + 3 + s), mc);
@@ -4466,36 +4468,47 @@ class HurwitzZetaTest {
         // Sum until terms will not impact the result.
         // Use the tail epsilon to obtain a minimum exponent for terms.
         final long stop = (long) es + Math.getExponent(c.getEps());
-        // Initialise with the first term.
+        // The tail sum is null until the first term is added.
         // Avoids addition of fractional representation to zero (which has a zero exponent).
-        DD tsum = f.multiply(p).multiply(FDD[0]).frexp(exp);
-        long et = ef + ep + exp[0];
-        int etsum = intExponent(et);
+        DD tsum = null;
+        int etsum = 0;
         int i;
-        for (i = 1; i < c.getM(); i++) {
+        for (i = 0; i < c.getM(); i++) {
+            if (i != 0) {
+                // p = (a+n)^-(2k-1+s)
+                if (usePow) {
+                    p = powS.apply(apn, -(2 * i + 1 + s), e);
+                    ep = e[0];
+                } else {
+                    p = p.multiply(apn).frexp(exp);
+                    ep += exp[0] + eapn;
+                }
+                // f = s * (s+1) * (s+2) * ... * (s+2k-2)
+                // compute the multiplicand as a long as it cannot overflow when M is small
+                f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
+                ef += exp[0];
+            }
+            // FDD is finite. f*p in [0.25, 2).
+            final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
+            final long et = ef + ep + exp[0];
+            // Stop before a term that cannot change the result
             if (et < stop) {
                 break;
             }
-            // p = (a+n)^-(2k-1+s)
-            if (usePow) {
-                p = powS.apply(apn, -(2 * i + 1 + s), e);
-                ep = e[0];
+            if (tsum == null) {
+                tsum = t;
+                etsum = intExponent(et);
             } else {
-                p = p.multiply(apn).frexp(exp);
-                ep += exp[0] + eapn;
+                tsum = add(tsum, etsum, t, intExponent(et), exp, addS);
+                etsum = exp[0];
             }
-            // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-            // compute the multiplicand as a long as it cannot overflow when M is small
-            f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
-            ef += exp[0];
-            // FDD is finite. f*p in [0.25, 2).
-            final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
-            et = ef + ep + exp[0];
-            tsum = add(tsum, etsum, t, intExponent(et), exp, addS);
-            etsum = exp[0];
         }
         // Used to histogram convergence when testing
         M[i]++;
+        if (tsum == null) {
+            exp[0] = es;
+            return sum;
+        }
         return add(sum, es, tsum, etsum, exp, add);
     }
 
