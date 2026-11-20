@@ -26,7 +26,6 @@ package org.apache.commons.numbers.examples.jmh.core;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.stream.IntStream;
@@ -40,7 +39,6 @@ import org.apache.commons.rng.simple.RandomSource;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
-import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
@@ -336,12 +334,18 @@ public class DDPerformance {
 
     /**
      * Contains the data to compute the double-double operations.
+     *
+     * <p>Samples are drawn using a fixed seed once per trial. This allows comparison
+     * of the same data between JVM runs, e.g. with different JVM options.
      */
     @State(Scope.Benchmark)
     public static class OperatorData {
         /** The sample size. */
         @Param({"1000"})
         private int n;
+        /** The seed for the random samples. */
+        @Param({"12345"})
+        private long seed;
 
         /** The data. */
         private DD[] data;
@@ -369,20 +373,21 @@ public class DDPerformance {
         /**
          * Create the data.
          */
-        @Setup(Level.Iteration)
+        @Setup
         public void setup() {
-            data = createData(n);
-            data2 = createData(n);
+            final UniformRandomProvider rng = RandomSource.XO_RO_SHI_RO_128_PP.create(seed);
+            data = createData(rng, n);
+            data2 = createData(rng, n);
         }
 
         /**
          * Creates data where the high part is approximately uniform in the range [-1, 1).
          *
+         * @param rng Source of randomness.
          * @param n sample size
          * @return the data
          */
-        static DD[] createData(int n) {
-            UniformRandomProvider rng = RandomSource.XO_RO_SHI_RO_128_PP.create();
+        static DD[] createData(UniformRandomProvider rng, int n) {
             return IntStream.range(0, n)
                             .mapToObj(i -> makeSignedDoubleDouble(rng))
                             .toArray(DD[]::new);
@@ -504,6 +509,8 @@ public class DDPerformance {
 
     /**
      * Contains the data to computes the power function {@code (x, xx)^n}.
+     *
+     * <p>Samples are drawn using a fixed seed once per trial.
      */
     @State(Scope.Benchmark)
     public static class PowSample {
@@ -518,6 +525,9 @@ public class DDPerformance {
         /** The upper limit on n. */
         @Param({"1022"})
         private int upper;
+        /** The seed for the random samples. */
+        @Param({"12345"})
+        private long seed;
 
         /** The data. */
         private DDInt[] data;
@@ -551,8 +561,23 @@ public class DDPerformance {
             if (!Double.isFinite(Math.pow(2, upper))) {
                 throw new IllegalStateException("upper overflow 2^" + upper);
             }
-            UniformRandomProvider rng = RandomSource.XO_RO_SHI_RO_128_PP.create();
-            data = IntStream.range(0, values)
+            data = createPowData(seed, values, lower, upper);
+        }
+
+        /**
+         * Creates the data for the power function {@code (x, xx)^n}.
+         * The value {@code (x, xx)} is in {@code +/- [0.5, 2)} and
+         * {@code n} is uniform in {@code [lower, upper)}.
+         *
+         * @param seed Seed for the random samples.
+         * @param values Number of values.
+         * @param lower Lower limit on n (inclusive).
+         * @param upper Upper limit on n (exclusive).
+         * @return the data
+         */
+        static DDInt[] createPowData(long seed, int values, int lower, int upper) {
+            final UniformRandomProvider rng = RandomSource.XO_RO_SHI_RO_128_PP.create(seed);
+            return IntStream.range(0, values)
                             .mapToObj(i -> {
                                 // DD in +/- [1, 2)
                                 DD dd = makeSignedNormalDoubleDouble(rng);
@@ -623,59 +648,81 @@ public class DDPerformance {
      * This method returns result with a separate scale and supports powers beyond the range
      * of a {@code double}.
      *
-     * <p>Data have been taken from the test cases in the {@code o.a.c.statistics.ext} package
-     * as these do not overflow BigDecimal using exponents in the range [50000000, 60000000).
+     * <p>The value {@code (x, xx)} is in {@code +/- [0.5, 2)} and {@code n} is uniform in
+     * a range {@code [lower, upper)}. The cost of the power function increases with the
+     * number of bits in {@code n}. Each range should cover a narrow band of bit lengths
+     * so the result is representative of that band.
+     *
+     * <p>The default ranges include small powers and powers used in the
+     * {@code o.a.c.statistics.ext} package test cases (exponents in the range
+     * [50000000, 60000000)).
+     *
+     * <p>Samples are drawn using a fixed seed once per trial.
      */
     @State(Scope.Benchmark)
     public static class PowScaledSample {
-        /** The power exponent. This should be below the limit of BigDecimal (0 through 999999999).
-         * Note that BigDecimal is too slow for larger powers for micro-benchmarking as run times
-         * can be in seconds. */
-        @Param({"1000", "10000"})
-        private int n;
-        /** The high part of the value. */
-        @Param({"1.4146512942500389",
-            //"1.4092258370859025"
-            })
-        private double x;
+        /** The number of values. */
+        @Param({"500"})
+        private int values;
+        /** The range of the power exponent: {@code lower:upper}. The lower limit is inclusive,
+         * the upper limit is exclusive. */
+        @Param({"2:64", "512:2048", "1048576:2097152", "50000000:60000000"})
+        private String range;
+        /** The seed for the random samples. */
+        @Param({"12345"})
+        private long seed;
 
-        /** The value. */
-        private DD dd;
-
-        /**
-         * @return (x, xx)
-         */
-        DD getDD() {
-            return dd;
-        }
+        /** The data. */
+        private DDInt[] data;
 
         /**
-         * @return n
+         * Gets the data.
+         *
+         * @return the data
          */
-        int getN() {
-            return n;
+        public DDInt[] getData() {
+            return data;
         }
 
         /**
          * Create the data.
          */
-        @Setup(Level.Iteration)
+        @Setup
         public void setup() {
-            // Create a random set of round-off bits.
-            // The roundoff must be < 0.5 ULP of the value.
-            // Generate using +/- [0.25, 0.5) ULP.
-            final double xx = 0.25 * Math.ulp(x) * makeSignedNormalDouble(ThreadLocalRandom.current().nextLong());
-            dd = DD.ofSum(x, xx);
+            final String[] limits = range.split(":");
+            final int lower = limits.length == 2 ? Integer.parseInt(limits[0].trim()) : 0;
+            final int upper = limits.length == 2 ? Integer.parseInt(limits[1].trim()) : 0;
+            if (lower >= upper) {
+                throw new IllegalStateException("invalid range: " + range);
+            }
+            data = PowSample.createPowData(seed, values, lower, upper);
         }
     }
 
     /**
      * Contains the scaled power operation.
+     *
+     * <p>The implementations {@code BigDecimal} and {@code Dfp} (using
+     * {@link MathContext#DECIMAL128} precision) are supported but not part of the default
+     * configuration as their limits restrict the range of the power exponent. Approximate
+     * limits for {@code (x, xx)} in {@code +/- [0.5, 2)} are:
+     *
+     * <ul>
+     * <li>{@code BigDecimal}: {@code |n| <= 999999999}; larger {@code |n|} raises an
+     * {@link ArithmeticException}. The result does not overflow for this range of {@code x}.
+     * <li>{@code Dfp}: the result overflows to infinity (or underflows to zero) when
+     * {@code |x^n|} is outside approximately 10<sup>+/-131072</sup>, i.e.
+     * {@code |n|} above approximately 435000 for {@code |x|} close to 0.5 or 2,
+     * and approximately 870000 for {@code |x|} close to {@code sqrt(2)} or {@code sqrt(0.5)}.
+     * </ul>
+     *
+     * <p>Use these implementations with a suitable range, e.g.
+     * {@code -pimplementation=BigDecimal,Dfp -prange=512:2048}.
      */
     @State(Scope.Benchmark)
     public static class PowScaledMethod {
         /** The implementation of the function. */
-        @Param({IMP_POW_SCALED, IMP_ACCURATE_POW_SCALED, IMP_SIMPLE_POW_SCALED, "BigDecimal", "Dfp"})
+        @Param({IMP_POW_SCALED, IMP_ACCURATE_POW_SCALED, IMP_SIMPLE_POW_SCALED})
         private String implementation;
 
         /** The function. */
@@ -876,14 +923,14 @@ public class DDPerformance {
     }
 
     /**
-     * Benchmark a sample of the KS function.
+     * Benchmark a sample of the scaled power function.
      *
      * @param method Test method.
      * @param data Test data.
-     * @return the result
+     * @param bh Data sink.
      */
     @Benchmark
-    public Object powScaled(PowScaledMethod method, PowScaledSample data) {
-        return method.getFunction().apply(data.getDD(), data.getN());
+    public void powScaled(PowScaledMethod method, PowScaledSample data, Blackhole bh) {
+        apply(method.getFunction(), data.getData(), bh);
     }
 }
