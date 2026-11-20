@@ -4879,6 +4879,8 @@ class HurwitzZetaTest {
     private static final int NEG_PATH_DD = 2;
     /** Path of the last call to {@link #zetaNegativeHybrid}. Used for testing. */
     private static int negativePath;
+    /** Natural log of 2^1025: threshold for the overflow of the negative zeta result. */
+    private static final double OVERFLOW_LOG = 1025 * Math.log(2);
     /**
      * Test if the last call to {@link #zetaNegativeHybrid} used double-double precision.
      * Used for testing.
@@ -5011,6 +5013,29 @@ class HurwitzZetaTest {
             // Total cancellation of C_s: zeta(s, 1-a). 1 - a is exact (half-integer a).
             negativePath = NEG_PATH_DOUBLE;
             return HurwitzZeta.zetaImp(s, 1 - a);
+        }
+        // Overflow for any non half-integer a when s >= 1067 (see zetaNegativeDD).
+        // The dominant term is for x or 1+x closest to zero.
+        if (s >= 1067) {
+            return odd && x > -0.5 ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+        }
+        // Overflow: the two largest terms are p = u^-s and q = (-1)^s (1-u)^-s with
+        // u = 1 + x (estimate only) and 1 - u = -x (exact). All other terms of the result have
+        // a magnitude below 4. Let m = max(|p|, |q|). Even s: the result is above m.
+        // Odd s (opposite signs): if min/max <= 1/2 the result magnitude is above m/2 - 4.
+        // Return infinity if this is above 2^1025 (margin for the log estimate).
+        final double lu = Math.log1p(x);
+        final double lv = Math.log(-x);
+        final double logM = -s * Math.min(lu, lv);
+        if (logM > OVERFLOW_LOG) {
+            if (!odd) {
+                return Double.POSITIVE_INFINITY;
+            }
+            // log(min/max) = -s |lu - lv| <= -ln(2)
+            if (s * Math.abs(lu - lv) >= LN2 && logM - LN2 > OVERFLOW_LOG) {
+                // Sign of the dominant term: u^-s > 0 if u < 1 - u
+                return lu < lv ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
+            }
         }
         final boolean useDouble;
         if (odd) {
