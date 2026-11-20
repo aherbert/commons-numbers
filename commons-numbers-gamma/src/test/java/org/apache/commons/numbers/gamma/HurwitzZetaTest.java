@@ -136,6 +136,9 @@ class HurwitzZetaTest {
     private static int lastN;
     /** Set if the last BigDecimal zeta evaluation used the remainder exit. */
     private static boolean lastRemainderExit;
+    /** Count of forward power terms computed with the standard power after the
+     * series power switch. Used for testing. */
+    private static int lastSwitchedTerms;
     /** ln(2). */
     private static final double LN2 = Math.log(2);
     /** One half. */
@@ -857,6 +860,11 @@ class HurwitzZetaTest {
         /** Option to support summation of sub-normal terms. */
         static final int SUB_NORMAL_SUM = 512;
 
+        /** Option to switch the series power from the extended precision power
+         * ({@link #EXT_POW_SERIES}) to the standard power when the remaining terms
+         * are too small for its error to change the result (DD implementation). */
+        static final int POW_SWITCH = 1024;
+
         // Default contexts optimised using the precision tests
 
         /** Context for double precision zeta implementation. */
@@ -878,7 +886,7 @@ class HurwitzZetaTest {
          * DDMath for the series, or using accurate add do not improve the error
          * around the roots, or on the negative a test data. */
         static final Context DD_DOUBLE_DOUBLE = Context.of(15, 30)
-            .withEpsilon(0x1p-106).withOptions(EXT_POW_TERMS);
+            .withEpsilon(0x1p-109).withOptions(EXT_POW_TERMS);
 
         // BigDecimal implementation is very robust to different N.
         // Here N ~ M on the test data with precision +1 digit than the expected 17 per double.
@@ -1455,7 +1463,7 @@ class HurwitzZetaTest {
             "hzeta_is_2p-1075.csv", 2, 0.25, 106),
         T_DD_ZETA_2_POW_N1075_AA((s, a) -> HurwitzZetaTest.zeta(s, DD.of(a),
             Context.DD_DOUBLE_DOUBLE.addOptions(Context.EXT_POW_SERIES | Context.AA_SERIES | Context.AA_TERMS)),
-            "hzeta_is_2p-1075.csv", 0.7, 0.2, 106),
+            "hzeta_is_2p-1075.csv", 0.75, 0.2, 106),
         T_BD_ZETA_2_POW_N1075((s, a) -> HurwitzZetaTest.zeta(s, new BigDecimal(a), null, Context.BD_DOUBLE_DOUBLE),
             "hzeta_is_2p-1075.csv", 0.002, 0.0005, 106);
 
@@ -4295,8 +4303,10 @@ class HurwitzZetaTest {
     /**
      * Helper function to add the fractional representation of two DD numbers.
      *
-     * <p>Note a DD has a floating mantissa of 106+ bits. This method allows adding
-     * a small term to an effectively 107-bit larger term.
+     * <p>Note a DD has a floating mantissa of 106+ bits. This method adds terms
+     * whose exponents differ by up to 109 bits; a smaller term is ignored. This
+     * matches the 2^-109 tolerance of the double-double context. The first ignored
+     * difference (110 bits) would change the result with probability ~0.125.
      * See {@link #testFractionalAddAssumptions()}.
      *
      * @param a Addend a.
@@ -4308,9 +4318,9 @@ class HurwitzZetaTest {
      * @return the fraction part of the result
      */
     private static DD add(DD a, int ae, DD b, int be, int[] e, BiFunction<DD, DD, DD> add) {
-        // Add if the overlap is within 107-bits.
+        // Add if the overlap is within 109-bits.
         final long diff = (long) ae - be;
-        if (Math.abs(diff) > 107) {
+        if (Math.abs(diff) > 109) {
             // Special case where the exponent of zero is 0.
             // This may be larger than the exponent of the other term.
             if (ae > be) {
@@ -4406,9 +4416,18 @@ class HurwitzZetaTest {
 
         // Power function and add function (allows switching to a faster method for the series)
         final ScaledPowOperator pow = c.isSet(Context.EXT_POW_TERMS) ? DDMath::pow : DD::pow;
-        final ScaledPowOperator powS = c.isSet(Context.EXT_POW_SERIES) ? DDMath::pow : DD::pow;
+        ScaledPowOperator powS = c.isSet(Context.EXT_POW_SERIES) ? DDMath::pow : DD::pow;
         final BiFunction<DD, DD, DD> add = c.isSet(Context.AA_TERMS) ? HurwitzZetaTest::accurateAdd : DD::add;
         final BiFunction<DD, DD, DD> addS = c.isSet(Context.AA_SERIES) ? HurwitzZetaTest::accurateAdd : DD::add;
+        // Switch the series power to DD.pow when its error cannot change the result.
+        // DD.pow(x, n) relative error is ~2|n| eps (eps = 2^-106; measured max < 2|n|
+        // for |n| > 3, 3.5 (|n| - 1) for |n| = 2, 3). All remaining terms sum to R_k, so the
+        // added error is < 2s eps R_k. Require this below the context epsilon relative to
+        // the kept sum S_k, with a factor 2 margin: R_k <= S_k * epsilon / (4 s eps).
+        boolean powSwitch = c.isSet(Context.POW_SWITCH) && c.isSet(Context.EXT_POW_SERIES);
+        final double logSwitch = Math.log(c.getEps() * 0x1.0p106 / (4.0 * s));
+        lastSwitchedTerms = 0;
+        boolean switched = false;
 
         // First term may be provided
         final DD t0;
@@ -4421,25 +4440,16 @@ class HurwitzZetaTest {
             et0 = exp[0];
         }
 
-        // Asymptotic Behavior as a -> inf
-        // https://dlmf.nist.gov/25.11#E43
-        // When a is large the series cannot use a+k.
-        // This reduces to N=0, the I term and the first term of T.
-        if (a.hi() > 0x1p105) {
-            // a^(1-s) / (s - 1) + a^-s / 2
-            // Note: If a^-s is sub-normal then a^(1-s)=(a^-s * a) may not be
-            // sub-normal when s is small as a is large.
-            DD r = pow.apply(a, 1 - s, e);
-            long er = e[0];
-            r = r.divide(s - 1).frexp(exp);
-            er += exp[0];
-            // Add 0.5 * t0 so adjust the exponent
-            return add(r, intExponent(er), t0, addExponent(et0, -1), exp, add);
-        }
+        // Large a: no asymptotic trap is required. At k=0 the Euler-Maclaurin tail at x = a
+        // converges at its first term when s(s-1)/(12 a^2) is below epsilon (a > ~s 2^53
+        // for epsilon 2^-109); the result is then I + t0/2 (DLMF 25.11.43) with no forward
+        // terms. Below this the required correction terms are added at k=0.
 
-        // Can overflow if 0 < a < 1.
-        if (et0 > 106) {
-            // Nothing can be added in double-double precision
+        // Single term exit (t0 can be large if 0 < a < 1).
+        // t0 >= 2^(et0-1) and the remaining terms sum to zeta(s, a+1) <= zeta(2, 1) < 2.
+        // The relative remainder is < 2^(2-et0): negligible if 2^(2-et0) <= eps.
+        // (The remainder exit at k=1 also tests this with a tighter bound.)
+        if (et0 >= 2 - Math.getExponent(c.getEps())) {
             exp[0] = et0;
             return t0;
         }
@@ -4447,129 +4457,176 @@ class HurwitzZetaTest {
         // However the terms may be sub-normal and we can add them using a fractional
         // representation with a separate base 2 exponent.
 
-        final int n = c.getN();
-        DD apn = a.add(n);
-
-        // Initialise sum with the first tail term: 0.5 * (a+n)^-s
-        DD sum = powS.apply(apn, -s, e);
-        int es = addExponent(intExponent(e[0]), -1);
-        // S : k in [0, n-1]
-        // Note k=0 already computed as t0
-        for (int k = n - 1; k > 0; k--) {
-            // Descending k sums in order of magnitude for increased precision
-            final DD r = powS.apply(a.add(k), -s, e);
-            sum = add(sum, es, r, intExponent(e[0]), exp, addS);
-            es = exp[0];
-        }
-
-        // I : (a+p)^(1-s) / (s-1)
-        DD ti = pow.apply(apn, 1 - s, e);
-        long eti = e[0];
-        ti = ti.divide(s - 1).frexp(exp);
-        eti += exp[0];
-
-        // Add in magnitude order. When a in [0, 1] it may be the dominant term
-        if (et0 > eti) {
-            sum = add(sum, es, ti, intExponent(eti), exp, add);
-            sum = add(sum, exp[0], t0, et0, exp, add);
-        } else {
-            sum = add(sum, es, t0, et0, exp, add);
-            sum = add(sum, exp[0], ti, intExponent(eti), exp, add);
-        }
-        es = exp[0];
-
-        // If the sum of terms is far below min double value then stop.
-        // The smallest normalised exponent is -1023 - 52 = -1075.
-        // Make sure the 106-bit double-double cannot be added to Double.MIN_VALUE.
-        // This is disabled to allow computation on extremely small values for testing.
-        //if (es < -1075 - 106) {
-        //    exp[0] = 0;
-        //    return DD.ZERO;
-        //}
-
-        // T
-        // The following recycles the power term p: (a+n)^-(2k-1+s).
-        // This incorporates the factor for T, (a+n)^-s, into the sum terms.
-        // The first power is (a+n)^-(1+s) not (a+n)^-1.
-        // Terms cannot overflow using the fractional representation. This also
-        // allows the tail computation to continue further when an individual
-        // part of each term computation would underflow.
-        // Note:
-        // This has a drawback when s > (a+n) and the pochammer function (s)_{2k-1} grows
-        // faster than the term (a+n)^-(2k-1-s) reduces. For large s and/or a the
-        // power term would normally underflow and the tail is ignored. Here the
-        // convergence must be possible for all expected values of s and a.
-
-        // *** This must work for all s where (a+n)^-s is not an underflow ***
-        // The function testTailConvergence examines the parameter space and verifies
-        // convergence is possible for the provided n and expected range of s.
-
-        // Rising factorial term : (s)_{2k-1}
-        DD f = DD.of(s).frexp(exp);
-        long ef = exp[0];
-
-        // Alternative implementations for (a+n)^-(2k-1+s).
-
-        // Initialise (a+n)^-(2k-1+s) to (a+n)^-(1+s)
-        DD p = pow.apply(apn, -1 - s, e);
-        long ep = e[0];
-        // Compute using the power function
+        // Dynamic N (as the BigDecimal implementation): the terms (a+k)^-s are computed in
+        // ascending k and kept. At each x = a + k: a remainder exit (before the power);
+        // then the Euler-Maclaurin tail at x is tested (converged, diverged or M terms).
+        // On exit the kept terms are summed in ascending order of magnitude: a
+        // double-double sum is only accurate to ~106 bits when the terms ascend.
+        // The convergence tests use a natural log estimate of the forward sum.
+        final int maxN = c.getN();
+        final int m = c.getM();
         final boolean usePow = c.isSet(Context.TAIL_POW);
-        long eapn = 0;
-        if (!usePow) {
-            // Divide by (a+n)^2 using multiplication
-            apn = pow.apply(apn, -2, e);
-            eapn = e[0];
-        }
-
-        // Set the scale for the tail series
-
-        // Sum of an alternating series as each F changes sign.
-        // Sum until terms will not impact the result.
-        // Use the tail epsilon to obtain a minimum exponent for terms.
-        final long stop = (long) es + Math.getExponent(c.getEps());
-        // The tail sum is null until the first term is added.
-        // Avoids addition of fractional representation to zero (which has a zero exponent).
-        DD tsum = null;
-        int etsum = 0;
-        int i;
-        for (i = 0; i < c.getM(); i++) {
-            if (i != 0) {
-                // p = (a+n)^-(2k-1+s)
-                if (usePow) {
-                    p = powS.apply(apn, -(2 * i + 1 + s), e);
-                    ep = e[0];
-                } else {
-                    p = p.multiply(apn).frexp(exp);
-                    ep += exp[0] + eapn;
+        final double logEps = Math.log(c.getEps());
+        final DD[] terms = new DD[maxN + 1];
+        final int[] eterms = new int[maxN + 1];
+        terms[0] = t0;
+        eterms[0] = et0;
+        double logEst = Double.NEGATIVE_INFINITY;
+        lastRemainderExit = false;
+        for (int k = 0;; k++) {
+            if (k != 0) {
+                // Remainder exit: sum_{j>=k} (a+j)^-s <= (a+k)^-s (1 + (a+k)/(s-1))
+                final double xk = a.hi() + k;
+                final double logRem = -s * Math.log(xk) + Math.log1p(xk / (s - 1));
+                if (logRem <= logEps + logEst) {
+                    lastN = k;
+                    lastRemainderExit = true;
+                    // Sum in ascending order of magnitude: terms k-1 .. 0
+                    DD sum = terms[k - 1];
+                    int es = eterms[k - 1];
+                    for (int i = k - 2; i >= 0; i--) {
+                        sum = add(sum, es, terms[i], eterms[i], exp, add);
+                        es = exp[0];
+                    }
+                    exp[0] = es;
+                    return sum;
                 }
-                // f = s * (s+1) * (s+2) * ... * (s+2k-2)
-                // compute the multiplicand as a long as it cannot overflow when M is small
-                f = f.multiply((s + (2L * i) - 1) * (s + (2L * i))).frexp(exp);
-                ef += exp[0];
+                if (powSwitch && logRem <= logSwitch + logEst) {
+                    powS = DD::pow;
+                    powSwitch = false;
+                    switched = true;
+                }
+                if (switched) {
+                    lastSwitchedTerms++;
+                }
             }
-            // FDD is finite. f*p in [0.25, 2).
-            final DD t = f.multiply(p).multiply(FDD[i]).frexp(exp);
-            final long et = ef + ep + exp[0];
-            // Stop before a term that cannot change the result
-            if (et < stop) {
-                break;
+            final DD x = a.add(k);
+            // x^-s
+            if (k != 0) {
+                terms[k] = powS.apply(x, -s, e);
+                eterms[k] = intExponent(e[0]);
             }
-            if (tsum == null) {
-                tsum = t;
-                etsum = intExponent(et);
-            } else {
-                tsum = add(tsum, etsum, t, intExponent(et), exp, addS);
-                etsum = exp[0];
+            final DD px = terms[k];
+            final int epx = eterms[k];
+            // Estimate of the integral term I = x^(1-s) / (s-1) = x^-s * x / (s-1)
+            // Natural log of x^-s (the fraction log is shared by the estimates below)
+            final double logPxf = Math.log(Math.abs(px.hi()));
+            final double logPx = logPxf + epx * LN2;
+            final double logI = logPx + Math.log(x.hi() / (s - 1));
+            // First tail term x^-s / 2
+            final int eth = addExponent(epx, -1);
+            final double logStop = logEps + TailModel.logAddExp(logEst,
+                TailModel.logAddExp(logI, logPxf + eth * LN2));
+            // Stop threshold as a fraction and power of 2: exp(logStop) = mStop * 2^cStop,
+            // mStop in [0.5, 1]. The tail terms are compared using their exponent
+            // (no log in the loop).
+            final long cStop = (long) Math.ceil(logStop / LN2);
+            final double mStop = Math.exp(logStop - cStop * LN2);
+
+            // T: sum_j B_2j / (2j)! (s)_(2j-1) x^-(2j-1+s), alternating in sign.
+            // Terms use a fractional representation (no overflow or underflow).
+            final boolean force = k >= maxN;
+            // Rising factorial term : (s)_{2j-1}
+            DD f = DD.of(s).frexp(exp);
+            long ef = exp[0];
+            // x^-(2j-1+s), initialised to x^-(1+s) = x^-s / x
+            // Divide by the fraction of x: the DD split overflows for |x| > 2^996.
+            final DD xf = x.frexp(exp);
+            final int ex = exp[0];
+            DD p = px.divide(xf).frexp(exp);
+            long ep = (long) epx + exp[0] - ex;
+            // x^-2 for the multiplication; computed on first use
+            DD x2 = null;
+            long ex2 = 0;
+            // The tail sum is null until the first term is added.
+            // Avoids addition of fractional representation to zero (which has a zero exponent).
+            DD tsum = null;
+            int etsum = 0;
+            // Previous term |t| = mPrev * 2^ePrev
+            long ePrev = Long.MAX_VALUE;
+            double mPrev = 0;
+            boolean converged = false;
+            int j;
+            for (j = 0; j < m; j++) {
+                if (j != 0) {
+                    // p = x^-(2j-1+s)
+                    if (usePow) {
+                        p = powS.apply(x, -(2 * j + 1 + s), e);
+                        ep = e[0];
+                    } else {
+                        if (x2 == null) {
+                            // Divide by x^2 using multiplication
+                            x2 = pow.apply(x, -2, e);
+                            ex2 = e[0];
+                        }
+                        p = p.multiply(x2).frexp(exp);
+                        ep += exp[0] + ex2;
+                    }
+                    // f = s * (s+1) * (s+2) * ... * (s+2j-2)
+                    // compute the multiplicand as a long as it cannot overflow when M is small
+                    f = f.multiply((s + (2L * j) - 1) * (s + (2L * j))).frexp(exp);
+                    ef += exp[0];
+                }
+                // FDD is finite. f*p in [0.25, 2).
+                final DD t = f.multiply(p).multiply(FDD[j]).frexp(exp);
+                final long et = ef + ep + exp[0];
+                final double mt = Math.abs(t.hi());
+                // Stop before a term that cannot change the result.
+                // |t| < 2^et as mt in [0.5, 1]; if et == cStop compare the fractions.
+                if (et < cStop || et == cStop && mt <= mStop) {
+                    converged = true;
+                    break;
+                }
+                // Divergence: the term is not smaller than the previous term
+                if (et > ePrev || et == ePrev && mt >= mPrev) {
+                    break;
+                }
+                ePrev = et;
+                mPrev = mt;
+                if (tsum == null) {
+                    tsum = t;
+                    etsum = intExponent(et);
+                } else {
+                    tsum = add(tsum, etsum, t, intExponent(et), exp, addS);
+                    etsum = exp[0];
+                }
             }
+            // Exit with the Euler-Maclaurin tail at x = a + k (see the BigDecimal
+            // implementation). The forward sum alone is the remainder exit above.
+            if (converged || force) {
+                // Used to histogram convergence when testing
+                M[j]++;
+                lastN = k;
+                // I may dominate the result: compute x^(1-s) with the power function for
+                // the important terms (the estimate above uses the series power).
+                DD ti = pow.apply(x, 1 - s, e);
+                final long el = e[0];
+                ti = ti.divide(s - 1).frexp(exp);
+                final int eti = intExponent(el + exp[0]);
+                // Sum in ascending order of magnitude: T, x^-s / 2, terms k-1 .. 1
+                DD sum = px;
+                int es = eth;
+                if (tsum != null) {
+                    sum = add(tsum, etsum, px, eth, exp, addS);
+                    es = exp[0];
+                }
+                for (int i = k - 1; i > 0; i--) {
+                    sum = add(sum, es, terms[i], eterms[i], exp, addS);
+                    es = exp[0];
+                }
+                if (k == 0) {
+                    return add(sum, es, ti, eti, exp, add);
+                }
+                // When a in [0, 1] t0 may be the dominant term. Add I and t0 in magnitude order.
+                if (et0 > eti) {
+                    sum = add(sum, es, ti, eti, exp, add);
+                    return add(sum, exp[0], t0, et0, exp, add);
+                }
+                sum = add(sum, es, t0, et0, exp, add);
+                return add(sum, exp[0], ti, eti, exp, add);
+            }
+            logEst = TailModel.logAddExp(logEst, logPx);
         }
-        // Used to histogram convergence when testing
-        M[i]++;
-        if (tsum == null) {
-            exp[0] = es;
-            return sum;
-        }
-        return add(sum, es, tsum, etsum, exp, add);
     }
 
     /**
@@ -5417,6 +5474,8 @@ class HurwitzZetaTest {
         // -111         0.062500
         // -112         0.031250
         // -107+b       2^-b
+        // The helper add(DD, int, DD, int, ...) ignores a term smaller by more than 109 bits
+        // (the 2^-109 context tolerance): the first ignored scale (-110) has p(add) = 0.125.
 
         // Special case of a 106-bit mantissa with a non-zero low part.
         // The low part is equal to 0.5 ulp(high part) and a number smaller
@@ -8033,11 +8092,14 @@ class HurwitzZetaTest {
          * @return log(exp(p) + exp(q))
          */
         static double logAddExp(double p, double q) {
-            final double max = Math.max(p, q);
-            // Avoid fall-through when min(p, q) - max = -inf - -inf = NaN
-            if (max == Double.NEGATIVE_INFINITY) {
-                return max;
+            // Zero term: log(0) = -inf. Also avoids NaN from -inf - -inf.
+            if (p == Double.NEGATIVE_INFINITY) {
+                return q;
             }
+            if (q == Double.NEGATIVE_INFINITY) {
+                return p;
+            }
+            final double max = Math.max(p, q);
             return max + Math.log1p(Math.exp(Math.min(p, q) - max));
         }
     }
