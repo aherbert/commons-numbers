@@ -139,6 +139,14 @@ class HurwitzZetaTest {
     /** Count of forward power terms computed with the standard power after the
      * series power switch. Used for testing. */
     private static int lastSwitchedTerms;
+    /** Enable the remainder exit in the DD zeta. Used for testing. */
+    private static boolean ddRemainderExit = true;
+    /** Counts of the DD zeta exits: single term, remainder, tail converged, tail forced.
+     * Used for testing. */
+    private static final long[] DD_EXIT_COUNT = new long[4];
+    /** Counts of the DD zeta remainder exit (index 0) and tail exits (index 1) by k.
+     * Used for testing. */
+    private static final long[][] DD_EXIT_K = new long[2][32];
     /** ln(2). */
     private static final double LN2 = Math.log(2);
     /** One half. */
@@ -4450,6 +4458,7 @@ class HurwitzZetaTest {
         // The relative remainder is < 2^(2-et0): negligible if 2^(2-et0) <= eps.
         // (The remainder exit at k=1 also tests this with a tighter bound.)
         if (et0 >= 2 - Math.getExponent(c.getEps())) {
+            DD_EXIT_COUNT[0]++;
             exp[0] = et0;
             return t0;
         }
@@ -4478,9 +4487,11 @@ class HurwitzZetaTest {
                 // Remainder exit: sum_{j>=k} (a+j)^-s <= (a+k)^-s (1 + (a+k)/(s-1))
                 final double xk = a.hi() + k;
                 final double logRem = -s * Math.log(xk) + Math.log1p(xk / (s - 1));
-                if (logRem <= logEps + logEst) {
+                if (ddRemainderExit && logRem <= logEps + logEst) {
                     lastN = k;
                     lastRemainderExit = true;
+                    DD_EXIT_COUNT[1]++;
+                    DD_EXIT_K[0][k]++;
                     // Sum in ascending order of magnitude: terms k-1 .. 0
                     DD sum = terms[k - 1];
                     int es = eterms[k - 1];
@@ -4597,6 +4608,8 @@ class HurwitzZetaTest {
                 // Used to histogram convergence when testing
                 M[j]++;
                 lastN = k;
+                DD_EXIT_COUNT[converged ? 2 : 3]++;
+                DD_EXIT_K[1][k]++;
                 // I may dominate the result: compute x^(1-s) with the power function for
                 // the important terms (the estimate above uses the series power).
                 DD ti = pow.apply(x, 1 - s, e);
