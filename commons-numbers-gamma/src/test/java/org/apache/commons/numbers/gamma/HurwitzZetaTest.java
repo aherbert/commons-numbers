@@ -5143,9 +5143,16 @@ class HurwitzZetaTest {
         }
         DD sum = pp.add(pn);
         // Remaining positive side: zeta(s, 2+x). 2 + x is exact unless a in (-1, 0)
-        // has bits below 2^-52; its share of the result is then small.
-        final double z2 = HurwitzZeta.zetaImp(s, 2 + x);
+        // has bits below 2^-52. The round-off e is amplified by s in zeta and by the
+        // cancellation of the result (e.g. s = 21, a = -0.5 + 4.2e-12: 2.4 ulp).
+        // First order correction: zeta(s, b + e) = zeta(s, b) - s e zeta(s+1, b) + O(e^2).
+        final double b = 2 + x;
+        final double z2 = HurwitzZeta.zetaImp(s, b);
         sum = sum.add(z2);
+        final double e = DD.ofSum(2, x).lo();
+        if (e != 0) {
+            sum = sum.add(-s * e * HurwitzZeta.zetaImp(s + 1, b));
+        }
         // Magnitude of the parts computed in double precision
         double rest = z2;
         // Remaining negative side: (a+k)^-s for k in [0, -ca), i.e. excluding x.
@@ -8688,6 +8695,277 @@ class HurwitzZetaTest {
             out.printf("# Comment shows max(|x|, |y|), cancellation bits and computed value of zeta%n");
             cases.forEach(out::print);
         }
+    }
+
+    /**
+     * Create test data for {@code a < 0} and integer {@code s} with a spread of cancellation
+     * (odd {@code s}) or balance of the two sides (even {@code s}).
+     *
+     * <p>The value is {@code zeta(s, a) = P + (-1)^s N} with {@code x = a - ceil(a)},
+     * {@code P = zeta(s, 1+x)} and {@code N = zeta(s, -x) - zeta(s, 1-a)} (both positive).
+     * {@code |a|} is drawn uniform in its bits in {@code [minA, maxA)}; this selects the pole
+     * interval {@code (-(n+1), -n)} with {@code n = floor(|a|)} and the half-integer
+     * {@code h = -(n + 1/2)}. No root files are needed:
+     *
+     * <ul>
+     * <li>Odd s: the root of the interval is at {@code r = h + delta} with
+     * {@code delta = zeta(s, n + 3/2) / |C'|},
+     * {@code |C'| = s 2^(s+2) (1 - 2^-(s+1)) zeta(s+1) = 4 s' S},
+     * {@code S = (2^s - 1) zeta(s)}, {@code s' = s zeta(s+1) / zeta(s)}. The cancellation
+     * (bits) at distance {@code d} from the root is modelled as {@code c ~ -log2(4 s' d)};
+     * the closest double is within {@code ulp(h)/2} of the root, so the maximum is
+     * {@code cmax = -log2(2 s' ulp(h))}. A target c is drawn uniform in {@code [cmin, cmax]}
+     * and {@code a = r +/- 2^-c / (4 s')} (random direction), with {@code r} refined by a root
+     * finder for a non-half-integer root (the linear model can be in error by more than
+     * {@code ulp(h)} for small s and |a|). The actual cancellation
+     * {@code max(exponent(P), exponent(N)) - exponent(P - N)} is computed in BigDecimal (the
+     * root finder metric of {@link #testDataZetaRoots(int, int, int, int)}). Root type: the
+     * root is at the half-integer (as a double) if {@code delta < ulp(h)/2}.
+     * <li>Even s: no cancellation. The balance {@code rho = log2(P/N)} is drawn uniform in
+     * {@code [-rhoMax, rhoMax]} and {@code a} solved by bisection on the bits of {@code a}
+     * ({@code rho} decreases with {@code a}) using double precision zeta values.
+     * </ul>
+     *
+     * <p>Output is split by kind: odd s with a non-half-integer root ({@code root}), odd s
+     * with a half-integer root ({@code half}) and even s ({@code even}). Each row has a
+     * comment with the actual and modelled cancellation (odd) or rho (even).
+     * The standard output summarises the actual cancellation and the share of evaluations
+     * by the hybrid implementation (leading DD terms, T = 0.25) that use the DD fallback.
+     *
+     * @param ls Lower bound for s ({@code >= 2}).
+     * @param us Upper bound for s.
+     * @param step Step for s (1 or 2).
+     * @param minA Lower bound for |a| ({@code >= 0.5}).
+     * @param maxA Upper bound for |a| (exclusive; {@code <= 2^52}).
+     * @param cmin Minimum target cancellation (bits; {@code >= 0}).
+     * @param samples Number of samples.
+     * @param rhoMax Limit for rho (even s).
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "3, 21, 2, 0.5, 65536, 0, 4000, 2",
+        "23, 1067, 2, 0.5, 65536, 0, 2000, 2",
+        "2, 64, 2, 0.5, 65536, 0, 2000, 2",
+    })
+    @Disabled("Used to generate test data")
+    void testDataNegativeCancellation(int ls, int us, int step, double minA, double maxA,
+                                      double cmin, int samples, double rhoMax) throws IOException {
+        Assertions.assertTrue(ls >= 2, "s must be >= 2");
+        Assertions.assertTrue(us >= ls);
+        Assertions.assertTrue(step == 1 || step == 2);
+        Assertions.assertTrue(minA >= 0.5);
+        Assertions.assertTrue(maxA > minA);
+        Assertions.assertTrue(maxA <= 0x1.0p52, "|a| must be < 2^52 (all larger doubles are integer)");
+        Assertions.assertTrue(cmin >= 0);
+        Assertions.assertTrue(samples > 0);
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        final Context context = Context.BD_DOUBLE_DOUBLE;
+        final MathContext mc = context.getMathContext();
+        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        final double ln2 = Math.log(2);
+        final int ns = (us - ls) / step + 1;
+        // |a| uniform in bits in [minA, maxA)
+        final DoubleSupplier absA = createSampler(rng, minA, maxA, false);
+        // Per s: model constants (computed on demand)
+        final TailModel[] models = new TailModel[ns];
+        // Output by kind: 0 root, 1 half, 2 even
+        final String[] kinds = {"root", "half", "even"};
+        @SuppressWarnings("unchecked")
+        final ArrayList<String>[] rows = new ArrayList[] {new ArrayList<>(), new ArrayList<>(), new ArrayList<>()};
+        // Summary: 5-bit bins of the actual cancellation (odd) or 0.5 bins of rho (even)
+        final int bins = 13;
+        final long[][] count = new long[3][bins];
+        final long[][] dd = new long[3][bins];
+        final int[] exact = {0};
+        final int[] noRange = {0};
+        final int[] noBracket = {0};
+        final BrentSolver solver = new BrentSolver(0, 0, 0);
+        double maxc = 0;
+        long time = System.nanoTime();
+        int made = 0;
+        while (made < samples) {
+            final int s = ls + step * rng.nextInt(ns);
+            // |a| only selects the pole interval (-(n+1), -n) and its half-integer h.
+            // The sample a is placed relative to the root (odd s) or the balance point (even s).
+            final double n = Math.floor(absA.getAsDouble());
+            final double h = -(n + 0.5);
+            final boolean odd = (s & 1) == 1;
+            final String comment;
+            final double a;
+            final int kind;
+            final int bin;
+            if (odd) {
+                // Odd s: zeta(s, a) = P - N. Root model about the half-integer h:
+                // zeta(s, a) ~ zeta(s, n + 3/2) - |C'| (a - h), with C' the slope of
+                // C_s(u) = sum_{k in Z} (u+k)^-s at u = 1/2. All in logs: 2^s overflows for
+                // large s and zeta(s, n + 3/2) can underflow.
+                final int si = (s - ls) / step;
+                if (models[si] == null) {
+                    models[si] = new TailModel(s, 30);
+                }
+                final double zs = RiemannZeta.value(s);
+                final double zs1 = RiemannZeta.value(s + 1.0);
+                // s' = s zeta(s+1) / zeta(s): |C'| = 4 s' S
+                final double sp = s * zs1 / zs;
+                // log |C'| = log(s) + (s+2) ln2 + log1p(-2^-(s+1)) + log zeta(s+1)
+                final double logC = Math.log(s) + (s + 2) * ln2 + Math.log1p(-Math.scalb(1.0, -(s + 1))) +
+                    Math.log(zs1);
+                // log S = log((2^s - 1) zeta(s)): the magnitude of each side P, N near h
+                final double logS = s * ln2 + Math.log1p(-Math.scalb(1.0, -s)) + Math.log(zs);
+                // zeta(s, a) at h (the value 1 - a = n + 3/2 of the positive side)
+                final double logZ = models[si].logZeta(n + 1.5);
+                // Root offset from h: r = h + delta
+                final double delta = Math.exp(logZ - logC);
+                // Cancellation c ~ log2(S / |zeta|) ~ -log2(4 s' |a - r|). The closest double
+                // to r is within ulp(h)/2: maximum cmax = -log2(2 s' ulp(h)).
+                final double ulp = Math.ulp(h);
+                final double cmax = -Math.log(2 * sp * ulp) / ln2;
+                if (cmax <= cmin) {
+                    // No cancellation range at this ulp (large s and |a|): redraw
+                    noRange[0]++;
+                    continue;
+                }
+                // Root type: the double closest to the root is h if delta < ulp/2
+                kind = delta < ulp * 0.5 ? 1 : 0;
+                // Root: the model is linear in u - 1/2; refine a non-half-integer root
+                // (the model error can exceed ulp(h) for small s and |a|).
+                double r = h + delta;
+                if (kind == 0) {
+                    final int ss = s;
+                    final DoubleUnaryOperator f = y -> zetaNegativeBD(ss, y);
+                    final double upper = Math.min(h + 4 * delta, Math.nextDown(-n));
+                    if (f.applyAsDouble(upper) < 0) {
+                        r = solver.findRoot(f, h, Math.min(r, Math.nextDown(upper)), upper);
+                    } else {
+                        noBracket[0]++;
+                    }
+                }
+                // Target cancellation c uniform in [cmin, cmax]: offset d = 2^-c / (4 s')
+                // from the root in a random direction (d <= 1/(4 s') < 1/12 for cmin >= 0, so a
+                // stays in the pole interval).
+                final double c = cmin + rng.nextDouble() * (cmax - cmin);
+                final double d = Math.scalb(Math.exp(-c * ln2), -2) / sp;
+                a = r + (rng.nextBoolean() ? d : -d);
+                // Actual cancellation of the sides P = zeta(s, 1+x) and
+                // N = zeta(s, -x) - zeta(s, 1-a) (computed as the negative series sum)
+                final double x = a - Math.ceil(a);
+                final double cx;
+                if (x == -0.5) {
+                    // Exact half-integer: zeta(s, a) = zeta(s, 1-a); P and N cancel exactly
+                    exact[0]++;
+                    cx = (logS - logZ) / ln2;
+                } else {
+                    final BigDecimal p = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
+                    final BigDecimal q = negativeSeriesSum(a, x, s, context);
+                    final BigDecimal z = p.add(q, mc);
+                    cx = Math.max(log2(p), log2(q.abs())) - log2(z.abs());
+                }
+                maxc = Math.max(maxc, cx);
+                bin = (int) Math.min(bins - 1, Math.max(0, cx / 5));
+                comment = String.format("# c %s (target %s, cmax %s)%s", shortFormat(cx), shortFormat(c),
+                    shortFormat(cmax), x == -0.5 ? " half-integer" : "");
+            } else {
+                // Even s: zeta(s, a) = P + N (no cancellation). Target balance rho = log2(P/N)
+                // uniform in [-rhoMax, rhoMax]. rho = 0 is near h (P ~ N ~ S); the straddle
+                // P/N in (1/2, 2) changes the binade of the result relative to the sides.
+                // rho decreases with a: it increases with v = -a in (n, n+1). Bisection on the
+                // bits of v (the doubles are not evenly spaced in value near v = 0).
+                final double target = (2 * rng.nextDouble() - 1) * rhoMax;
+                long lo = Double.doubleToRawLongBits(n == 0 ? Double.MIN_VALUE : Math.nextUp(n));
+                long hi = Double.doubleToRawLongBits(Math.nextDown(n + 1));
+                while (hi - lo > 1) {
+                    final long mid = (lo + hi) >>> 1;
+                    if (negativeRho(s, -Double.longBitsToDouble(mid)) < target) {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                // Closest of the two doubles bracketing the target. Few doubles per unit at
+                // large |a| (4 at 2^50) so the actual rho may be far from the target.
+                final double v0 = Double.longBitsToDouble(lo);
+                final double v1 = Double.longBitsToDouble(hi);
+                final double r0 = negativeRho(s, -v0);
+                final double r1 = negativeRho(s, -v1);
+                final double v = Math.abs(r0 - target) < Math.abs(r1 - target) ? v0 : v1;
+                a = -v;
+                kind = 2;
+                final double rho = negativeRho(s, a);
+                bin = (int) Math.min(bins - 1, Math.max(0, (rho + 3) * 2));
+                comment = String.format("# rho %s (target %s)", shortFormat(rho), shortFormat(target));
+            }
+            if (Math.ceil(a) == a) {
+                // Pole (not expected)
+                continue;
+            }
+            made++;
+            rows[kind].add(String.format("%s%n%d, %s%n", comment, s, a));
+            count[kind][bin]++;
+            // Reported only: does the hybrid implementation use the DD fallback
+            zetaNegativeHybrid(s, a, nc);
+            if (negativePath == NEG_PATH_DD) {
+                dd[kind][bin]++;
+            }
+        }
+        time = System.nanoTime() - time;
+
+        // Summary
+        final String[] binLabel = new String[bins];
+        for (int i = 0; i < bins; i++) {
+            binLabel[i] = String.format("[%d,%d)", 5 * i, 5 * i + 5);
+        }
+        for (int k = 0; k < 3; k++) {
+            if (rows[k].isEmpty()) {
+                continue;
+            }
+            final StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < bins; i++) {
+                if (count[k][i] != 0) {
+                    final String label = k == 2 ?
+                        String.format("rho [%s,%s)", shortFormat(i * 0.5 - 3), shortFormat(i * 0.5 - 2.5)) :
+                        "c " + binLabel[i];
+                    sb.append(String.format("  %s n=%d DD=%.1f%%%n", label, count[k][i], 100.0 * dd[k][i] / count[k][i]));
+                }
+            }
+            final String name = String.format("hzeta_negc_s%d_%d_na%s_%s_%s.txt", ls, us,
+                shortFormat(minA), shortFormat(maxA), kinds[k]);
+            report("%s: %d rows%n%s", name, rows[k].size(), sb);
+            try (PrintStream out = getPrintStream(name)) {
+                out.printf("# a < 0 cancellation sample: s in [%d, %d] step %d; |a| in [%s, %s) uniform in bits%n",
+                    ls, us, step, minA, maxA);
+                if (k == 2) {
+                    out.printf("# Even s: rho = log2(P/N) uniform in [-%s, %s]; P = zeta(s, 1+x), " +
+                        "N = zeta(s, -x) - zeta(s, 1-a), x = a - ceil(a)%n", rhoMax, rhoMax);
+                } else {
+                    out.printf("# Odd s (%s root): target cancellation c uniform in [%s, cmax]; " +
+                        "cmax = -log2(2 s' ulp(h)), h = -(floor(|a|) + 1/2)%n",
+                        k == 0 ? "non-half-integer" : "half-integer", cmin);
+                    out.printf("# Cancellation: max(exponent(P), exponent(N)) - exponent(P - N) " +
+                        "(BigDecimal, %d digits); max %s%n", mc.getPrecision(), shortFormat(maxc));
+                }
+                out.printf("# Seed %d; samples %d (all kinds); runtime %.3fs%n", SEED, samples, time * 1e-9);
+                out.printf("# N = %d%n", count[k][0] + Arrays.stream(count[k]).skip(1).sum());
+                rows[k].forEach(out::print);
+            }
+        }
+        report("exact half-integer rows %d; draws with no cancellation range %d; root not bracketed %d%n",
+            exact[0], noRange[0], noBracket[0]);
+    }
+
+    /**
+     * Compute {@code rho = log2(P/N)} for even {@code s} and {@code a < 0} using
+     * double precision zeta values: {@code P = zeta(s, 1+x)}, {@code N = zeta(s, -x) - zeta(s, 1-a)},
+     * {@code x = a - ceil(a)}.
+     *
+     * @param s Argument s (even).
+     * @param a Argument a.
+     * @return rho
+     */
+    private static double negativeRho(int s, double a) {
+        final double x = a - Math.ceil(a);
+        final double p = HurwitzZeta.value(s, 1 + x);
+        final double n = HurwitzZeta.value(s, -x) - HurwitzZeta.value(s, 1 - a);
+        return Math.log(p / n) / Math.log(2);
     }
 
     /**
