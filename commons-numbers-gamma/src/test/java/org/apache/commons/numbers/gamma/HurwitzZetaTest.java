@@ -27,6 +27,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Locale;
 import java.util.SplittableRandom;
 import java.util.TreeSet;
 import java.util.concurrent.ThreadLocalRandom;
@@ -5179,7 +5180,9 @@ class HurwitzZetaTest {
         // Error check: each double precision part has an error of ~1.5 ulp; the largest
         // terms using DD.pow have a relative error of ~16 s eps with eps = 2^-106.
         // Scale the error of the largest terms to the 1.5 ulp (2^-53) of the double parts.
-        final double lead = (Math.abs(pp.hi()) + Math.abs(pn.hi())) * s * (16 / 1.5) * 0x1.0p-53;
+        // The factor (< 1) is applied first: the terms can be close to overflow.
+        final double k = s * (16 / 1.5) * 0x1.0p-53;
+        final double lead = Math.abs(pp.hi()) * k + Math.abs(pn.hi()) * k;
         if (!(rest + lead <= maxRest * Math.abs(r))) {
             return Double.NaN;
         }
@@ -5196,10 +5199,12 @@ class HurwitzZetaTest {
     private static DD ddPow(DD x, int n) {
         final long[] exp = {0};
         final DD f = x.pow(n, exp);
-        if (exp[0] > Double.MAX_EXPONENT) {
+        // f in [0.5, 1): finite for exp <= 1024 unless f rounds to 1 at exp = 1024
+        if (exp[0] > Double.MAX_EXPONENT + 1) {
             return null;
         }
-        return f.scalb((int) exp[0]);
+        final DD r = f.scalb((int) exp[0]);
+        return Double.isFinite(r.hi()) ? r : null;
     }
 
     /**
@@ -6413,6 +6418,18 @@ class HurwitzZetaTest {
             Arguments.of(19, -1.0000000000000002, -2.61598781051334795153424084243e+297, 0),
             Arguments.of(20, -1.0000000000000002, inf, 0), // 1.18e313
             Arguments.of(21, -1.0000000000000002, -inf, 0), // -5.31e328
+            // The leading term d^-s (d = distance of a to the nearest integer) is in
+            // [2^1024 (1 - 2^-54), 2^1024): below 2^1024 but rounds to infinity in double
+            // (and double-double) precision. Found by enumerating d for all s in [2, 1067].
+            // The result is just above MAX_VALUE + ulp/2: correctly rounded to infinity;
+            // MAX_VALUE is within 1 ulp. The rows with s = 632 share d: the overflowing
+            // term is either side of the pole (x = a - ceil(a) near -1/3 or -2/3), with
+            // |a| < 1 and |a| > 1.
+            Arguments.of(29, -2.347075443708112e-11, -inf, 1), // -1.80e+308 (MAX_VALUE + 0.61 ulp)
+            Arguments.of(632, -0.32527837890483924, inf, 1), // 1.80e+308 (MAX_VALUE + 0.507 ulp)
+            Arguments.of(632, -0.6747216210951608, inf, 1),
+            Arguments.of(632, -1.3252783789048392, inf, 1),
+            Arguments.of(632, -1.6747216210951608, inf, 1),
 
             // Overflow the sum of the series with a > 0
             Arguments.of(18, 2e-16, 3.81469726562500143524108492804e+282, 0),
@@ -8967,6 +8984,354 @@ class HurwitzZetaTest {
         final double p = HurwitzZeta.value(s, 1 + x);
         final double n = HurwitzZeta.value(s, -x) - HurwitzZeta.value(s, 1 - a);
         return Math.log(p / n) / Math.log(2);
+    }
+
+    /**
+     * Band of the distance {@code d} of {@code a < 0} to the nearest integer (pole) used
+     * to sample negative {@code a} test data.
+     */
+    enum NegativeBand {
+        /** Finite result. */
+        FINITE,
+        /** Finite result with more than one significant term. */
+        MULTI,
+        /** Finite result dominated by the term closest to the pole (single term to 2^-108). */
+        SINGLE
+    }
+
+    /**
+     * Create test data for {@code a < 0} and integer {@code s} uniform over the doubles
+     * {@code a} where the result is finite (or a band of the finite domain).
+     *
+     * <p>{@code s} is log-uniform in {@code [minS, maxS]}: {@code P(s) ~ log((s+1)/s)}; an
+     * {@code s} with an empty band is redrawn. Large {@code s} is mostly easy (the term
+     * closest to the pole dominates), so a density uniform in {@code s} would add mostly
+     * easy cases.
+     *
+     * <p>Let {@code d = min(u, 1-u)} with {@code u = |a| - floor(|a|)} be the distance to
+     * the nearest integer. The two largest terms are {@code T1 = d^-s} and
+     * {@code T2 = (1-d)^-s} (adjacent to the pole, opposite sides); all other terms sum to
+     * below 4 in magnitude ({@code 2 zeta(2)}). The conditions below are monotonic in
+     * {@code d}, so each holds on an interval of {@code d} bounded by a threshold that
+     * depends on {@code s} (found by bisection on the bits of {@code d}):
+     *
+     * <ul>
+     * <li>finite: {@code T1 + T2} (even s) or {@code T1 - T2} (odd s) {@code <= 2^1025}.
+     * This holds for {@code d >= dF(s)}, the finite threshold. The other terms cannot change
+     * a result of this size. The limit includes results in {@code (MAX_VALUE, 2^1025)} which
+     * round to infinity: the overflow edge (the test tolerance measures an infinite expected
+     * value below 2^1025 in ulps of {@code MAX_VALUE}). Even {@code s >= 1023} overflows
+     * everywhere; odd {@code s >= 1024} is finite only within ~{@code 2^(1024-s)/s} of a half-integer.
+     * <li>single term: {@code (T2 + 4) / T1 < 2^-108}. This holds for {@code d < dS(s)}, the
+     * single-term threshold.
+     * </ul>
+     *
+     * <p>The bands ({@code dF = dF(s)}, {@code dS = dS(s)}; empty for some {@code s}):
+     * {@link NegativeBand#FINITE}: {@code d in [dF, 1/2]};
+     * {@link NegativeBand#MULTI}: {@code d in [max(dF, dS), 1/2]};
+     * {@link NegativeBand#SINGLE}: {@code d in [dF, dS)}.
+     *
+     * <p>{@code |a| > 1} ({@code minA >= 1}): {@code |a|} uniform in its bits in
+     * {@code [minA, maxA)} and rejected outside the band. Each binade of {@code |a| >= 1}
+     * holds 2^52 doubles, so this is uniform over the doubles in the band. Integers
+     * (poles) have {@code d = 0} and are rejected.
+     *
+     * <p>{@code |a| < 1} ({@code maxA <= 1}): the band is {@code |a| in [d0, d1]} (pole 0)
+     * and {@code [1 - d1, 1 - d0]} (pole -1). The coordinate {@code t(|a|)} is uniform in
+     * its bits over the band: {@link Coordinate#VALUE} spreads out the pole at 0,
+     * {@link Coordinate#ONE_MINUS} the pole at -1.
+     *
+     * <p>The header gives the estimated number of {@code (s, a)} pairs in the band (summed
+     * over {@code s} with a non-empty band). Output is sorted by {@code |a|} then {@code s}.
+     * The standard output summarises the production function (infinite and zero results) and
+     * the hybrid implementation DD fallback share by binade of {@code s}.
+     *
+     * @param minS Lower bound for s ({@code >= 2}).
+     * @param maxS Upper bound for s.
+     * @param minA Lower bound for |a|.
+     * @param maxA Upper bound for |a| (exclusive; {@code <= 1} or {@code <= 2^52}).
+     * @param ac Coordinate for |a| ({@code |a| < 1} only).
+     * @param band Band of the distance to the pole ({@code |a| > 1}: finite only).
+     * @param samples Number of samples.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "2, 1023, 1, 0x1.0p52, VALUE, FINITE, 25000",
+        "2, 1023, 0, 1, VALUE, MULTI, 25000",
+        "2, 1023, 0, 1, ONE_MINUS, MULTI, 25000",
+        "2, 1023, 0, 1, VALUE, SINGLE, 2500",
+        "2, 1023, 0, 1, ONE_MINUS, SINGLE, 2500",
+    })
+    @Disabled("Used to generate test data")
+    void testDataNegativeDomain(int minS, int maxS, double minA, double maxA, Coordinate ac,
+                                NegativeBand band, int samples) throws IOException {
+        Assertions.assertTrue(minS >= 2, "s must be >= 2");
+        Assertions.assertTrue(maxS >= minS);
+        Assertions.assertTrue(minA < maxA);
+        Assertions.assertTrue(samples > 0);
+        // The limits on |a| may be integers (poles of zeta). They are valid limits: the
+        // sampler rejects integer a (d = 0 is outside every band).
+        final boolean small = maxA <= 1;
+        if (small) {
+            Assertions.assertTrue(minA >= 0);
+            Assertions.assertTrue(ac == Coordinate.VALUE || ac == Coordinate.ONE_MINUS);
+        } else {
+            Assertions.assertTrue(minA >= 1 && maxA <= 0x1.0p52, "minA >= 1, maxA <= 2^52");
+            Assertions.assertTrue(isPowerOf2(minA) && isPowerOf2(maxA), "binade limits (count)");
+            Assertions.assertSame(Coordinate.VALUE, ac);
+            Assertions.assertSame(NegativeBand.FINITE, band);
+        }
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Per s: band in d (inclusive) and, for |a| < 1, the coordinate ranges of the band
+        final double[][] dBand = new double[maxS + 1][];
+        final long[][][] ranges = new long[maxS + 1][][];
+        double total = 0;
+        int empty = 0;
+        for (int s = minS; s <= maxS; s++) {
+            final double[] db = negativeBand(s, band);
+            dBand[s] = db;
+            if (db == null) {
+                empty++;
+                continue;
+            }
+            if (small) {
+                final double[][] iv = negativeBandSmall(db[0], db[1], minA, maxA);
+                if (iv.length == 0) {
+                    dBand[s] = null;
+                    empty++;
+                    continue;
+                }
+                // Values with a coordinate that rounds outside (0, 1) are not reachable
+                // (e.g. ONE_MINUS: |a| < 2^-54 has 1 - |a| = 1)
+                ranges[s] = Arrays.stream(iv).map(v -> ac.range(v[0], v[1]))
+                    .filter(r -> r[0] <= r[1]).toArray(long[][]::new);
+                if (ranges[s].length == 0) {
+                    dBand[s] = null;
+                    empty++;
+                    continue;
+                }
+                for (final double[] v : iv) {
+                    total += Double.doubleToRawLongBits(v[1]) - Double.doubleToRawLongBits(v[0]) + 1;
+                }
+            } else {
+                total += negativeBandCount(db[0], minA, maxA);
+            }
+        }
+        Assertions.assertTrue(empty <= maxS - minS, "All bands empty");
+
+        final double logLo = Math.log(minS);
+        final double logHi = Math.log(maxS + 1.0);
+        final DoubleSupplier absA = small ? null : createSampler(rng, minA, maxA, false);
+        final double[][] rows = new double[samples][];
+        long tries = 0;
+        long time = System.nanoTime();
+        for (int i = 0; i < samples; i++) {
+            // log-uniform integer s; redraw if the band is empty
+            int s;
+            do {
+                s = (int) Math.floor(Math.exp(logLo + rng.nextDouble() * (logHi - logLo)));
+            } while (s < minS || s > maxS || dBand[s] == null);
+            final double d0 = dBand[s][0];
+            final double d1 = dBand[s][1];
+            double v;
+            for (;;) {
+                tries++;
+                Assertions.assertTrue(tries < (1L << 40), "Too many rejections");
+                if (small) {
+                    // Coordinate range chosen by its number of doubles
+                    final long[][] r = ranges[s];
+                    final long w0 = r[0][1] - r[0][0] + 1;
+                    final long w = r.length == 1 ? w0 : w0 + r[1][1] - r[1][0] + 1;
+                    long x = rng.nextLong(w);
+                    x = x < w0 ? r[0][0] + x : r[1][0] + x - w0;
+                    v = ac.toV(x);
+                    if (!(v > 0 && v < 1)) {
+                        continue;
+                    }
+                } else {
+                    v = absA.getAsDouble();
+                }
+                // Distance to the nearest integer (exact)
+                final double n = Math.floor(v);
+                final double d = Math.min(v - n, n + 1 - v);
+                if (d >= d0 && d <= d1) {
+                    break;
+                }
+            }
+            rows[i] = new double[] {s, -v};
+        }
+        time = System.nanoTime() - time;
+        Arrays.sort(rows, Comparator.<double[]>comparingDouble(r -> -r[1]).thenComparingDouble(r -> r[0]));
+
+        // Summary by binade of s: production infinite / zero results; hybrid DD fallback
+        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true)
+            .withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        final int bins = 11;
+        final long[][] stats = new long[bins][4];
+        for (final double[] r : rows) {
+            final int s = (int) r[0];
+            final long[] st = stats[31 - Integer.numberOfLeadingZeros(s)];
+            st[0]++;
+            final double z = HurwitzZeta.value(s, r[1]);
+            if (Double.isInfinite(z)) {
+                st[1]++;
+            } else if (z == 0) {
+                st[2]++;
+            }
+            zetaNegativeHybrid(s, r[1], nc);
+            if (negativePath == NEG_PATH_DD) {
+                st[3]++;
+            }
+        }
+        final String name = String.format("hzeta_negd_s%d_%d_na%s_%s%s_%s.txt", minS, maxS,
+            nameFormat(minA), nameFormat(maxA), ac.token("a"), band.name().toLowerCase(Locale.ROOT));
+        final StringBuilder sb = new StringBuilder();
+        for (int b = 0; b < bins; b++) {
+            final long[] st = stats[b];
+            if (st[0] != 0) {
+                sb.append(String.format("  s [%d,%d) n=%d inf=%d zero=%d DD=%.2f%%%n", 1 << b, 2 << b,
+                    st[0], st[1], st[2], 100.0 * st[3] / st[0]));
+            }
+        }
+        report("%s: %d rows; acceptance %.4f; s with empty band %d%n%s", name, samples,
+            (double) samples / tries, empty, sb);
+        try (PrintStream out = getPrintStream(name)) {
+            out.printf("# a < 0 domain sample: s in [%d, %d] log-uniform (P(s) ~ log((s+1)/s)); " +
+                "s with an empty band excluded (%d)%n", minS, maxS, empty);
+            out.printf("# |a| in [%s, %s): uniform in bits(%s)%n", minA, maxA, ac.label("|a|"));
+            out.printf("# Band %s: d = distance of a to the nearest integer, T1 = d^-s, T2 = (1-d)^-s; " +
+                "finite: T1 +/- T2 <= 2^1025 (even/odd s); single term: (T2 + 4) / T1 < 2^-108%n", band);
+            out.printf("# Estimated (s, a) pairs in the band: %s%n", total);
+            out.printf("# Seed %d; acceptance %.4f; runtime %.3fs%n", SEED, (double) samples / tries, time * 1e-9);
+            out.printf("# N = %d%n", samples);
+            for (final double[] r : rows) {
+                out.printf("%d, %s%n", (int) r[0], r[1]);
+            }
+        }
+    }
+
+    /**
+     * Gets the band of the distance {@code d} to the nearest integer for {@code a < 0}.
+     * See {@link #testDataNegativeDomain(int, int, double, double, Coordinate, NegativeBand, int)}.
+     *
+     * @param s Argument s.
+     * @param band Band.
+     * @return {d0, d1} (inclusive), or null if empty
+     */
+    private static double[] negativeBand(int s, NegativeBand band) {
+        final boolean odd = (s & 1) == 1;
+        // Overflow edge included: results up to 2^1025 (computed in logs)
+        final double limit = 1025 * LN2;
+        final double log4 = Math.log(4);
+        // log of T1 and T2
+        final DoublePredicate finite = d -> {
+            if (odd && d == 0.5) {
+                return true;
+            }
+            final double l1 = -s * Math.log(d);
+            final double l2 = -s * Math.log1p(-d);
+            final double l = odd ? l1 + Math.log(-Math.expm1(l2 - l1)) : l1 + Math.log1p(Math.exp(l2 - l1));
+            return l <= limit;
+        };
+        final DoublePredicate multi = d -> {
+            final double l1 = -s * Math.log(d);
+            final double l2 = -s * Math.log1p(-d);
+            final double rest = Math.max(l2, log4) + Math.log1p(Math.exp(-Math.abs(l2 - log4)));
+            return rest - l1 >= -108 * LN2;
+        };
+        if (!finite.test(0.5)) {
+            return null;
+        }
+        final double dF = negativeBandStart(finite);
+        if (band == NegativeBand.FINITE) {
+            return new double[] {dF, 0.5};
+        }
+        final double dS = negativeBandStart(multi);
+        if (band == NegativeBand.MULTI) {
+            return new double[] {Math.max(dF, dS), 0.5};
+        }
+        return dS > dF ? new double[] {dF, Math.nextDown(dS)} : null;
+    }
+
+    /**
+     * Find the smallest {@code d} in {@code [MIN_VALUE, 0.5]} where the predicate is true.
+     * The predicate must be monotonic (false then true) and true at 0.5.
+     *
+     * @param p Predicate.
+     * @return d
+     */
+    private static double negativeBandStart(DoublePredicate p) {
+        long lo = Double.doubleToRawLongBits(Double.MIN_VALUE);
+        if (p.test(Double.MIN_VALUE)) {
+            return Double.MIN_VALUE;
+        }
+        long hi = Double.doubleToRawLongBits(0.5);
+        // p(lo) false, p(hi) true
+        while (hi - lo > 1) {
+            final long mid = (lo + hi) >>> 1;
+            if (p.test(Double.longBitsToDouble(mid))) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        return Double.longBitsToDouble(hi);
+    }
+
+    /**
+     * Gets the intervals of {@code |a| < 1} with a distance {@code d} to the nearest
+     * integer in {@code [d0, d1]}: {@code [d0, d1]} and {@code [1 - d1, 1 - d0]} (merged if
+     * they overlap), limited to {@code [minA, maxA)} and {@code (0, 1)}.
+     *
+     * @param d0 Lower distance (inclusive).
+     * @param d1 Upper distance (inclusive; {@code <= 1/2}).
+     * @param minA Lower bound for |a|.
+     * @param maxA Upper bound for |a| (exclusive).
+     * @return the intervals {v0, v1} (inclusive)
+     */
+    private static double[][] negativeBandSmall(double d0, double d1, double minA, double maxA) {
+        // Pole -1: |a| = 1 - d. 1 - v is exact for v in [1/2, 1).
+        double lo = 1 - d1;
+        if (1 - lo > d1) {
+            lo = Math.nextUp(lo);
+        }
+        double hi = Math.min(1 - d0, Math.nextDown(1.0));
+        if (1 - hi < d0) {
+            hi = Math.nextDown(hi);
+        }
+        final double[][] iv = lo <= d1 ?
+            new double[][] {{d0, hi}} :
+            new double[][] {{d0, d1}, {lo, hi}};
+        final double a0 = Math.max(minA, Double.MIN_VALUE);
+        final double a1 = Math.nextDown(maxA);
+        return Arrays.stream(iv)
+            .map(v -> new double[] {Math.max(v[0], a0), Math.min(v[1], a1)})
+            .filter(v -> v[0] <= v[1])
+            .toArray(double[][]::new);
+    }
+
+    /**
+     * Count the doubles {@code |a|} in {@code [minA, maxA)} (whole binades,
+     * {@code 1 <= |a| < 2^52}) with a distance {@code d} to the nearest integer in
+     * {@code [d0, 1/2]}.
+     *
+     * @param d0 Lower distance (inclusive).
+     * @param minA Lower bound for |a| (power of 2).
+     * @param maxA Upper bound for |a| (exclusive; power of 2).
+     * @return the count
+     */
+    private static double negativeBandCount(double d0, double minA, double maxA) {
+        double count = 0;
+        for (int e = Math.getExponent(minA); e < Math.getExponent(maxA); e++) {
+            // Per unit interval: u = j g, j in [1, 1/g - 1]
+            final double g = Math.scalb(1.0, e - 52);
+            final double j0 = Math.max(1, Math.ceil(d0 / g));
+            final double j1 = Math.min(1 / g - 1, Math.floor((1 - d0) / g));
+            if (j1 >= j0) {
+                count += Math.scalb(j1 - j0 + 1, e);
+            }
+        }
+        return count;
     }
 
     /**
