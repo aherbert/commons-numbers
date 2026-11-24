@@ -8780,7 +8780,8 @@ class HurwitzZetaTest {
         final int[] noRange = {0};
         final int[] noBracket = {0};
         final BrentSolver solver = new BrentSolver(0, 0, 0);
-        double maxc = 0;
+        // Maximum actual cancellation by kind (odd s only)
+        final double[] maxc = new double[2];
         long time = System.nanoTime();
         int made = 0;
         while (made < samples) {
@@ -8860,7 +8861,7 @@ class HurwitzZetaTest {
                     final BigDecimal z = p.add(q, mc);
                     cx = Math.max(log2(p), log2(q.abs())) - log2(z.abs());
                 }
-                maxc = Math.max(maxc, cx);
+                maxc[kind] = Math.max(maxc[kind], cx);
                 bin = (int) Math.min(bins - 1, Math.max(0, cx / 5));
                 comment = String.format("# c %s (target %s, cmax %s)%s", shortFormat(cx), shortFormat(c),
                     shortFormat(cmax), x == -0.5 ? " half-integer" : "");
@@ -8890,7 +8891,7 @@ class HurwitzZetaTest {
                 final double v = Math.abs(r0 - target) < Math.abs(r1 - target) ? v0 : v1;
                 a = -v;
                 kind = 2;
-                final double rho = negativeRho(s, a);
+                final double rho = v == v0 ? r0 : r1;
                 bin = (int) Math.min(bins - 1, Math.max(0, (rho + 3) * 2));
                 comment = String.format("# rho %s (target %s)", shortFormat(rho), shortFormat(target));
             }
@@ -8941,7 +8942,7 @@ class HurwitzZetaTest {
                         "cmax = -log2(2 s' ulp(h)), h = -(floor(|a|) + 1/2)%n",
                         k == 0 ? "non-half-integer" : "half-integer", cmin);
                     out.printf("# Cancellation: max(exponent(P), exponent(N)) - exponent(P - N) " +
-                        "(BigDecimal, %d digits); max %s%n", mc.getPrecision(), shortFormat(maxc));
+                        "(BigDecimal, %d digits); max %s%n", mc.getPrecision(), shortFormat(maxc[k]));
                 }
                 out.printf("# Seed %d; samples %d (all kinds); runtime %.3fs%n", SEED, samples, time * 1e-9);
                 out.printf("# N = %d%n", count[k][0] + Arrays.stream(count[k]).skip(1).sum());
