@@ -34,8 +34,9 @@ package org.apache.commons.numbers.gamma;
  * @see
  * <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/zetas/zeta.html">
  * Boost C++ Riemann Zeta Function</a>
+ * @since 1.4
  */
-public final class BoostZeta {
+final class BoostZeta {
     /** ln(2pi). Computed to 30-digits precision. */
     private static final double LN_2PI = 1.83787706640934548356065947281;
     /** ln(2). Computed to 30-digits precision. */
