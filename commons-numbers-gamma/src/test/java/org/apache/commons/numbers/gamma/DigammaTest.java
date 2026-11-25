@@ -25,45 +25,57 @@ import org.junit.jupiter.api.Test;
 class DigammaTest {
     @Test
     void testDigammaLargeArgs() {
-        double eps = 1e-8;
-        Assertions.assertEquals(4.6001618527380874002, Digamma.value(100), eps);
-        Assertions.assertEquals(3.9019896734278921970, Digamma.value(50), eps);
-        Assertions.assertEquals(2.9705239922421490509, Digamma.value(20), eps);
-        Assertions.assertEquals(2.9958363947076465821, Digamma.value(20.5), eps);
-        Assertions.assertEquals(2.2622143570941481605, Digamma.value(10.1), eps);
-        Assertions.assertEquals(2.1168588189004379233, Digamma.value(8.8), eps);
-        Assertions.assertEquals(1.8727843350984671394, Digamma.value(7), eps);
-        Assertions.assertEquals(0.42278433509846713939, Digamma.value(2), eps);
-        Assertions.assertEquals(-100.56088545786867450, Digamma.value(0.01), eps);
-        Assertions.assertEquals(-4.0390398965921882955, Digamma.value(-0.8), eps);
-        Assertions.assertEquals(4.2003210041401844726, Digamma.value(-6.3), eps);
-        Assertions.assertEquals(-3.110625123035E-5, Digamma.value(1.4616), eps);
+        final int ulps = 1;
+        // Reference values from WolframAlpha.
+        // This used the exact decimal representation.
+        // Where the spot values are not representable doubles the
+        // reference values are computed using mpmath digamma (1.4.1).
+        TestUtils.assertEquals(4.6001618527380874002, Digamma.value(100), ulps);
+        TestUtils.assertEquals(3.9019896734278921970, Digamma.value(50), ulps);
+        TestUtils.assertEquals(2.9705239922421490509, Digamma.value(20), ulps);
+        TestUtils.assertEquals(2.9958363947076465821, Digamma.value(20.5), ulps);
+        TestUtils.assertEquals(2.26221435709414812355615936422, Digamma.value(10.1), ulps);
+        TestUtils.assertEquals(2.11685881890043800881857132362, Digamma.value(8.8), ulps);
+        TestUtils.assertEquals(1.8727843350984671394, Digamma.value(7), ulps);
+        TestUtils.assertEquals(0.42278433509846713939, Digamma.value(2), ulps);
+        TestUtils.assertEquals(-100.560885457868672415475307272, Digamma.value(0.01), ulps);
+        TestUtils.assertEquals(-4.03903989659218953144202580054, Digamma.value(-0.8), ulps);
+        TestUtils.assertEquals(4.2003210041401871251493214984, Digamma.value(-6.3), ulps);
+        TestUtils.assertEquals(-0.0000311062512303416496575636842388, Digamma.value(1.4616), ulps);
     }
 
     @Test
     void testDigammaSmallArgs() {
-        // values for negative powers of 10 from 1 to 30 as computed by webMathematica with 20 digits.
-        // For example, to compute trigamma($i) = Polygamma(1, $i), use
+        // Values for negative powers of 10 from 1 to 30 as computed by WebMathematica with 20 digits.
+        // For example, to compute trigamma($i) = polygamma(1, $i), use
         //
-        // http://functions.wolfram.com/webMathematica/Evaluated.jsp?name=PolyGamma2&plottype=0&vars={%221%22,%22$i%22}&digits=20
+        // https://www.wolframalpha.com/input?i=polygamma%281%2C+0.1%29
         double[] expected = {-10.423754940411076795, -100.56088545786867450, -1000.5755719318103005,
             -10000.577051183514335, -100000.57719921568107, -1.0000005772140199687e6, -1.0000000577215500408e7,
             -1.0000000057721564845e8, -1.0000000005772156633e9, -1.0000000000577215665e10, -1.0000000000057721566e11,
             -1.0000000000005772157e12, -1.0000000000000577216e13, -1.0000000000000057722e14, -1.0000000000000005772e15, -1e+16,
             -1e+17, -1e+18, -1e+19, -1e+20, -1e+21, -1e+22, -1e+23, -1e+24, -1e+25, -1e+26,
             -1e+27, -1e+28, -1e+29, -1e+30};
-        for (double n = 1; n < 30; n += 1) {
-            checkRelativeError(String.format("Test %.0f: ", n), expected[(int) (n - 1)], Digamma.value(Math.pow(10.0, -n)), 1e-8);
+        final int ulps = 1;
+        for (int n = 1; n < 30; n += 1) {
+            final double x = Math.pow(10.0, -n);
+            TestUtils.assertEquals(expected[n - 1], Digamma.value(x), ulps,
+                null, () -> Double.toString(x));
         }
     }
 
     @Test
     void testDigammaZero() {
-        // webMathematica states Complexinfinity.
-        // The value computed is Double.NEGATIVE_INFINITY but we leave this as a test for infinity
-        // since the next value down -Double.MIN_VALUE is Double.POSITIVE_INFINITY indicating
-        // a branch-but in the complex plane around 0.
-        Assertions.assertTrue(Double.isInfinite(Digamma.value(0.0)));
+        // There is a branch-cut (discontinuity between +/- infinity) at poles 0, -1, -2, ..., -n.
+        // Currently this function returns NaN for the negative integer poles.
+        Assertions.assertEquals(Double.NaN, Digamma.value(-1));
+        Assertions.assertEquals(Double.NaN, Digamma.value(-101));
+        // At zero it would be possible to return +/-infinity using the sign.
+        // Presently the function returns NaN at zero.
+        Assertions.assertEquals(Double.NEGATIVE_INFINITY, Digamma.value(Double.MIN_VALUE));
+        Assertions.assertEquals(Double.NaN, Digamma.value(0.0));
+        Assertions.assertEquals(Double.NaN, Digamma.value(-0.0));
+        Assertions.assertEquals(Double.POSITIVE_INFINITY, Digamma.value(-Double.MIN_VALUE));
     }
 
     @Test
@@ -72,13 +84,6 @@ class DigammaTest {
         Assertions.assertEquals(Double.NaN, Digamma.value(Double.NaN));
         Assertions.assertEquals(Double.POSITIVE_INFINITY, Digamma.value(Double.POSITIVE_INFINITY));
         Assertions.assertEquals(Double.NaN, Digamma.value(Double.NEGATIVE_INFINITY));
-    }
-
-    private void checkRelativeError(String msg,
-                                    double expected,
-                                    double actual,
-                                    double tolerance) {
-        Assertions.assertEquals(expected, actual, Math.abs(tolerance * actual), msg);
     }
 }
 

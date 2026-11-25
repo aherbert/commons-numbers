@@ -21,23 +21,42 @@ package org.apache.commons.numbers.gamma;
  *
  * <p>It is the derivative of the {@link Digamma digamma function}:
  *
- * <p>\[ \psi_1(x) = \frac{d^2}{dx^2} (\ln \Gamma(x)) \].
+ * <p>\[ \psi_1(x) = \frac{d^2}{dx^2} (\ln \Gamma(x)) = \frac{d}{dx} \psi(x) \]
+ *
+ * <p>It may defined as the series sum:
+ *
+ * <p>\[ \psi_1(x) = \sum_{k=0}^\infty \frac{1}{(x+k)^2} \]
+ *
+ * <p>This is a special case of the Hurwitz zeta function:
+ *
+ * <p>\[ \psi_1(x) = \zeta(2, x) \]
+ *
+ * <p>Negative arguments are handled using a reflection:
+ *
+ * <p>\[ \psi_1(1-x) = \frac{\pi^2}{\sin^2(\pi x)} - \psi_1(x)\]
+ *
+ * <p>Arguments in \( (0, 1) \) are shifted using:
+ *
+ * <p>\[ \psi_1(x) = \psi_1(x + 1) + \frac{1}{x^2} \]
+ *
+ * <p>For \( x \ge 1 \) the function uses rational approximations for the result.
+ *
+ * <p>The trigamma function has poles at integer arguments \( x = 0, -1, -2, \dots, -n \).
+ * As \( x \) approaches a pole from below or above the value tends to infinity. This
+ * function returns the natural limit \( +\infty \) for the pole.
+ *
+ * <p>This code has been adapted from:
+ * <ul>
+ *  <li>The <a href="https://www.boost.org/">Boost</a>
+ *      {@code c++} implementation {@code <boost/math/special_functions/trigamma.hpp>}</li>
+ * </ul>
  *
  * @see Digamma
+ * @see
+ * <a href="https://www.boost.org/doc/libs/1_92_0/libs/math/doc/html/math_toolkit/sf_gamma/trigamma.html">
+ * Boost C++ Trigamma function</a>
  */
 public final class Trigamma {
-    /** C limit. */
-    private static final double C_LIMIT = 49;
-
-    /** S limit. */
-    private static final double S_LIMIT = 1e-5;
-    /** Fraction. */
-    private static final double F_1_6 = 1d / 6;
-    /** Fraction. */
-    private static final double F_1_30 = 1d / 30;
-    /** Fraction. */
-    private static final double F_1_42 = 1d / 42;
-
     /** Private constructor. */
     private Trigamma() {
         // intentionally empty.
@@ -49,53 +68,19 @@ public final class Trigamma {
      * <p>Special cases:
      * <ul>
      * <li>If the argument is infinity, then the result is 0.</li>
+     * <li>If the argument is zero or a negative integer, then the result is infinity.</li>
      * <li>If the argument is negative infinity, then the result is nan.</li>
      * <li>If the argument is nan, then the result is nan.</li>
      * </ul>
      *
+     * <p>Note: Integer arguments {@code x <= 0} are poles. As {@code x} approaches a pole
+     * from below or above the value tends to infinity. This function returns the natural
+     * limit for the pole.
+     *
      * @param x Argument.
-     * @return trigamma(x) to within {@code 1e-8} relative or absolute error whichever is larger.
+     * @return trigamma(x)
      */
     public static double value(double x) {
-        if (!Double.isFinite(x)) {
-            // Function oscillates between infinite poles at integer values for
-            // large negative x; the -infinity limit is undefined
-            return x == Double.POSITIVE_INFINITY ? 0 : Double.NaN;
-        }
-
-        if (x < 0) {
-            // Use the reflection formula:
-            // trigamma(x) + trigamma(1 - x) = pi^2 / sin^2(pi * x)
-            // to fall back into positive values. Without this the increment
-            // loop below does not terminate for large negative x: when
-            // ulp(x) >= 2 the update x += 1 leaves x unchanged (or advances
-            // a single step and then sticks) and x < C_LIMIT holds forever.
-
-            // negative integers are poles
-            if (Math.rint(x) == x) {
-                return Double.POSITIVE_INFINITY;
-            }
-
-            final double s = Math.sin(Math.PI * x);
-            return Math.PI * Math.PI / (s * s) - value(1 - x);
-        }
-
-        if (x > 0 && x <= S_LIMIT) {
-            return 1 / (x * x);
-        }
-
-        double trigamma = 0;
-        while (x < C_LIMIT) {
-            trigamma += 1 / (x * x);
-            x += 1;
-        }
-
-        final double inv = 1 / (x * x);
-        //  1     1       1       1        1
-        //  - + ----- + ----- - ------ + ------
-        //  x   2 x^2   6 x^3   30 x^5   42 x^7
-        trigamma += 1 / x + 0.5 * inv + inv / x * (F_1_6 - inv * (F_1_30 + F_1_42 * inv));
-
-        return trigamma;
+        return BoostTrigamma.trigamma(x);
     }
 }

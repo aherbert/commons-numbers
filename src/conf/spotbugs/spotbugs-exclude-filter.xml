@@ -107,9 +107,11 @@
     <Or>
       <Class name="org.apache.commons.numbers.gamma.BoostGamma"/>
       <Class name="org.apache.commons.numbers.gamma.Digamma"/>
+      <Class name="org.apache.commons.numbers.gamma.BoostDigamma"/>
       <Class name="org.apache.commons.numbers.gamma.LogBeta"/>
       <Class name="org.apache.commons.numbers.gamma.SpecialMath"/>
       <Class name="org.apache.commons.numbers.gamma.Trigamma"/>
+      <Class name="org.apache.commons.numbers.gamma.BoostTrigamma"/>
       <Class name="org.apache.commons.numbers.rootfinder.BrentSolver"/>
     </Or>
     <BugPattern name="FL_FLOATS_AS_LOOP_COUNTERS"/>

@@ -30,13 +30,11 @@ class TrigammaTest {
     @ParameterizedTest
     @MethodSource
     void testTrigamma(double value, double expected) {
-        // Javadoc states: 1e-8 relative error or absolute error (whichever is larger).
-        // Current test data passes at 1e-9, but not 1e-10.
-        final double eps = 1e-9;
+        // Negative cases may fail at 1 ulp
+        final int ulps = value < 0 ? 2 : 1;
         final double actual = Trigamma.value(value);
         if (Double.isFinite(expected)) {
-            final double delta = Math.max(expected * eps, eps);
-            Assertions.assertEquals(expected, actual, delta, () -> "trigamma: " + value);
+            TestUtils.assertEquals(expected, actual, ulps, null, () -> "trigamma: " + value);
         } else {
             Assertions.assertEquals(expected, actual, () -> "trigamma: " + value);
         }
@@ -105,7 +103,8 @@ class TrigammaTest {
 
     @Test
     void testTrigammaZero() {
-        Assertions.assertEquals(Double.POSITIVE_INFINITY, Trigamma.value(0));
+        Assertions.assertEquals(Double.POSITIVE_INFINITY, Trigamma.value(0.0));
+        Assertions.assertEquals(Double.POSITIVE_INFINITY, Trigamma.value(-0.0));
     }
 
     @Test

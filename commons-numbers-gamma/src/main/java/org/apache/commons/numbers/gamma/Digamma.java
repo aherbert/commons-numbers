@@ -22,25 +22,41 @@ package org.apache.commons.numbers.gamma;
  * <p>It is defined as the logarithmic derivative of the \( \Gamma \)
  * ({@link Gamma}) function:
  *
- * <p>\[ \frac{d}{dx}(\ln \Gamma(x)) = \frac{\Gamma^\prime(x)}{\Gamma(x)} \].
+ * <p>\[ \psi(x) = \frac{d}{dx}(\ln \Gamma(x)) = \frac{\Gamma^\prime(x)}{\Gamma(x)} \]
+ *
+ * <p>Negative arguments are handled using a reflection to make \( x \) positive:
+ *
+ * <p>\[ \psi(1-x) = \psi(x) + \frac{\pi}{\tan(\pi x)} \]
+ *
+ * <p>For large \( x \) the function uses the asymptotic expansion:
+ *
+ * <p>\[ \psi(x) = \ln(x) + \frac{1}{2x} - \sum_{n=1}^\infty \frac{B_{2n}}{2nx^{2n}} \]
+ *
+ * <p>where \( B_{2n} \) is a Bernoulli number. Note that the expansion is divergent after
+ * a small number of terms, and the exact point of divergence depends on \( x \). The
+ * expansion can be truncated at a term too small to effect the result. Here the limit
+ * is chosen as \( x = 10 \) and the summation evaluated as a polynomial in \( 1 / x^2 \).
+ *
+ * <p>For \( x \lt 10 \) the argument is shifted to \( [1, 2] \)
+ * and a rational approximation is used for the region that contains the root.
+ * Arguments are shifted using the recurrence relation:
+ *
+ * <p>\[ \psi(x + 1) = \psi(x) + \frac{1}{x} \]
+ *
+ * <p>For negative \( x \) the digamma function transitions between positive and negative
+ * infinity between each integer value. Poles at integer \( -x \) are undefined.
+ * Negative \( x \) will be increasingly inaccurate close to each root between neighbouring
+ * integers due to cancellation of positive and negative terms.
+ *
+ * <p>This code has been adapted from:
+ * <ul>
+ *  <li>The <a href="https://www.boost.org/">Boost</a>
+ *      {@code c++} implementation {@code <boost/math/special_functions/digamma.hpp>}</li>
+ * </ul>
  *
  * @see Gamma
  */
 public final class Digamma {
-    /** <a href="https://en.wikipedia.org/wiki/Euler-Mascheroni_constant">Euler-Mascheroni constant</a>. */
-    private static final double GAMMA = 0.577215664901532860606512090082;
-
-    /** C limit. */
-    private static final double C_LIMIT = 49;
-    /** S limit. */
-    private static final double S_LIMIT = 1e-5;
-    /** Fraction. */
-    private static final double F_M1_12 = -1d / 12;
-    /** Fraction. */
-    private static final double F_1_120 = 1d / 120;
-    /** Fraction. */
-    private static final double F_M1_252 = -1d / 252;
-
     /** Private constructor. */
     private Digamma() {
         // intentionally empty.
@@ -52,56 +68,19 @@ public final class Digamma {
      * <p>Special cases:
      * <ul>
      * <li>If the argument is infinity, then the result is infinity.</li>
+     * <li>If the argument is zero or a negative integer, then the result is nan.</li>
      * <li>If the argument is negative infinity, then the result is nan.</li>
      * <li>If the argument is nan, then the result is nan.</li>
      * </ul>
      *
-     * <p>This is an independently written implementation of the algorithm described in
-     * <a href="https://www.uv.es/~bernardo/1976AppStatist.pdf">Jose Bernardo,
-     * Algorithm AS 103: Psi (Digamma) Function, Applied Statistics, 1976</a>.
-     * A <a href="https://en.wikipedia.org/wiki/Digamma_function#Reflection_formula">
-     * reflection formula</a> is incorporated to improve performance on negative values.
-     *
-     * <p>Some of the constants have been changed to increase accuracy at the moderate
-     * expense of run-time.  The result should be accurate to within {@code 1e-8}.
-     * relative tolerance for {@code 0 < x < 1e-5}  and within {@code 1e-8} absolute
-     * tolerance otherwise.
+     * <p>Note: Integer arguments {@code x <= 0} are poles. As {@code x} approaches a pole
+     * from below or above the value tends to infinity or -infinity. There is a discontinuity
+     * at the pole and this function returns nan.
      *
      * @param x Argument.
-     * @return digamma(x) to within {@code 1e-8} relative or absolute error whichever
-     * is larger.
+     * @return digamma(x)
      */
     public static double value(double x) {
-        if (!Double.isFinite(x)) {
-            // Function oscillates between infinite poles at integer values for
-            // large negative x; the -infinity limit is undefined
-            return x == Double.POSITIVE_INFINITY ? x : Double.NaN;
-        }
-
-        double digamma = 0;
-        if (x < 0) {
-            // Use reflection formula to fall back into positive values.
-            digamma -= Math.PI / Math.tan(Math.PI * x);
-            x = 1 - x;
-        }
-
-        if (x > 0 && x <= S_LIMIT) {
-            // Use method 5 from Bernardo AS103, accurate to O(x).
-            return digamma - GAMMA - 1 / x;
-        }
-
-        while (x < C_LIMIT) {
-            digamma -= 1 / x;
-            x += 1;
-        }
-
-        // Use method 4, accurate to O(1/x^8)
-        final double inv = 1 / (x * x);
-        //            1       1        1         1
-        // log(x) -  --- - ------ + ------- - -------
-        //           2 x   12 x^2   120 x^4   252 x^6
-        digamma += Math.log(x) - 0.5 / x + inv * (F_M1_12 + inv * (F_1_120 + F_M1_252 * inv));
-
-        return digamma;
+        return BoostDigamma.digamma(x);
     }
 }

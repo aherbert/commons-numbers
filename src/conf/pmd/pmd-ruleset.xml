@@ -72,7 +72,9 @@
       <property name="violationSuppressXPath"
         value="./ancestor-or-self::ClassDeclaration[@SimpleName='BoostErf'
                or @SimpleName='BoostGamma'
-               or @SimpleName='BoostBeta']"/>
+               or @SimpleName='BoostBeta'
+               or @SimpleName='BoostDigamma'
+               or @SimpleName='BoostTrigamma']"/>
     </properties>
   </rule>
 
@@ -212,6 +214,7 @@
                or @SimpleName='BoostErf'
                or @SimpleName='BoostGamma'
                or @SimpleName='BoostBeta'
+               or @SimpleName='BoostTrigamma'
                or @SimpleName='BoostTools'
                or @SimpleName='BoostMath'] | ./ancestor-or-self::MethodDeclaration[@Image='ldexp']"/>
     </properties>

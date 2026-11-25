@@ -1,0 +1,44 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# (C) Copyright John Maddock 2014.
+# (C) Copyright Matt Borland 2024.
+# Use, modification and distribution are subject to the
+# Boost Software License, Version 1.0. (See accompanying file
+# LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
+# Extracted from: boost/libs/math/test/test_trigamma.hpp
+# Negative half-integer x
+# x, trigamma(x)
+-0.5000000000, 8.9348022005446793094172454999380756
+-1.500000000, 9.3792466449891237538616899443825200
+-2.500000000, 9.5392466449891237538616899443825200
+-3.500000000, 9.6208792980503482436576083117294588
+-4.500000000, 9.6702620140997309597069910277788415
+-5.500000000, 9.7033198653394003811945943335639655
+-6.500000000, 9.7269885043926548190644168187710661
+-7.500000000, 9.7447662821704325968421945965488438
+-8.500000000, 9.7586071126202595864615717591786016
+-9.500000000, 9.7696874450302318856305468284306792
+-10.50000000, 9.7787577398148123844967599803581168
+-11.50000000, 9.7863191764877802483908998669365667
+-12.50000000, 9.7927191764877802483908998669365667
+-13.50000000, 9.7982061449377116612852757242753870
+-14.50000000, 9.8029623875060826482056086612551730
+-15.50000000, 9.8071247184113896201098750504331127
+-16.50000000, 9.8107978129935751113862754177425709
+-17.50000000, 9.8140631191160240909781121524364484
+-18.50000000, 9.8169849598757026884945475067096405
+-19.50000000, 9.8196148086593976260356388939548739
