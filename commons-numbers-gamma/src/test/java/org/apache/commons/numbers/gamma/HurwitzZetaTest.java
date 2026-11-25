@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.SplittableRandom;
@@ -39,6 +40,7 @@ import java.util.function.DoubleSupplier;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.IntSupplier;
 import java.util.function.LongToDoubleFunction;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
@@ -227,10 +229,20 @@ class HurwitzZetaTest {
      * with a uniform spread of the cancellation next to non-half-integer roots and
      * half-integer roots (testDataNegativeCancellation). */
     private static final String[] DOMAIN_NA_CANCELLATION_ODD_RESOURCES = {
+        // |a| first (uniform in bits), then c: high cancellation at small |a|
         "hzeta_negc_s3_21_na0.5_65536_root.csv",
         "hzeta_negc_s3_21_na0.5_65536_half.csv",
         "hzeta_negc_s23_1067_na0.5_65536_root.csv",
         "hzeta_negc_s23_1067_na0.5_65536_half.csv",
+        // c first (uniform for each s), then |a| where c is reachable (to 2^52). Split by
+        // reference source (sum, MATLAB, reflection; see the file headers).
+        "hzeta_negc_s3_21_na0.5_2p52_c_root_sum.csv",
+        "hzeta_negc_s3_21_na0.5_2p52_c_half_sum.csv",
+        "hzeta_negc_s3_21_na0.5_2p52_c_half_matlab.csv",
+        "hzeta_negc_s23_1067_na0.5_2p52_logs_c_root_sum.csv",
+        "hzeta_negc_s23_1067_na0.5_2p52_logs_c_half_sum.csv",
+        "hzeta_negc_s23_1067_na0.5_2p52_logs_c_half_matlab.csv",
+        "hzeta_negc_s23_1067_na0.5_2p52_logs_c_half_refl.csv",
     };
     /** Filenames of resources containing samples from the domain {@code a < 0} (integer s)
      * with a uniform spread of the cancellation (odd s; {@link #DOMAIN_NA_CANCELLATION_ODD_RESOURCES})
@@ -238,7 +250,11 @@ class HurwitzZetaTest {
      * (testDataNegativeCancellation). */
     private static final String[] DOMAIN_NA_CANCELLATION_RESOURCES = Stream.concat(
         Arrays.stream(DOMAIN_NA_CANCELLATION_ODD_RESOURCES),
-        Stream.of("hzeta_negc_s2_64_na0.5_65536_even.csv")).toArray(String[]::new);
+        Stream.of("hzeta_negc_s2_64_na0.5_65536_even.csv",
+            // |a| limited by the resolution of rho (to 2^52)
+            "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_sum.csv",
+            "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_matlab.csv",
+            "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_refl.csv")).toArray(String[]::new);
     /** Filenames of resources containing the roots of the zeta function for {@code a < 0}
      * (integer s) (testDataZetaRoots). */
     private static final String[] DOMAIN_NA_ROOTS_RESOURCES = {
@@ -1392,8 +1408,8 @@ class HurwitzZetaTest {
         // Random samples from the domain a < 0 where the result is finite (measured max 0.525,
         // RMS 0.010)
         ZETA_DOMAIN_NA(HurwitzZeta::value, DOMAIN_NA_RESOURCES, 0.6, 0.02),
-        // Random samples with a spread of cancellation (odd s) or rho (even s) (measured max 0.511,
-        // RMS 0.011)
+        // Random samples with a spread of cancellation (odd s) or rho (even s) (measured max 0.515,
+        // RMS 0.016)
         ZETA_DOMAIN_NA_CANCELLATION(HurwitzZeta::value, DOMAIN_NA_CANCELLATION_RESOURCES, 0.6, 0.02),
         // Roots: the point of maximum cancellation
         ZETA_DOMAIN_NA_ROOTS(HurwitzZeta::value, DOMAIN_NA_ROOTS_RESOURCES, 0.7, 0.05);
@@ -8842,6 +8858,28 @@ class HurwitzZetaTest {
      * ({@code rho} decreases with {@code a}) using double precision zeta values.
      * </ul>
      *
+     * <p>Density ({@link NegativeDensity}): {@code A} draws {@code |a|} first (uniform in its
+     * bits in {@code [minA, maxA)}) and then the target (above): the cancellation falls with
+     * {@code |a|} (cmax falls one bit per binade) so high cancellation is concentrated at
+     * small {@code |a|}. {@code C} draws the target first, then {@code |a|} where it is
+     * reachable:
+     *
+     * <ul>
+     * <li>Odd s: c uniform in {@code [cmin, cmax(s, minA)]}, then {@code |a|} uniform in its
+     * bits in {@code [minA, A(s, c))}, with {@code A(s, c)} the end of the last binade of
+     * {@code |h|} where {@code cmax >= c}. The cancellation is uniform for each s.
+     * <li>Even s: one ulp of {@code a} near {@code h} changes rho by
+     * {@code 4 s' ulp(h) / ln 2}; {@code |a|} is limited to the binades where this is at most
+     * {@code 2^-rhoBits} (at larger {@code |a|} only a few rho values near {@code h} are
+     * representable).
+     * </ul>
+     *
+     * <p>s is uniform over {@code ls + k step} or log-uniform (each allowed s with weight
+     * {@code log((s+1)/s)}). An s whose target cannot be reached for any {@code |a| >= minA}
+     * (odd s: {@code cmax(s, minA) <= cmin}; even s with density {@code C}: no {@code |a|}
+     * above {@code minA} with the rho resolution) is excluded before sampling and listed in
+     * the header. The fixture fails if no s is reachable.
+     *
      * <p>Output is split by kind: odd s with a non-half-integer root ({@code root}), odd s
      * with a half-integer root ({@code half}) and even s ({@code even}). Each row has a
      * comment with the actual and modelled cancellation (odd) or rho (even).
@@ -8856,16 +8894,24 @@ class HurwitzZetaTest {
      * @param cmin Minimum target cancellation (bits; {@code >= 0}).
      * @param samples Number of samples.
      * @param rhoMax Limit for rho (even s).
+     * @param density Order of the draws.
+     * @param logUniformS Set to true for log-uniform s.
+     * @param rhoBits Resolution of rho for {@link NegativeDensity#C} (even s).
      */
     @ParameterizedTest
     @CsvSource({
-        "3, 21, 2, 0.5, 65536, 0, 4000, 2",
-        "23, 1067, 2, 0.5, 65536, 0, 2000, 2",
-        "2, 64, 2, 0.5, 65536, 0, 2000, 2",
+        "3, 21, 2, 0.5, 65536, 0, 4000, 2, A, false, 0",
+        "23, 1067, 2, 0.5, 65536, 0, 2000, 2, A, false, 0",
+        "2, 64, 2, 0.5, 65536, 0, 2000, 2, A, false, 0",
+        // Uniform cancellation (odd s) and rho with |a| limited by its resolution (even s)
+        "3, 21, 2, 0.5, 0x1.0p52, 0, 4000, 2, C, false, 4",
+        "23, 1067, 2, 0.5, 0x1.0p52, 0, 2000, 2, C, true, 4",
+        "2, 1020, 2, 0.5, 0x1.0p52, 0, 2000, 2, C, true, 4",
     })
     @Disabled("Used to generate test data")
     void testDataNegativeCancellation(int ls, int us, int step, double minA, double maxA,
-                                      double cmin, int samples, double rhoMax) throws IOException {
+                                      double cmin, int samples, double rhoMax,
+                                      NegativeDensity density, boolean logUniformS, int rhoBits) throws IOException {
         Assertions.assertTrue(ls >= 2, "s must be >= 2");
         Assertions.assertTrue(us >= ls);
         Assertions.assertTrue(step == 1 || step == 2);
@@ -8874,6 +8920,8 @@ class HurwitzZetaTest {
         Assertions.assertTrue(maxA <= 0x1.0p52, "|a| must be < 2^52 (all larger doubles are integer)");
         Assertions.assertTrue(cmin >= 0);
         Assertions.assertTrue(samples > 0);
+        Assertions.assertTrue(density == NegativeDensity.A || rhoBits >= 0);
+        final boolean targetFirst = density == NegativeDensity.C;
         final SplittableRandom rng = new SplittableRandom(SEED);
         final Context context = Context.BD_DOUBLE_DOUBLE;
         final MathContext mc = context.getMathContext();
@@ -8898,15 +8946,76 @@ class HurwitzZetaTest {
         final BrentSolver solver = new BrentSolver(0, 0, 0);
         // Maximum actual cancellation by kind (odd s only)
         final double[] maxc = new double[2];
+        final double logLo = Math.log(ls);
+        final double logHi = Math.log(us + 1.0);
+        final long bitsMinA = Double.doubleToRawLongBits(minA);
+
+        // Reachable s. The limits depend only on s and the parameters:
+        // odd s: the largest cancellation is at minA: cmax(s, minA) > cmin (any density);
+        // even s (density C): |a| limited by the resolution of rho must include values above minA.
+        // Per s constants: s' = s zeta(s+1) / zeta(s); odd s: cmax(s, minA); even s: the |a| limit.
+        final double[] sprime = new double[ns];
+        final double[] limit = new double[ns];
+        final BitSet reachable = new BitSet(ns);
+        final double ulp0 = Math.ulp(Math.floor(minA) + 0.5);
+        for (int i = 0; i < ns; i++) {
+            final int s = ls + step * i;
+            final double sp = s * RiemannZeta.value(s + 1.0) / RiemannZeta.value(s);
+            sprime[i] = sp;
+            if ((s & 1) == 1) {
+                limit[i] = -Math.log(2 * sp * ulp0) / ln2;
+                reachable.set(i, limit[i] > cmin);
+            } else if (targetFirst) {
+                // One ulp of a near h changes rho by 4 s' ulp(h) / ln2 <= 2^-rhoBits
+                limit[i] = negativeUpperA(-rhoBits + Math.log(ln2 / (4 * sp)) / ln2, maxA);
+                reachable.set(i, limit[i] > minA);
+            } else {
+                reachable.set(i);
+            }
+        }
+        final int[] reach = reachable.stream().map(i -> ls + step * i).toArray();
+        final int[] excluded = IntStream.range(0, ns).filter(i -> !reachable.get(i))
+            .map(i -> ls + step * i).toArray();
+        Assertions.assertTrue(reach.length > 0, () -> String.format(
+            "No reachable s in [%d, %d] (cmin %s, minA %s, rhoBits %d)", ls, us, cmin, minA, rhoBits));
+
         long time = System.nanoTime();
         int made = 0;
         while (made < samples) {
-            final int s = ls + step * rng.nextInt(ns);
+            int s;
+            if (logUniformS) {
+                // log-uniform over the reachable s
+                do {
+                    s = (int) Math.floor(Math.exp(logLo + rng.nextDouble() * (logHi - logLo)));
+                } while (s < ls || s > us || (s - ls) % step != 0 || !reachable.get((s - ls) / step));
+            } else {
+                s = reach[rng.nextInt(reach.length)];
+            }
+            final boolean odd = (s & 1) == 1;
+            // Target first (density C): cancellation c (odd s) and the limit on |a|
+            double c = 0;
+            final double absAValue;
+            if (targetFirst) {
+                final int si = (s - ls) / step;
+                final double upper;
+                if (odd) {
+                    // c uniform in [cmin, cmax(s, minA)]; |a| where cmax = -log2(2 s' ulp(h)) >= c
+                    c = cmin + rng.nextDouble() * (limit[si] - cmin);
+                    upper = negativeUpperA(-c - Math.log(2 * sprime[si]) / ln2, maxA);
+                } else {
+                    upper = limit[si];
+                }
+                // Non-empty: c <= cmax(s, minA) (odd s); reachable s (even s)
+                Assertions.assertTrue(upper > minA, "empty range for |a|");
+                absAValue = Double.longBitsToDouble(bitsMinA +
+                    rng.nextLong(Double.doubleToRawLongBits(upper) - bitsMinA));
+            } else {
+                absAValue = absA.getAsDouble();
+            }
             // |a| only selects the pole interval (-(n+1), -n) and its half-integer h.
             // The sample a is placed relative to the root (odd s) or the balance point (even s).
-            final double n = Math.floor(absA.getAsDouble());
+            final double n = Math.floor(absAValue);
             final double h = -(n + 0.5);
-            final boolean odd = (s & 1) == 1;
             final String comment;
             final double a;
             final int kind;
@@ -8937,6 +9046,8 @@ class HurwitzZetaTest {
                 // to r is within ulp(h)/2: maximum cmax = -log2(2 s' ulp(h)).
                 final double ulp = Math.ulp(h);
                 final double cmax = -Math.log(2 * sp * ulp) / ln2;
+                // Density C: the target is reachable by construction
+                Assertions.assertTrue(!targetFirst || c <= cmax, "target cancellation not reachable");
                 if (cmax <= cmin) {
                     // No cancellation range at this ulp (large s and |a|): redraw
                     noRange[0]++;
@@ -8961,7 +9072,9 @@ class HurwitzZetaTest {
                 // Target cancellation c uniform in [cmin, cmax]: offset d = 2^-c / (4 s')
                 // from the root in a random direction (d <= 1/(4 s') < 1/12 for cmin >= 0, so a
                 // stays in the pole interval).
-                final double c = cmin + rng.nextDouble() * (cmax - cmin);
+                if (!targetFirst) {
+                    c = cmin + rng.nextDouble() * (cmax - cmin);
+                }
                 final double d = Math.scalb(Math.exp(-c * ln2), -2) / sp;
                 a = r + (rng.nextBoolean() ? d : -d);
                 // Actual cancellation of the sides P = zeta(s, 1+x) and
@@ -9045,12 +9158,21 @@ class HurwitzZetaTest {
                     sb.append(String.format("  %s n=%d DD=%.1f%%%n", label, count[k][i], 100.0 * dd[k][i] / count[k][i]));
                 }
             }
-            final String name = String.format("hzeta_negc_s%d_%d_na%s_%s_%s.txt", ls, us,
-                shortFormat(minA), shortFormat(maxA), kinds[k]);
+            final String name = String.format("hzeta_negc_s%d_%d_na%s_%s%s%s_%s.txt", ls, us,
+                negativeLimitFormat(minA), negativeLimitFormat(maxA), logUniformS ? "_logs" : "",
+                targetFirst ? "_c" : "", kinds[k]);
             report("%s: %d rows%n%s", name, rows[k].size(), sb);
             try (PrintStream out = getPrintStream(name)) {
-                out.printf("# a < 0 cancellation sample: s in [%d, %d] step %d; |a| in [%s, %s) uniform in bits%n",
-                    ls, us, step, minA, maxA);
+                out.printf("# a < 0 cancellation sample: s in [%d, %d] step %d (%s); |a| in [%s, %s)%n",
+                    ls, us, step, logUniformS ? "log-uniform" : "uniform", minA, maxA);
+                if (targetFirst) {
+                    out.printf(k == 2 ?
+                        "# Density C: |a| uniform in bits up to the binade where one ulp changes rho by <= 2^-%d%n" :
+                        "# Density C: target c first, then |a| uniform in bits in [minA, A(s, c)) where cmax >= c%s%n",
+                        k == 2 ? rhoBits : "");
+                } else {
+                    out.printf("# Density A: |a| uniform in bits, then the target%n");
+                }
                 if (k == 2) {
                     out.printf("# Even s: rho = log2(P/N) uniform in [-%s, %s]; P = zeta(s, 1+x), " +
                         "N = zeta(s, -x) - zeta(s, 1-a), x = a - ceil(a)%n", rhoMax, rhoMax);
@@ -9061,13 +9183,17 @@ class HurwitzZetaTest {
                     out.printf("# Cancellation: max(exponent(P), exponent(N)) - exponent(P - N) " +
                         "(BigDecimal, %d digits); max %s%n", mc.getPrecision(), shortFormat(maxc[k]));
                 }
+                if (excluded.length != 0) {
+                    out.printf("# Excluded s (target not reachable for |a| >= minA): %s%n",
+                        formatRuns(excluded, step));
+                }
                 out.printf("# Seed %d; samples %d (all kinds); runtime %.3fs%n", SEED, samples, time * 1e-9);
                 out.printf("# N = %d%n", count[k][0] + Arrays.stream(count[k]).skip(1).sum());
                 rows[k].forEach(out::print);
             }
         }
-        report("exact half-integer rows %d; draws with no cancellation range %d; root not bracketed %d%n",
-            exact[0], noRange[0], noBracket[0]);
+        report("exact half-integer rows %d; excluded s %d of %d; draws with no cancellation range at |a| %d; " +
+            "root not bracketed %d%n", exact[0], excluded.length, ns, noRange[0], noBracket[0]);
     }
 
     /**
@@ -9084,6 +9210,69 @@ class HurwitzZetaTest {
         final double p = HurwitzZeta.value(s, 1 + x);
         final double n = HurwitzZeta.value(s, -x) - HurwitzZeta.value(s, 1 - a);
         return Math.log(p / n) / Math.log(2);
+    }
+
+    /**
+     * Format sorted values as runs separated by the step, e.g. {@code 3, 7-11, 15}.
+     *
+     * @param values Values (sorted).
+     * @param step Step between consecutive values of a run.
+     * @return the string
+     */
+    private static String formatRuns(int[] values, int step) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.length;) {
+            int j = i;
+            while (j + 1 < values.length && values[j + 1] == values[j] + step) {
+                j++;
+            }
+            if (sb.length() != 0) {
+                sb.append(", ");
+            }
+            sb.append(values[i]);
+            if (j > i) {
+                sb.append('-').append(values[j]);
+            }
+            i = j + 1;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Upper limit (exclusive) on {@code |a|} where the half-integer {@code h = -(floor(|a|) + 1/2)}
+     * has {@code ulp(h) <= 2^e}, {@code e = floor(log2Ulp)}: {@code ulp(h) = 2^(E-52)} with
+     * {@code E} the exponent of {@code |h|}, so {@code |h| < 2^(e+53)}, i.e.
+     * {@code floor(|a|) + 1/2 < 2^(e+53)}, i.e. {@code |a| < 2^(e+53)} ({@code e >= -53}).
+     *
+     * @param log2Ulp log2 of the largest allowed ulp(h).
+     * @param maxA Upper limit on |a|.
+     * @return the limit (0 if no |a| has a small enough ulp(h))
+     */
+    private static double negativeUpperA(double log2Ulp, double maxA) {
+        final int e = (int) Math.floor(log2Ulp);
+        return e < -53 ? 0 : Math.min(maxA, Math.scalb(1.0, e + 53));
+    }
+
+    /**
+     * Format a limit on |a| for a file name: powers of 2 from 2^20 as {@code 2pK};
+     * otherwise {@link #shortFormat(double)}.
+     *
+     * @param x Value.
+     * @return the string
+     */
+    private static String negativeLimitFormat(double x) {
+        return x >= 0x1.0p20 && isPowerOf2(x) ? "2p" + Math.getExponent(x) : shortFormat(x);
+    }
+
+    /**
+     * Order of the draws for the negative {@code a} cancellation sample data.
+     */
+    enum NegativeDensity {
+        /** |a| first, then the target cancellation or rho. */
+        A,
+        /** Target cancellation first (odd s), then |a| where it is reachable; even s:
+         * |a| limited by the resolution of rho. */
+        C;
     }
 
     /**
