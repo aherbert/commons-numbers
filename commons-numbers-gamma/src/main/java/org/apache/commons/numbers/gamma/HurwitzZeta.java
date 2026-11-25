@@ -71,7 +71,7 @@ import org.apache.commons.numbers.core.DDMath;
  *
  * <p>\[ \zeta(s, -\frac{1}{2} - n) = \zeta(s, n + \frac{3}{2}) \]
  *
- * <p>for \( s = 3, 5, 7, \ldots \) and \( n = 0, -1, -2, \ldots \)
+ * <p>for \( s = 3, 5, 7, \ldots \) and \( n = 0, 1, 2, \ldots \).
  *
  * <p>The function is extremely sensitive to small changes in input for large \( s \) and
  * negative \( a \). For odd \( s \) the function changes rapidly from \( -\infty \) to
@@ -521,10 +521,11 @@ public final class HurwitzZeta {
 
     /**
      * Computes the value of \( \zeta(s, a) \) over the domain \( s \gt 1 \) and
-     * \( a \ne 0, -1, -2, \ldots, -n \).
+     * \( a \gt 0 \); or integer \( s \gt 1 \) and \( a \ne 0, -1, -2, \ldots, -n \).
      *
      * <p>Negative \( a \) is supported when \( s \) is an integer due to the support
-     * for powers of negative real numbers.
+     * for powers of negative real numbers. Note that every double value
+     * \( s \ge 2^{52} \) is an integer.
      *
      * <p>Special cases:
      * <ul>
@@ -533,8 +534,10 @@ public final class HurwitzZeta {
      * <li>If the argument \( s \) is positive infinity and \( a \lt 1 \) then the result is positive infinity.</li>
      * <li>If the argument \( s \) is positive infinity and \( a = 1 \) then the result is 1.</li>
      * <li>If the argument \( s \) is positive infinity and \( a \gt 1 \) then the result is 0.</li>
-     * <li>If the argument \( a \le 0 \) and is an integer, then the result is positive infinity.</li>
+     * <li>If the argument \( a = 0 \), then the result is positive infinity.</li>
      * <li>If the argument \( a \lt 0 \) and \( s \) is not an integer, then the result is nan.</li>
+     * <li>If the argument \( a \lt 0 \) is an integer and \( s \) is an integer, then the result
+     * is positive infinity.</li>
      * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
      * <li>If either argument is nan, then the result is nan.</li>
      * </ul>
@@ -549,6 +552,8 @@ public final class HurwitzZeta {
      * @return \( \zeta(s, a) \)
      */
     public static double value(double s, double a) {
+        // a = -infinity is undefined: the function has no limit as a -> -infinity
+        // (it is periodic in a with poles at the integers)
         if (Double.isNaN(s) || Double.isNaN(a) || s < 1 || a == Double.NEGATIVE_INFINITY) {
             return Double.NaN;
         }
@@ -556,6 +561,8 @@ public final class HurwitzZeta {
         // a > -infinity
         // Check special cases
         if (s == Double.POSITIVE_INFINITY) {
+            // Limit of the largest finite s. All doubles above 2^53 are even integers: for
+            // a < 1 the term (a+k)^-s with |a+k| < 1 (or 0^-s) is positive and infinite.
             if (a == 1) {
                 // Riemman zeta
                 return 1;
@@ -566,14 +573,20 @@ public final class HurwitzZeta {
             return Double.POSITIVE_INFINITY;
         }
         if (a <= 0) {
+            if (a == 0) {
+                // The term 0^-s is infinity; all other terms are positive
+                return Double.POSITIVE_INFINITY;
+            }
+            // a < 0
+            if (Math.floor(s) != s) {
+                // pow(a + k, -s) is complex for negative a + k when s is non-integer.
+                // This includes a complex infinity when a is a negative integer.
+                return Double.NaN;
+            }
             final double ca = Math.ceil(a);
             if (ca == a) {
                 // The term 0^-s is infinity
                 return Double.POSITIVE_INFINITY;
-            }
-            if (Math.floor(s) != s) {
-                // pow(a, -s) is not defined for negative a when s is non-integer
-                return Double.NaN;
             }
             return zetaNegativeImp(s, a, ca);
         }

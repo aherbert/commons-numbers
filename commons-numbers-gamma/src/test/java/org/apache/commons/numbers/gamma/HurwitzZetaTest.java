@@ -6218,13 +6218,30 @@ class HurwitzZetaTest {
         "Infinity, 1.0, 1.0",
         // s = infinity; a > 1 : 0
         "Infinity, 1.5, 0.0",
-        // a = negative integer or 0 : infinity
+        // s = infinity; a < 0 : infinity (limit of the largest s: all doubles above 2^53
+        // are even integers)
+        "Infinity, -0.5, Infinity",
+        "Infinity, -1.0, Infinity",
+        // a = 0 : infinity
         "1.23, 0.0, Infinity",
-        "1.23, -1.0, Infinity",
-        "1.23, -1e300, Infinity",
-        // a <= 0 not integer; s != integer : complex result (nan)
+        "1.23, -0.0, Infinity",
+        "2.0, 0.0, Infinity",
+        // a < 0; s != integer : complex result (nan); also a complex infinity at a negative integer
         "1.23, -0.5, NaN",
         "1.23, -1.5, NaN",
+        "1.23, -1.0, NaN",
+        "1.23, -0x1.0p52, NaN",
+        "1.23, -1e300, NaN",
+        // a = negative integer; s = integer : infinity
+        "1.0, -1.0, Infinity",
+        "2.0, -1.0, Infinity",
+        "3.0, -1.0, Infinity",
+        "2.0, -0x1.0p52, Infinity",
+        "3.0, -0x1.0p52, Infinity",
+        "3.0, -9007199254740990, Infinity",
+        "2.0, -1e300, Infinity",
+        // a < 0; s = large integer (even) : infinity
+        "1e300, -0.25, Infinity",
         // a = -infinity : nan
         "2.0, -Infinity, NaN",
         // nan arguments : nan
