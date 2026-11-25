@@ -255,6 +255,18 @@ class HurwitzZetaTest {
             "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_sum.csv",
             "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_matlab.csv",
             "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_refl.csv")).toArray(String[]::new);
+    /** Filenames of resources containing special points of the domain {@code a < 0} (integer s)
+     * (testDataNegativeSpecial). Split by reference source (see the file headers). */
+    private static final String[] DOMAIN_NA_SPECIAL_RESOURCES = {
+        // Results near the overflow threshold: log2|zeta| uniform in [1020, 1025]
+        "hzeta_negs_overflow_s2_1067_b1020_1025_sum.csv",
+        "hzeta_negs_overflow_s2_1067_b1020_1025_matlab.csv",
+        "hzeta_negs_overflow_s2_1067_b1020_1025_refl.csv",
+        // Exact half-integers (odd s to 1851): log2 zeta uniform in [-1085, -1000]
+        // (normal, sub-normal and zero results)
+        "hzeta_negs_half_s3_1851_b-1085_-1000_sum.csv",
+        "hzeta_negs_half_s3_1851_b-1085_-1000_matlab.csv",
+    };
     /** Filenames of resources containing the roots of the zeta function for {@code a < 0}
      * (integer s) (testDataZetaRoots). */
     private static final String[] DOMAIN_NA_ROOTS_RESOURCES = {
@@ -1411,6 +1423,9 @@ class HurwitzZetaTest {
         // Random samples with a spread of cancellation (odd s) or rho (even s) (measured max 0.515,
         // RMS 0.016)
         ZETA_DOMAIN_NA_CANCELLATION(HurwitzZeta::value, DOMAIN_NA_CANCELLATION_RESOURCES, 0.6, 0.02),
+        // Special points: overflow edge; exact half-integers with sub-normal and zero results
+        // (measured max 0.745, RMS 0.031; the max is a sub-normal result)
+        ZETA_DOMAIN_NA_SPECIAL(HurwitzZeta::value, DOMAIN_NA_SPECIAL_RESOURCES, 1.0, 0.05),
         // Roots: the point of maximum cancellation
         ZETA_DOMAIN_NA_ROOTS(HurwitzZeta::value, DOMAIN_NA_ROOTS_RESOURCES, 0.7, 0.05);
 
@@ -9230,6 +9245,329 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Special points of the domain {@code a < 0} (integer s) used to create test data.
+     */
+    enum NegativeSpecial {
+        /** Results near the overflow threshold. */
+        OVERFLOW_EDGE,
+        /** Exact half-integers with odd s: normal, sub-normal and zero results. */
+        HALF_INTEGER;
+    }
+
+    /**
+     * Create test data at special points of the domain {@code a < 0} (integer {@code s}).
+     *
+     * <p>{@code s} is log-uniform over the reachable values in {@code [ls, us]} (each allowed s
+     * with weight {@code log((s+1)/s)}); then a target {@code b = log2|zeta(s, a)|} uniform in
+     * the reachable part of {@code [bLo, bHi]} for that s; then {@code a} is solved for b:
+     *
+     * <ul>
+     * <li>{@link NegativeSpecial#OVERFLOW_EDGE} (all s): with {@code d} the distance of {@code a}
+     * to the nearest integer, {@code T1 = d^-s}, {@code T2 = (1-d)^-s}, the result is
+     * {@code T1 + T2} (even s) or {@code T1 - T2} (odd s) to double precision near the overflow
+     * threshold (the other terms sum to less than 4). {@code d} is solved by bisection on its
+     * bits (in logs). The pole is chosen with {@code |a|} uniform in bits up to the binade
+     * where one ulp of {@code a} changes b by at most {@code 2^-bits}, and the side of the pole
+     * at random. Even s has a minimum {@code 2^(s+1)} at {@code d = 1/2}; odd s reaches the
+     * threshold next to a half-integer by cancellation when {@code s > 1023}.
+     * <li>{@link NegativeSpecial#HALF_INTEGER} (odd s): at {@code a = -(n + 1/2)} the pairs
+     * either side of zero cancel exactly and {@code zeta(s, a) = zeta(s, n + 3/2)}. The integer
+     * {@code n} is solved by bisection ({@code |a| < 2^52}). Normal, sub-normal and zero
+     * results (below 2^-1075); s above 1067 (every other {@code a} overflows) is included.
+     * </ul>
+     *
+     * <p>Each row has a comment with the actual and target b (from the model in logs).
+     * The standard output summarises the results of the hybrid implementation (infinite, zero
+     * and sub-normal) and its DD fallback share.
+     *
+     * @param kind Kind of special point.
+     * @param ls Lower bound for s.
+     * @param us Upper bound for s.
+     * @param bLo Lower bound for b.
+     * @param bHi Upper bound for b.
+     * @param bits Resolution of b for the choice of {@code |a|} (overflow edge).
+     * @param samples Number of samples.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "OVERFLOW_EDGE, 2, 1067, 1020, 1025, 4, 2000",
+        "HALF_INTEGER, 3, 1851, -1085, -1000, 0, 2000",
+    })
+    @Disabled("Used to generate test data")
+    void testDataNegativeSpecial(NegativeSpecial kind, int ls, int us, double bLo, double bHi,
+                                 int bits, int samples) throws IOException {
+        final boolean half = kind == NegativeSpecial.HALF_INTEGER;
+        Assertions.assertTrue(ls >= 2, "s must be >= 2");
+        Assertions.assertTrue(us >= ls);
+        Assertions.assertTrue(!half || (ls & 1) == 1, "half-integer: odd s");
+        Assertions.assertTrue(bLo < bHi);
+        Assertions.assertTrue(samples > 0);
+        final int step = half ? 2 : 1;
+        final int ns = (us - ls) / step + 1;
+        final SplittableRandom rng = new SplittableRandom(SEED);
+        // Largest n with a = -(n + 1/2): |a| < 2^52 (1 - a = n + 3/2 is a double)
+        final long maxN = (1L << 52) - 2;
+
+        // Per s: reachable range of b; half-integer: range of n with b in [bLo, bHi]
+        final double[] bMin = new double[ns];
+        final double[] bMax = new double[ns];
+        final long[][] nRange = new long[ns][];
+        final TailModel[] models = new TailModel[ns];
+        final BitSet reachable = new BitSet(ns);
+        long pairs = 0;
+        for (int i = 0; i < ns; i++) {
+            final int s = ls + step * i;
+            if (half) {
+                final TailModel m = new TailModel(s, 30);
+                models[i] = m;
+                // log2 zeta(s, n + 3/2) decreases with n
+                final LongToDoubleFunction fn = n -> m.logZeta(n + 1.5) / LN2;
+                final long n0 = negativeFirstN(fn, bHi, maxN);
+                final long n1 = negativeFirstN(fn, Math.nextDown(bLo), maxN) - 1;
+                if (n0 <= n1) {
+                    nRange[i] = new long[] {n0, n1};
+                    bMin[i] = fn.applyAsDouble(n1);
+                    bMax[i] = fn.applyAsDouble(n0);
+                    pairs += n1 - n0 + 1;
+                    reachable.set(i);
+                }
+                continue;
+            } else {
+                // Minimum at d = 1/2 (even s); T1 - T2 -> 0 (odd s)
+                bMin[i] = Math.max(bLo, negativeLog2T(s, 0.5));
+                bMax[i] = bHi;
+            }
+            reachable.set(i, bMin[i] < bMax[i]);
+        }
+        final long bandPairs = pairs;
+        Assertions.assertTrue(!half || bandPairs >= samples, () -> "Too few half-integers in the band: " + bandPairs);
+        final int[] excluded = IntStream.range(0, ns).filter(i -> !reachable.get(i))
+            .map(i -> ls + step * i).toArray();
+        Assertions.assertTrue(excluded.length < ns, () -> String.format(
+            "No reachable s in [%d, %d] (b in [%s, %s])", ls, us, bLo, bHi));
+
+        final double logLo = Math.log(ls);
+        final double logHi = Math.log(us + 1.0);
+        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true)
+            .withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        // Rows: {s, a, b, target}
+        final double[][] rows = new double[samples][];
+        // Production results: infinite, zero, sub-normal; hybrid DD fallback
+        final int[] counts = new int[4];
+        // Unique (s, a) (a large s has few n in the band)
+        final TreeSet<String> seen = new TreeSet<>();
+        int duplicates = 0;
+        long time = System.nanoTime();
+        for (int i = 0; i < samples; i++) {
+            int s;
+            do {
+                s = (int) Math.floor(Math.exp(logLo + rng.nextDouble() * (logHi - logLo)));
+            } while (s < ls || s > us || (s - ls) % step != 0 || !reachable.get((s - ls) / step));
+            final int si = (s - ls) / step;
+            final double target = bMin[si] == bMax[si] ? bMin[si] :
+                bMin[si] + rng.nextDouble() * (bMax[si] - bMin[si]);
+            final double a;
+            final double b;
+            if (half) {
+                final TailModel m = models[si];
+                final LongToDoubleFunction fn = x -> m.logZeta(x + 1.5) / LN2;
+                // Closest n in the band: first n with b <= target, or the one before
+                final long[] r = nRange[si];
+                final long hi = Math.min(r[1], Math.max(r[0], negativeFirstN(fn, target, maxN)));
+                final long lo = Math.max(r[0], hi - 1);
+                final double b0 = fn.applyAsDouble(lo);
+                final double b1 = fn.applyAsDouble(hi);
+                final long n = Math.abs(b0 - target) < Math.abs(b1 - target) ? lo : hi;
+                a = -(n + 0.5);
+                b = n == lo ? b0 : b1;
+            } else {
+                final int ss = s;
+                // Distance d with log2 T(d) = target (decreasing in d on (0, 1/2])
+                final double d = negativeSolve(Double.MIN_VALUE, 0.5, x -> negativeLog2T(ss, x), target);
+                // Sensitivity of b to d; |a| limited where ulp(a) changes b by <= 2^-bits
+                final double g = negativeLog2TSlope(s, d);
+                final double upper = negativeUpperA(-bits - Math.log(g) / LN2, 0x1.0p52);
+                // Pole interval (-(n+1), -n): |a| uniform in bits in [1, upper) selects n + 1
+                final long n = upper > 1 ? (long) createSampler(rng, 1, upper, false).getAsDouble() - 1 : 0;
+                final DoubleUnaryOperator fb;
+                final double v;
+                if (n == 0 && (upper < 1 || rng.nextBoolean())) {
+                    // a = -d (pole at 0)
+                    v = d;
+                } else if (n == 0) {
+                    // a = -(1 - d) (pole at -1)
+                    fb = x -> negativeLog2T(ss, 1 - x);
+                    v = negativeSolve(0.5, Math.nextDown(1.0), fb, target);
+                } else if (rng.nextBoolean()) {
+                    // a = -(n + d)
+                    final double nn = n;
+                    fb = x -> negativeLog2T(ss, x - nn);
+                    v = negativeSolve(Math.nextUp(nn), nn + 0.5, fb, target);
+                } else {
+                    // a = -(n + 1 - d)
+                    final double n1 = n + 1.0;
+                    fb = x -> negativeLog2T(ss, n1 - x);
+                    v = negativeSolve(n1 - 0.5, Math.nextDown(n1), fb, target);
+                }
+                a = -v;
+                final double fl = Math.floor(v);
+                b = negativeLog2T(s, Math.min(v - fl, fl + 1 - v));
+            }
+            if (!seen.add(s + "," + a)) {
+                // Redraw
+                Assertions.assertTrue(++duplicates < 100 * samples, "Too many duplicates");
+                i--;
+                continue;
+            }
+            rows[i] = new double[] {s, a, b, target};
+            // Hybrid implementation: the result and its path
+            final double z = zetaNegativeHybrid(s, a, nc);
+            if (Double.isInfinite(z)) {
+                counts[0]++;
+            } else if (z == 0) {
+                counts[1]++;
+            } else if (Math.abs(z) < Double.MIN_NORMAL) {
+                counts[2]++;
+            }
+            if (negativePath == NEG_PATH_DD) {
+                counts[3]++;
+            }
+        }
+        time = System.nanoTime() - time;
+        Arrays.sort(rows, Comparator.comparingDouble((double[] r) -> r[0]).thenComparingDouble(r -> -r[1]));
+
+        final String name = String.format("hzeta_negs_%s_s%d_%d_b%s_%s.txt", half ? "half" : "overflow",
+            ls, us, shortFormat(bLo), shortFormat(bHi));
+        report("%s: %d rows; hybrid inf %d, zero %d, sub-normal %d, DD fallback %d; excluded s %d of %d; " +
+            "duplicates redrawn %d%n",
+            name, samples, counts[0], counts[1], counts[2], counts[3], excluded.length, ns, duplicates);
+        try (PrintStream out = getPrintStream(name)) {
+            out.printf("# a < 0 special points (%s): s in [%d, %d] step %d (log-uniform); " +
+                "b = log2|zeta(s, a)| target uniform in [%s, %s] (reachable part per s)%n",
+                kind, ls, us, step, bLo, bHi);
+            if (half) {
+                out.printf("# a = -(n + 1/2): zeta(s, a) = zeta(s, n + 3/2) (odd s); n closest to the target b " +
+                    "among the n with b in the band (|a| < 2^52); unique (s, a); %d pairs in the band%n", pairs);
+            } else {
+                out.printf("# d = distance to the nearest integer; T1 = d^-s, T2 = (1-d)^-s; b = log2(T1 +/- T2) " +
+                    "(even/odd s); |a| uniform in bits up to the binade where one ulp changes b by <= 2^-%d%n", bits);
+            }
+            if (excluded.length != 0) {
+                out.printf("# Excluded s (b not reachable): %s%n", formatRuns(excluded, step));
+            }
+            out.printf("# Seed %d; runtime %.3fs%n", SEED, time * 1e-9);
+            out.printf("# N = %d%n", samples);
+            for (final double[] r : rows) {
+                out.printf("# b %s (target %s)%n%d, %s%n", shortFormat(r[2]), shortFormat(r[3]), (int) r[0], r[1]);
+            }
+        }
+    }
+
+    /**
+     * Compute {@code log2(T1 + T2)} (even s) or {@code log2(T1 - T2)} (odd s) with
+     * {@code T1 = d^-s}, {@code T2 = (1-d)^-s} for {@code d in (0, 1/2]}: the result of zeta
+     * for {@code a < 0} at distance {@code d} from the nearest integer when the other terms
+     * (less than 4) are negligible. Decreasing in {@code d}.
+     *
+     * @param s Argument s.
+     * @param d Distance to the nearest integer.
+     * @return log2(T1 +/- T2)
+     */
+    private static double negativeLog2T(int s, double d) {
+        final boolean odd = (s & 1) == 1;
+        if (odd && d == 0.5) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        final double l1 = -s * Math.log(d);
+        final double l2 = -s * Math.log1p(-d);
+        final double l = odd ? l1 + Math.log(-Math.expm1(l2 - l1)) : l1 + Math.log1p(Math.exp(l2 - l1));
+        return l / LN2;
+    }
+
+    /**
+     * Find the first {@code n} in {@code [0, maxN + 1]} where the decreasing function
+     * {@code f(n) <= x} ({@code maxN + 1} if none).
+     *
+     * @param f Function.
+     * @param x Value.
+     * @param maxN Maximum n.
+     * @return n
+     */
+    private static long negativeFirstN(LongToDoubleFunction f, double x, long maxN) {
+        if (f.applyAsDouble(0) <= x) {
+            return 0;
+        }
+        if (f.applyAsDouble(maxN) > x) {
+            return maxN + 1;
+        }
+        // f(lo) > x, f(hi) <= x
+        long lo = 0;
+        long hi = maxN;
+        while (hi - lo > 1) {
+            final long mid = (lo + hi) >>> 1;
+            if (f.applyAsDouble(mid) > x) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        return hi;
+    }
+
+    /**
+     * Compute the magnitude of the derivative of {@link #negativeLog2T(int, double)} with
+     * respect to {@code d}: with {@code r = T2 / T1},
+     * {@code |d log2 T / dd| = s (1/d -/+ r/(1-d)) / ((1 +/- r) ln 2)} (even/odd s).
+     *
+     * @param s Argument s.
+     * @param d Distance to the nearest integer ({@code d < 1/2} for odd s).
+     * @return the slope magnitude
+     */
+    private static double negativeLog2TSlope(int s, double d) {
+        final double lr = -s * (Math.log1p(-d) - Math.log(d));
+        final double r = Math.exp(lr);
+        final double g = (s & 1) == 1 ?
+            s * (1 / d + r / (1 - d)) / -Math.expm1(lr) :
+            s * (1 / d - r / (1 - d)) / (1 + r);
+        return Math.abs(g) / LN2;
+    }
+
+    /**
+     * Find the double {@code x} in {@code [lo, hi]} (both positive) where the monotonic
+     * function {@code f(x)} is closest to the target. Bisection on the bits of x.
+     *
+     * @param lo Lower bound.
+     * @param hi Upper bound.
+     * @param f Function.
+     * @param target Target.
+     * @return x
+     */
+    private static double negativeSolve(double lo, double hi, DoubleUnaryOperator f, double target) {
+        long l = Double.doubleToRawLongBits(lo);
+        long h = Double.doubleToRawLongBits(hi);
+        final boolean increasing = f.applyAsDouble(hi) > f.applyAsDouble(lo);
+        if (increasing ? f.applyAsDouble(lo) >= target : f.applyAsDouble(lo) <= target) {
+            return lo;
+        }
+        if (increasing ? f.applyAsDouble(hi) <= target : f.applyAsDouble(hi) >= target) {
+            return hi;
+        }
+        // f(l) on one side of the target, f(h) on the other
+        while (h - l > 1) {
+            final long mid = (l + h) >>> 1;
+            final double fm = f.applyAsDouble(Double.longBitsToDouble(mid));
+            if (increasing == fm < target) {
+                l = mid;
+            } else {
+                h = mid;
+            }
+        }
+        final double x0 = Double.longBitsToDouble(l);
+        final double x1 = Double.longBitsToDouble(h);
+        return Math.abs(f.applyAsDouble(x0) - target) <= Math.abs(f.applyAsDouble(x1) - target) ? x0 : x1;
+    }
+
+    /**
      * Format sorted values as runs separated by the step, e.g. {@code 3, 7-11, 15}.
      *
      * @param values Values (sorted).
@@ -9349,8 +9687,8 @@ class HurwitzZetaTest {
      *
      * <p>The header gives the estimated number of {@code (s, a)} pairs in the band (summed
      * over {@code s} with a non-empty band). Output is sorted by {@code |a|} then {@code s}.
-     * The standard output summarises the production function (infinite and zero results) and
-     * the hybrid implementation DD fallback share by binade of {@code s}.
+     * The standard output summarises the hybrid implementation (infinite and zero results and
+     * the DD fallback share) by binade of {@code s}.
      *
      * @param minS Lower bound for s ({@code >= 2}).
      * @param maxS Upper bound for s.
@@ -9478,13 +9816,13 @@ class HurwitzZetaTest {
             final int s = (int) r[0];
             final long[] st = stats[31 - Integer.numberOfLeadingZeros(s)];
             st[0]++;
-            final double z = HurwitzZeta.value(s, r[1]);
+            // Hybrid implementation: the result and its path
+            final double z = zetaNegativeHybrid(s, r[1], nc);
             if (Double.isInfinite(z)) {
                 st[1]++;
             } else if (z == 0) {
                 st[2]++;
             }
-            zetaNegativeHybrid(s, r[1], nc);
             if (negativePath == NEG_PATH_DD) {
                 st[3]++;
             }
