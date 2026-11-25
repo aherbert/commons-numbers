@@ -205,8 +205,43 @@ class HurwitzZetaTest {
         "hzeta_s15_1128_tail.csv",
         "hzeta_is_2p-1075.csv",
     };
-    /** Filenames of resources used for the roots of the zeta function using integer s. */
-    private static final String[] ROOT_TEST_RESOURCES = {
+    /** Filenames of resources containing samples from the domain {@code a < 0} (integer s)
+     * where zeta(s, a) is finite (testDataNegativeDomain). Every evaluation uses the two terms
+     * closest to the pole at the nearest integers, {@code u} and {@code 1 - u} in (0, 1), so
+     * the domain is not divided at |a| = 1 as for {@code a > 0}; the |a| < 1 files only use
+     * densities suited to the region next to the pole at 0.
+     * Note: The |a| > 1 sample is split by reference source (see the file headers). */
+    private static final String[] DOMAIN_NA_RESOURCES = {
+        // log-uniform s in [2, 1023]; |a| in (1, 2^52) uniform in bits(|a|)
+        "hzeta_negd_s2_1023_na1_2p52_finite_sum.csv",
+        "hzeta_negd_s2_1023_na1_2p52_finite_matlab.csv",
+        "hzeta_negd_s2_1023_na1_2p52_finite_refl.csv",
+        // |a| in (0, 1): densities uniform in bits(|a|) and bits(1 - |a|); more than one
+        // significant term; then only the term closest to the pole is significant
+        "hzeta_negd_s2_1023_na0_1_multi.csv",
+        "hzeta_negd_s2_1023_na0_1_1ma_multi.csv",
+        "hzeta_negd_s2_1023_na0_1_single.csv",
+        "hzeta_negd_s2_1023_na0_1_1ma_single.csv",
+    };
+    /** Filenames of resources containing samples from the domain {@code a < 0} (odd s)
+     * with a uniform spread of the cancellation next to non-half-integer roots and
+     * half-integer roots (testDataNegativeCancellation). */
+    private static final String[] DOMAIN_NA_CANCELLATION_ODD_RESOURCES = {
+        "hzeta_negc_s3_21_na0.5_65536_root.csv",
+        "hzeta_negc_s3_21_na0.5_65536_half.csv",
+        "hzeta_negc_s23_1067_na0.5_65536_root.csv",
+        "hzeta_negc_s23_1067_na0.5_65536_half.csv",
+    };
+    /** Filenames of resources containing samples from the domain {@code a < 0} (integer s)
+     * with a uniform spread of the cancellation (odd s; {@link #DOMAIN_NA_CANCELLATION_ODD_RESOURCES})
+     * or of the balance rho = log2(P/N) of the two sides of the series (even s)
+     * (testDataNegativeCancellation). */
+    private static final String[] DOMAIN_NA_CANCELLATION_RESOURCES = Stream.concat(
+        Arrays.stream(DOMAIN_NA_CANCELLATION_ODD_RESOURCES),
+        Stream.of("hzeta_negc_s2_64_na0.5_65536_even.csv")).toArray(String[]::new);
+    /** Filenames of resources containing the roots of the zeta function for {@code a < 0}
+     * (integer s) (testDataZetaRoots). */
+    private static final String[] DOMAIN_NA_ROOTS_RESOURCES = {
         "hzeta_root_s3_21_na2b0_2b6.csv",
         "hzeta_root_s23_1067_na2b0_2b6.csv",
         "hzeta_root_s3_25_na2b7_2b11.csv",
@@ -917,6 +952,12 @@ class HurwitzZetaTest {
         /** Context for quad-double precision using the BigDecimal zeta implementation. */
         static final Context BD_QUAD_DOUBLE = Context.of(37, 50).withMathContext(new MathContext(70))
             .withEpsilon(0x1p-222);
+        /** Context of {@link HurwitzZetaTest#zetaNegativeRoot(int, double)} for a result with
+         * cancellation (odd s). */
+        static final Context ROOT = BD_DOUBLE_DOUBLE;
+        /** Context of {@link HurwitzZetaTest#zetaNegativeRoot(int, double)} for a result without
+         * cancellation (even s; odd s at a half-integer). */
+        static final Context ROOT_NO_CANCELLATION = BD_DOUBLE;
 
         /** Default epsilon for the series summations. */
         private static final double EPS = 0x1p-56;
@@ -1291,9 +1332,13 @@ class HurwitzZetaTest {
         // Computing the largest terms in extended precision allows a few bits of precision
         T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100((s, a) -> HurwitzZetaTest.zetaNegative((int) s, a, true), "hzeta_root_s3_21_na2b0_2b6.csv", 0x1p48, 0x1p45),
 
-        T_BD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeBD((int) s, a), ROOT_TEST_RESOURCES, 0, 0),
+        // The function used to locate roots (zetaNegativeRoot) must be correctly rounded near a root
+        // (odd s). Even s is not used by the root finders (the context is not correctly rounded).
+        T_BD_ZETA_DOMAIN_NA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeRoot((int) s, a), DOMAIN_NA_ROOTS_RESOURCES, 0, 0),
+        T_BD_ZETA_DOMAIN_NA_CANCELLATION_ODD((s, a) -> HurwitzZetaTest.zetaNegativeRoot((int) s, a),
+            DOMAIN_NA_CANCELLATION_ODD_RESOURCES, 0, 0),
         // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
-        T_DD_ZETA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), ROOT_TEST_RESOURCES, 0.7, 0.7),
+        T_DD_ZETA_DOMAIN_NA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), DOMAIN_NA_ROOTS_RESOURCES, 0.7, 0.7),
 
         // Final implementation
         ZETA_S1_4_A1_8(HurwitzZeta::value, "hzeta_s1_4_a1_8.csv", 1.5, 0.3),
@@ -1344,7 +1389,14 @@ class HurwitzZetaTest {
         ZETA_S3_5_N_A40_99_HALF_B30(HurwitzZeta::value, "hzeta_s3_5_na40_99_p0.5_p0x1p-30.csv", 0, 0),
         ZETA_S6_50_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s6_50_na400_999_p0.5_p0x1p-3.csv", 0.52, 0.1),
         ZETA_S7_51_N_A400_999_HALF_B3(HurwitzZeta::value, "hzeta_s7_51_na400_999_p0.5_p0x1p-3.csv", 1, 0),
-        ZETA_ROOTS(HurwitzZeta::value, ROOT_TEST_RESOURCES, 0.7, 0.05);
+        // Random samples from the domain a < 0 where the result is finite (measured max 0.525,
+        // RMS 0.010)
+        ZETA_DOMAIN_NA(HurwitzZeta::value, DOMAIN_NA_RESOURCES, 0.6, 0.02),
+        // Random samples with a spread of cancellation (odd s) or rho (even s) (measured max 0.511,
+        // RMS 0.011)
+        ZETA_DOMAIN_NA_CANCELLATION(HurwitzZeta::value, DOMAIN_NA_CANCELLATION_RESOURCES, 0.6, 0.02),
+        // Roots: the point of maximum cancellation
+        ZETA_DOMAIN_NA_ROOTS(HurwitzZeta::value, DOMAIN_NA_ROOTS_RESOURCES, 0.7, 0.05);
 
 //        JDK Temurin 25.492-b09
 //        T_DOUBLE_ZETA_IS                         max        1.05975   RMS       0.260675   mean    -0.00757331  n  6000  (392ms)
@@ -1366,8 +1418,8 @@ class HurwitzZetaTest {
 //        T_DD_ZETA_S3_5_N_A40_99_HALF_B30         max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (55.4ms)
 //        T_DOUBLE_ZETA_ROOT_S3_21_N_A0_100        max    1.30515e+16   RMS    6.71498e+14   mean    2.99768e+13  n   642  (37.5ms)
 //        T_DOUBLE_P_ZETA_ROOT_S3_21_N_A0_100      max    9.57925e+13   RMS    6.03802e+12   mean   -2.72521e+11  n   642  (18.2ms)
-//        T_BD_ZETA_ROOTS                          max        0.00000   RMS        0.00000   mean        0.00000  n  2640  (585ms)
-//        T_DD_ZETA_ROOTS                          max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (72.6ms)
+//        T_BD_ZETA_DOMAIN_NA_ROOTS                max        0.00000   RMS        0.00000   mean        0.00000  n  2640  (585ms)
+//        T_DD_ZETA_DOMAIN_NA_ROOTS                max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (72.6ms)
 //        ZETA_S1_4_A1_8                           max        1.29125   RMS       0.287148   mean     0.00943939  n  3000  (89.3ms)
 //        ZETA_S1_4_A8_32                          max        1.74869   RMS       0.361734   mean     0.00183242  n  3000  (48.0ms)
 //        ZETA_S1_4_A32_2147483648                 max        1.77377   RMS       0.467224   mean     0.00262765  n  3000  (32.4ms)
@@ -1396,7 +1448,7 @@ class HurwitzZetaTest {
 //        ZETA_S3_5_N_A40_99_HALF_B30              max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (50.3ms)
 //        ZETA_S6_50_N_A400_999_HALF_B3            max       0.517315   RMS      0.0207425   mean   -0.000509997  n  3000  (40.9ms)
 //        ZETA_S7_51_N_A400_999_HALF_B3            max        0.00000   RMS        0.00000   mean        0.00000  n  3000  (56.9ms)
-//        ZETA_ROOTS                               max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (56.7ms)
+//        ZETA_DOMAIN_NA_ROOTS                     max       0.638297   RMS      0.0158942   mean   -4.88173e-05  n  2640  (56.7ms)
 
         /** The function. */
         private final DoubleBinaryOperator fun;
@@ -3826,11 +3878,58 @@ class HurwitzZetaTest {
      * <p><strong>Warning</strong>: No parameter validation is performed.
      * The domain of {@code a} is expected to be negative.
      *
+     * <p>Uses the contexts of the root finder ({@link #zetaNegativeRoot(int, double)}).
+     *
      * @param s Argument {@code s > 1} and integer
      * @param a Argument {@code a < 0}
      * @return zeta(s, a)
      */
     private static double zetaNegativeBD(int s, double a) {
+        return zetaNegativeRoot(s, a);
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
+     * when {@code a} is negative. Uses {@link BigDecimal} arithmetic.
+     *
+     * <p>This is the function used to locate the roots of zeta(s, a) for {@code a < 0}
+     * (testDataZetaRoots, testDataNegativeCancellation). The root finder requires the
+     * result to be correctly rounded near a root; this is tested on the root resources
+     * and the odd s cancellation resources.
+     *
+     * <p>When there is no cancellation (even {@code s}; odd {@code s} at a half-integer,
+     * where the result is {@code zeta(s, 1 - a)}) this function uses a lower precision
+     * context for performance. The result may not be correctly rounded: near a rounding
+     * tie the context precision is insufficient for the terms closest to the pole and
+     * their sum. This does not affect the root finders (even {@code s} has no roots; at a
+     * half-integer only the sign of the positive result is used).
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @return zeta(s, a)
+     * @see Context#ROOT
+     * @see Context#ROOT_NO_CANCELLATION
+     */
+    private static double zetaNegativeRoot(int s, double a) {
+        return zetaNegativeBD(s, a, Context.ROOT, Context.ROOT_NO_CANCELLATION);
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)}
+     * when {@code a} is negative. Uses {@link BigDecimal} arithmetic.
+     *
+     * <p><strong>Warning</strong>: No parameter validation is performed.
+     * The domain of {@code a} is expected to be negative.
+     *
+     * @param s Argument {@code s > 1} and integer
+     * @param a Argument {@code a < 0}
+     * @param context Context for a result with cancellation (odd s).
+     * @param contextNoCancellation Context for a result without cancellation (even s; odd s
+     * at a half-integer).
+     * @return zeta(s, a)
+     */
+    private static double zetaNegativeBD(int s, double a, Context context,
+            Context contextNoCancellation) {
         // a < 0 (non-integer) and s is a positive integer.
         // If s is odd then the negative series sum will be negative
         // and the addition of zeta(s, x > 0) has cancellation.
@@ -3848,7 +3947,7 @@ class HurwitzZetaTest {
         if (odd && x == -0.5) {
             // Use extended precision but evaluated with precision for a double result
             return zeta(s, BigDecimal.ONE.subtract(new BigDecimal(a)), null,
-                Context.BD_DOUBLE).doubleValue();
+                contextNoCancellation).doubleValue();
         }
 
         // Handle cancellation as x -> 0.5
@@ -3869,7 +3968,7 @@ class HurwitzZetaTest {
 
         // Odd computation requires twice the precision of a double (17 digits).
         // Even requires some extra.
-        final Context c = odd ? Context.BD_DOUBLE_DOUBLE : Context.BD_DOUBLE;
+        final Context c = odd ? context : contextNoCancellation;
 
         // Compute the two terms either side of zero:
         // -1 < xn < 0 < xn + 1 < 1
@@ -8562,7 +8661,7 @@ class HurwitzZetaTest {
                 }
                 final int ss = s;
                 // Assume the function is optimised for accuracy
-                final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeBD(ss, x);
+                final DoubleUnaryOperator f = x -> HurwitzZetaTest.zetaNegativeRoot(ss, x);
                 // Check if any cases were recorded
                 final int casesCount = cases.size();
                 for (double ta = la; ta < ua; ta += 1) {
@@ -8850,7 +8949,8 @@ class HurwitzZetaTest {
                 double r = h + delta;
                 if (kind == 0) {
                     final int ss = s;
-                    final DoubleUnaryOperator f = y -> zetaNegativeBD(ss, y);
+                    // Assume the function is optimised for accuracy
+                    final DoubleUnaryOperator f = y -> zetaNegativeRoot(ss, y);
                     final double upper = Math.min(h + 4 * delta, Math.nextDown(-n));
                     if (f.applyAsDouble(upper) < 0) {
                         r = solver.findRoot(f, h, Math.min(r, Math.nextDown(upper)), upper);
