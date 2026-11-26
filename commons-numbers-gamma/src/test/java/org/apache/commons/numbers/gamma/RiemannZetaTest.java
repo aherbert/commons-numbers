@@ -617,7 +617,8 @@ class RiemannZetaTest {
 
     @ParameterizedTest
     @CsvSource({
-        "1.0, Infinity",
+        // Pole between the series (s > 1) and the analytic continuation (s < 1)
+        "1.0, NaN",
         "-262384234, 0.0",
         "Infinity, 1.0",
         "-Infinity, NaN",
@@ -777,8 +778,9 @@ class RiemannZetaTest {
         // from mpmath import zeta, mp
         // mp.pretty = True
         // for i in [1, 2, 4, 7, 15, 36]:
-        //   print(f'"{i}, {float(zeta(i*(1-2**-53)))}, {"Infinity" if i == 1 else float(zeta(i))}, {float(zeta(i*(1+2**-52)))}",')
-        "1, -9007199254740991.0, Infinity, 4503599627370497.0",
+        //   print(f'"{i}, {float(zeta(i*(1-2**-53)))}, {"NaN" if i == 1 else float(zeta(i))}, {float(zeta(i*(1+2**-52)))}",')
+        // s = 1 is a pole: the value is undefined (NaN)
+        "1, -9007199254740991.0, NaN, 4503599627370497.0",
         "2, 1.6449340668482266, 1.6449340668482264, 1.644934066848226",
         "4, 1.0823232337111381, 1.0823232337111381, 1.0823232337111381",
         "7, 1.008349277381923, 1.008349277381923, 1.008349277381923",

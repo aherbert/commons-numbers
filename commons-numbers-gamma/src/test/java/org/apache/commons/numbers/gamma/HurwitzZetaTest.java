@@ -6240,7 +6240,8 @@ class HurwitzZetaTest {
         "0.23, 1.0, NaN",
         "-1.23, 1.0, NaN",
         "-Infinity, 1.0, NaN",
-        // a >= +0: s = 1 : infinity (divergent)
+        // a >= +0: s = 1 : infinity (divergent).
+        // Note: RiemannZeta.value(1) is NaN (pole of the analytic continuation).
         "1.0, 1.0, Infinity",
         "1.0, 345.6, Infinity",
         "1.0, 0.0, Infinity",

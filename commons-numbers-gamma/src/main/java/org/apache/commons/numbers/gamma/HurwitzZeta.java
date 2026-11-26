@@ -540,7 +540,10 @@ public final class HurwitzZeta {
      *
      * <p>Positive \( a \) (including positive zero):
      * <ul>
-     * <li>If the argument \( s \) is 1, then the result is positive infinity.</li>
+     * <li>If the argument \( s \) is 1, then the result is positive infinity (the series
+     * diverges). Note that the Riemann zeta function
+     * {@link RiemannZeta#value(double) RiemannZeta.value(1)} is nan (the pole between the series
+     * and the analytic continuation for \( s \lt 1 \)).</li>
      * <li>If the argument \( s \) is positive infinity and \( a \lt 1 \) then the result is positive infinity.</li>
      * <li>If the argument \( s \) is positive infinity and \( a = 1 \) then the result is 1.</li>
      * <li>If the argument \( s \) is positive infinity and \( a \gt 1 \) then the result is 0.</li>

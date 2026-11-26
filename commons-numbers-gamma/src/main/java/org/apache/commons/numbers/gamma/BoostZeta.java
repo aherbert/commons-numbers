@@ -77,7 +77,10 @@ final class BoostZeta {
      * Computed using mpmath (1.14.1). Max n = 53. */
     private static final double[] Z = {
         -0.5,
-        Double.POSITIVE_INFINITY,
+        // s=1 is the bound of the convergent series for s > 1;
+        // and the analytic continuation for s < 1. Here Boost would
+        // call policies::raise_pole_error
+        Double.NaN,
         1.64493406684822643647241516665,
         1.20205690315959428539973816151,
         1.08232323371113819151600369654,
@@ -293,9 +296,9 @@ final class BoostZeta {
      * @return zeta(s)
      */
     private static double zetaImp(double s, double sc) {
-        // This case is handled in the integer s cases:
+        // This case is handled in the integer s cases to return NaN:
         // if sc == 0:
-        //    return infinity
+        //    policies::raise_pole_error
 
         //
         // Trivial case:
@@ -339,8 +342,8 @@ final class BoostZeta {
                 // Change to simple tabulation of the exact result for even and odd.
                 // Note: zetaImp53 has been modified to be exact for integer s. However the
                 // zeta function has important use in series evaluations and direct look-up
-                // will benefit any downstream use case. Without this look-up the case
-                // for infinity at s=1 must be re-instated.
+                // will benefit any downstream use case. Without this look-up the pole
+                // at s=1 (NaN) must be re-instated.
                 return Z[(int) s];
             }
         }

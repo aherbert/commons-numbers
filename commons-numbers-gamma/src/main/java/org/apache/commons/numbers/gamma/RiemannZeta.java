@@ -54,12 +54,19 @@ public final class RiemannZeta {
      *
      * <p>Special cases:
      * <ul>
-     * <li>If the argument is 1, then the result is positive infinity.</li>
+     * <li>If the argument is 1, then the result is nan.</li>
      * <li>If the argument is a negative even integer, then the result is 0.</li>
      * <li>If the argument is positive infinity, then the result is 1.</li>
      * <li>If the argument is negative infinity, then the result is nan.</li>
      * <li>If the argument is nan, then the result is nan.</li>
      * </ul>
+     *
+     * <p>The argument 1 is a simple pole between the convergent series \( s \gt 1 \) and
+     * the analytic continuation \( s \lt 1 \): the function tends to positive infinity from
+     * above and negative infinity from below, and the value at the pole is undefined. Note that
+     * the Hurwitz zeta function is evaluated for the series \( s \ge 1 \) and
+     * {@link HurwitzZeta#value(double, double) HurwitzZeta.value(1, 1)} is the divergent
+     * series (positive infinity).
      *
      * @param s Argument.
      * @return \( \zeta(s) \)
