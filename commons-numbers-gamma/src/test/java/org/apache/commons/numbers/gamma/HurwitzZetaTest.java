@@ -6365,6 +6365,66 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Test the function is monotonic in {@code a} around half-integers {@code a = -(n + 1/2)}
+     * for odd {@code s}. The derivative is {@code -s zeta(s+1, a)} and {@code zeta(s+1, a) > 0}
+     * for even {@code s+1}, so the function is strictly decreasing on each pole interval
+     * {@code (-(n+1), -n)}. At a half-integer the terms either side of zero cancel exactly and
+     * {@code zeta(s, a) = zeta(s, n + 3/2)} may be evaluated using positive {@code a}; the
+     * neighbouring doubles require the summation of terms of opposite sign. The values must
+     * not increase over {@code h - 2 ulp, ..., h + 2 ulp} within the same pole interval.
+     *
+     * <p>The change of the function over one ulp of {@code a} at {@code h} is at least ~97 ulp
+     * of the result (smallest at {@code s = 3, a = -1/2}; it increases with {@code s} and
+     * {@code n}), far above the error of either evaluation.
+     *
+     * <p>The values of {@code s} cover small s (the root next to the half-integer is resolved by
+     * the doubles), the switch to the half-integer being the double root (s ~ 30 at
+     * {@code a = -1/2}), large s and the overflow (1067) and underflow (1851) limits.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 25, 29, 31, 33, 51, 101, 255, 383, 511,
+        1023, 1065, 1067, 1851})
+    void testZetaMonotonicAtHalfInteger(int s) {
+        final ArrayList<Double> list = new ArrayList<>();
+        for (int n = 0; n <= 100; n++) {
+            list.add(n + 0.5);
+        }
+        for (int k = 10; k <= 50; k += 10) {
+            list.add(Math.scalb(1.0, k) - 0.5);
+            list.add(Math.scalb(1.0, k) + 0.5);
+        }
+        list.add(0x1.0p51 + 0.5);
+        list.add(0x1.0p52 - 0.5);
+        final double[] a = new double[5];
+        final double[] z = new double[5];
+        for (final double v : list) {
+            final double h = -v;
+            a[2] = h;
+            a[1] = Math.nextDown(h);
+            a[0] = Math.nextDown(a[1]);
+            a[3] = Math.nextUp(h);
+            a[4] = Math.nextUp(a[3]);
+            for (int i = 0; i < 5; i++) {
+                z[i] = HurwitzZeta.value(s, a[i]);
+            }
+            final double ca = Math.ceil(h);
+            for (int i = 1; i < 5; i++) {
+                // Same open pole interval only: the function jumps from -inf to inf at a pole
+                if (Math.ceil(a[i - 1]) != ca || Math.ceil(a[i]) != ca ||
+                    Math.rint(a[i - 1]) == a[i - 1] || Math.rint(a[i]) == a[i]) {
+                    continue;
+                }
+                final double a0 = a[i - 1];
+                final double a1 = a[i];
+                final double z0 = z[i - 1];
+                final double z1 = z[i];
+                Assertions.assertTrue(z0 >= z1,
+                    () -> String.format("zeta(%d, %s) < zeta(%d, %s): %s < %s", s, a0, s, a1, z0, z1));
+            }
+        }
+    }
+
+    /**
      * Spot tests for the zeta function to check various points in the domain and extreme values.
      */
     @ParameterizedTest
