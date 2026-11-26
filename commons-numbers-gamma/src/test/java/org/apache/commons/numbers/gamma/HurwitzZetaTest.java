@@ -256,7 +256,8 @@ class HurwitzZetaTest {
             "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_matlab.csv",
             "hzeta_negc_s2_1020_na0.5_2p52_logs_c_even_refl.csv")).toArray(String[]::new);
     /** Filenames of resources containing special points of the domain {@code a < 0} (integer s)
-     * (testDataNegativeSpecial). Split by reference source (see the file headers). */
+     * (testDataNegativeSpecial, testDataNegativeSpecialSet). Split by reference source (see the
+     * file headers). */
     private static final String[] DOMAIN_NA_SPECIAL_RESOURCES = {
         // Results near the overflow threshold: log2|zeta| uniform in [1020, 1025]
         "hzeta_negs_overflow_s2_1067_b1020_1025_sum.csv",
@@ -266,6 +267,18 @@ class HurwitzZetaTest {
         // (normal, sub-normal and zero results)
         "hzeta_negs_half_s3_1851_b-1085_-1000_sum.csv",
         "hzeta_negs_half_s3_1851_b-1085_-1000_matlab.csv",
+        // Exact half-integers (odd s to 1851): |a| uniform in bits to 2^52; log2 zeta >= -1085
+        "hzeta_negs_halfsweep_s3_1851_b-1085_sum.csv",
+        "hzeta_negs_halfsweep_s3_1851_b-1085_matlab.csv",
+        // Even s near overflow at half-integers (to 2^52 - 1/2) and their neighbouring doubles
+        "hzeta_negs_evenhalf_s1000_1024_sum.csv",
+        "hzeta_negs_evenhalf_s1000_1024_matlab.csv",
+        "hzeta_negs_evenhalf_s1000_1024_refl.csv",
+        // Quarter-integers in [2^50, 2^51)
+        "hzeta_negs_quarter_s2_511_matlab.csv",
+        "hzeta_negs_quarter_s2_511_refl.csv",
+        // The doubles either side of -1/2 (closest approach to a half-integer), all s
+        "hzeta_negs_halfnb_s2_1067.csv",
     };
     /** Filenames of resources containing the roots of the zeta function for {@code a < 0}
      * (integer s) (testDataZetaRoots). */
@@ -1365,6 +1378,10 @@ class HurwitzZetaTest {
         T_BD_ZETA_DOMAIN_NA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeRoot((int) s, a), DOMAIN_NA_ROOTS_RESOURCES, 0, 0),
         T_BD_ZETA_DOMAIN_NA_CANCELLATION_ODD((s, a) -> HurwitzZetaTest.zetaNegativeRoot((int) s, a),
             DOMAIN_NA_CANCELLATION_ODD_RESOURCES, 0, 0),
+        // Closest approach to a half-integer (largest cancellation for each odd s); the even s
+        // rows are also correctly rounded
+        T_BD_ZETA_DOMAIN_NA_HALF_NEIGHBOUR((s, a) -> HurwitzZetaTest.zetaNegativeRoot((int) s, a),
+            "hzeta_negs_halfnb_s2_1067.csv", 0, 0),
         // 1 ULP on the case of total cancellation: 3.0, -2.4994443912584825
         T_DD_ZETA_DOMAIN_NA_ROOTS((s, a) -> HurwitzZetaTest.zetaNegativeDD((int) s, a), DOMAIN_NA_ROOTS_RESOURCES, 0.7, 0.7),
 
@@ -9251,7 +9268,15 @@ class HurwitzZetaTest {
         /** Results near the overflow threshold. */
         OVERFLOW_EDGE,
         /** Exact half-integers with odd s: normal, sub-normal and zero results. */
-        HALF_INTEGER;
+        HALF_INTEGER,
+        /** Exact half-integers with odd s: |a| uniform in bits. */
+        HALF_INTEGER_SWEEP,
+        /** Even s at half-integers and their neighbours (enumeration). */
+        EVEN_HALF_INTEGER,
+        /** Quarter-integers in [2^50, 2^51). */
+        QUARTER_INTEGER,
+        /** The doubles either side of -1/2 (closest approach to a half-integer), all s (enumeration). */
+        HALF_NEIGHBOUR;
     }
 
     /**
@@ -9297,6 +9322,8 @@ class HurwitzZetaTest {
     void testDataNegativeSpecial(NegativeSpecial kind, int ls, int us, double bLo, double bHi,
                                  int bits, int samples) throws IOException {
         final boolean half = kind == NegativeSpecial.HALF_INTEGER;
+        Assertions.assertTrue(half || kind == NegativeSpecial.OVERFLOW_EDGE,
+            "kind (other sets: testDataNegativeSpecialSet)");
         Assertions.assertTrue(ls >= 2, "s must be >= 2");
         Assertions.assertTrue(us >= ls);
         Assertions.assertTrue(!half || (ls & 1) == 1, "half-integer: odd s");
@@ -9459,6 +9486,245 @@ class HurwitzZetaTest {
             out.printf("# N = %d%n", samples);
             for (final double[] r : rows) {
                 out.printf("# b %s (target %s)%n%d, %s%n", shortFormat(r[2]), shortFormat(r[3]), (int) r[0], r[1]);
+            }
+        }
+    }
+
+    /**
+     * Create test data for sets of special points of the domain {@code a < 0} (integer
+     * {@code s}) that are not solved for a target result:
+     *
+     * <ul>
+     * <li>{@link NegativeSpecial#HALF_INTEGER_SWEEP} (odd s): {@code s} log-uniform (each
+     * allowed s with weight {@code log((s+1)/s)}), {@code |a|} uniform in its bits in
+     * {@code [1/2, 2^52)} and {@code a = -(floor(|a|) + 1/2)}: at a half-integer the pairs either
+     * side of zero cancel exactly and {@code zeta(s, a) = zeta(s, n + 3/2)}. Includes
+     * {@code [2^51, 2^52)} where every non-integer double is a half-integer. Unique (s, a).
+     * Draws with a model result {@code b < bMin} are rejected (most large s with large
+     * {@code |a|} give a zero result): the density is that of the draw restricted to
+     * {@code b >= bMin}, which shifts rows to small s and large {@code |a|}.
+     * <li>{@link NegativeSpecial#EVEN_HALF_INTEGER} (even s, enumeration; samples ignored): the
+     * half-integers {@code -1/2, -3/2, -5/2, -21/2, -(2^10 + 1/2), -(2^k + 1/2)} for
+     * {@code k = 20, 30, 40, 50} and {@code -(2^52 - 1/2)}, and their neighbouring doubles
+     * (integers excluded). The result is near {@code 2 (2^s - 1) zeta(s)} (overflow above
+     * {@code s = 1022}).
+     * <li>{@link NegativeSpecial#QUARTER_INTEGER} (s with a finite result at {@code d = 1/4}):
+     * {@code s} log-uniform, {@code a = -(n + u)} with {@code n} uniform in {@code [2^50, 2^51)}
+     * and {@code u} = 1/4 or 3/4 (in this binade a non-integer double has u = 1/4, 1/2 or 3/4).
+     * Unique (s, a).
+     * <li>{@link NegativeSpecial#HALF_NEIGHBOUR} (all s, enumeration; samples ignored): the doubles
+     * either side of {@code -1/2}, {@code -1/2 + 2^-54} and {@code -1/2 - 2^-53}: the closest
+     * approach of a double to a half-integer. Odd s: the largest cancellation a double argument
+     * reaches for each s (about {@code 1.585 s} bits for s up to ~27; ~47 bits at s ~ 31 where
+     * the root is within an ulp of {@code -1/2}; then a result ~{@code 2^(s-47)} of opposite sign
+     * at the two points, finite to s = 1065). {@code u = a + 1} is not a double: the evaluation
+     * must use the exact {@code x = a - ceil(a)}. Even s: no cancellation (the value at the
+     * half-integer); s with an infinite result at {@code d = 1/2} are excluded. The row comment
+     * is the cancellation {@code c} of the sides {@code P = zeta(s, 1+x)} and
+     * {@code N = zeta(s, -x) - zeta(s, 1-a)}, {@code max(|P|, |N|) / |zeta|} in bits, and
+     * {@code b = log2|zeta(s, a)|}, both from the root finder context (BigDecimal).
+     * </ul>
+     *
+     * <p>Other rows have a comment with the model {@code b = log2|zeta(s, a)|}: the exact log zeta
+     * for half-integers with odd s; otherwise {@code log2(T1 +/- T2)} for the two terms closest
+     * to the pole (see {@link #testDataNegativeSpecial}). The standard output summarises the
+     * results of the hybrid implementation (infinite, zero and sub-normal) and its DD fallback
+     * share.
+     *
+     * @param kind Kind of special point.
+     * @param ls Lower bound for s.
+     * @param us Upper bound for s.
+     * @param bMin Minimum model {@code log2|zeta(s, a)|} of a sampled row (an integer, in the file
+     * name; -infinity to accept all; the enumerations require -infinity).
+     * @param samples Number of samples (not used by the enumeration).
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "HALF_INTEGER_SWEEP, 3, 1851, -1085, 2000",
+        "EVEN_HALF_INTEGER, 1000, 1024, -Infinity, 0",
+        "QUARTER_INTEGER, 2, 511, -Infinity, 1000",
+        "HALF_NEIGHBOUR, 2, 1067, -Infinity, 0",
+    })
+    @Disabled("Used to generate test data")
+    void testDataNegativeSpecialSet(NegativeSpecial kind, int ls, int us, double bMin, int samples)
+        throws IOException {
+        Assertions.assertTrue(ls >= 2, "s must be >= 2");
+        Assertions.assertTrue(us >= ls);
+        final boolean sweep = kind == NegativeSpecial.HALF_INTEGER_SWEEP;
+        final boolean even = kind == NegativeSpecial.EVEN_HALF_INTEGER;
+        final boolean quarter = kind == NegativeSpecial.QUARTER_INTEGER;
+        final boolean neighbour = kind == NegativeSpecial.HALF_NEIGHBOUR;
+        Assertions.assertTrue(sweep || even || quarter || neighbour, "kind");
+        Assertions.assertTrue(!sweep || (ls & 1) == 1, "half-integer sweep: odd s");
+        Assertions.assertTrue(!even || (ls & 1) == 0, "even s");
+        Assertions.assertTrue(even || neighbour || samples > 0);
+        Assertions.assertTrue(!(even || neighbour) || bMin == Double.NEGATIVE_INFINITY, "enumeration: no bMin");
+        Assertions.assertTrue(bMin == Double.NEGATIVE_INFINITY || Math.rint(bMin) == bMin, "bMin: integer (file name)");
+        final int step = quarter || neighbour ? 1 : 2;
+        final int ns = (us - ls) / step + 1;
+        final SplittableRandom rng = new SplittableRandom(SEED);
+
+        // Reachable s: quarter-integers require a finite result at d = 1/4 and b >= bMin;
+        // half-integers require b >= bMin at the largest result (n = 0: zeta(s, 3/2)).
+        final TailModel[] models = new TailModel[ns];
+        final BitSet reachable = new BitSet(ns);
+        for (int i = 0; i < ns; i++) {
+            final int s = ls + step * i;
+            final boolean ok;
+            if (sweep) {
+                models[i] = new TailModel(s, 30);
+                ok = models[i].logZeta(1.5) / LN2 >= bMin;
+            } else if (quarter) {
+                final double b = negativeLog2T(s, 0.25);
+                ok = b <= 1025 && b >= bMin;
+            } else if (neighbour) {
+                // Even s: the result is near the value at d = 1/2 (minimum of the sum).
+                // Odd s: finite to s = 1065 (set by us).
+                ok = (s & 1) == 1 || negativeLog2T(s, 0.5) <= 1025;
+            } else {
+                ok = true;
+            }
+            reachable.set(i, ok);
+        }
+        final int[] excluded = IntStream.range(0, ns).filter(i -> !reachable.get(i))
+            .map(i -> ls + step * i).toArray();
+        Assertions.assertTrue(excluded.length < ns, () -> String.format("No reachable s in [%d, %d]", ls, us));
+
+        final double logLo = Math.log(ls);
+        final double logHi = Math.log(us + 1.0);
+        // Rows: {s, a, b} or {s, a, b, c}
+        final ArrayList<double[]> rows = new ArrayList<>();
+        final TreeSet<String> seen = new TreeSet<>();
+        int duplicates = 0;
+        long rejected = 0;
+        long time = System.nanoTime();
+        if (neighbour) {
+            final Context context = Context.ROOT;
+            final MathContext mc = context.getMathContext();
+            for (int s = ls; s <= us; s += step) {
+                if (!reachable.get(s - ls)) {
+                    continue;
+                }
+                for (final double a : new double[] {Math.nextUp(-0.5), Math.nextDown(-0.5)}) {
+                    // x = a - ceil(a) = a (exact); 1 + x is not a double
+                    final double x = a - Math.ceil(a);
+                    final BigDecimal p = zeta(s, BigDecimal.ONE.add(new BigDecimal(x)), null, context);
+                    final BigDecimal q = negativeSeriesSum(a, x, s, context);
+                    final BigDecimal z = p.add(q, mc);
+                    final double lz = log2(z.abs());
+                    rows.add(new double[] {s, a, lz, Math.max(log2(p), log2(q.abs())) - lz});
+                }
+            }
+        } else if (even) {
+            final double[] h = {0.5, 1.5, 2.5, 10.5, 0x1.0p10 + 0.5, 0x1.0p20 + 0.5, 0x1.0p30 + 0.5,
+                0x1.0p40 + 0.5, 0x1.0p50 + 0.5, 0x1.0p52 - 0.5};
+            for (int s = ls; s <= us; s += step) {
+                for (final double x : h) {
+                    for (final double v : new double[] {Math.nextDown(x), x, Math.nextUp(x)}) {
+                        if (Math.rint(v) != v) {
+                            final double fl = Math.floor(v);
+                            rows.add(new double[] {s, -v, negativeLog2T(s, Math.min(v - fl, fl + 1 - v))});
+                        }
+                    }
+                }
+            }
+        } else {
+            final DoubleSupplier absA = createSampler(rng, 0.5, 0x1.0p52, false);
+            while (rows.size() < samples) {
+                int s;
+                do {
+                    s = (int) Math.floor(Math.exp(logLo + rng.nextDouble() * (logHi - logLo)));
+                } while (s < ls || s > us || (s - ls) % step != 0 || !reachable.get((s - ls) / step));
+                final double a;
+                final double b;
+                if (sweep) {
+                    final double n = Math.floor(absA.getAsDouble());
+                    a = -(n + 0.5);
+                    b = models[(s - ls) / step].logZeta(n + 1.5) / LN2;
+                } else {
+                    final long n = (1L << 50) + rng.nextLong(1L << 50);
+                    a = -(n + (rng.nextBoolean() ? 0.25 : 0.75));
+                    b = negativeLog2T(s, 0.25);
+                }
+                if (b < bMin) {
+                    rejected++;
+                    continue;
+                }
+                if (!seen.add(s + "," + a)) {
+                    Assertions.assertTrue(++duplicates < 100 * samples, "Too many duplicates");
+                    continue;
+                }
+                rows.add(new double[] {s, a, b});
+            }
+        }
+        // Hybrid implementation: results and DD fallback
+        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true)
+            .withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        final int[] counts = new int[4];
+        for (final double[] r : rows) {
+            final double z = zetaNegativeHybrid((int) r[0], r[1], nc);
+            if (Double.isInfinite(z)) {
+                counts[0]++;
+            } else if (z == 0) {
+                counts[1]++;
+            } else if (Math.abs(z) < Double.MIN_NORMAL) {
+                counts[2]++;
+            }
+            if (negativePath == NEG_PATH_DD) {
+                counts[3]++;
+            }
+        }
+        time = System.nanoTime() - time;
+        rows.sort(Comparator.comparingDouble((double[] r) -> r[0]).thenComparingDouble(r -> -r[1]));
+
+        final String token = sweep ? "halfsweep" : even ? "evenhalf" : quarter ? "quarter" : "halfnb";
+        final String name = String.format("hzeta_negs_%s_s%d_%d%s.txt", token, ls, us,
+            bMin == Double.NEGATIVE_INFINITY ? "" : String.format("_b%d", (long) Math.ceil(bMin)));
+        report("%s: %d rows; hybrid inf %d, zero %d, sub-normal %d, DD fallback %d; excluded s %d of %d; " +
+            "duplicates redrawn %d; rejected b < bMin %d%n",
+            name, rows.size(), counts[0], counts[1], counts[2], counts[3], excluded.length, ns, duplicates,
+            rejected);
+        try (PrintStream out = getPrintStream(name)) {
+            if (sweep) {
+                out.printf("# a < 0 special points (%s): odd s in [%d, %d] (log-uniform); |a| uniform in bits in " +
+                    "[0.5, 2^52); a = -(floor(|a|) + 1/2): zeta(s, a) = zeta(s, n + 3/2); unique (s, a)%n",
+                    kind, ls, us);
+            } else if (even) {
+                out.printf("# a < 0 special points (%s): even s in [%d, %d]; a = -1/2, -3/2, -5/2, -21/2, " +
+                    "-(2^k + 1/2) (k = 10, 20, 30, 40, 50), -(2^52 - 1/2) and the neighbouring doubles " +
+                    "(integers excluded)%n", kind, ls, us);
+            } else if (quarter) {
+                out.printf("# a < 0 special points (%s): s in [%d, %d] (log-uniform; finite at d = 1/4); " +
+                    "a = -(n + u), n uniform in [2^50, 2^51), u = 1/4 or 3/4; unique (s, a)%n", kind, ls, us);
+            } else {
+                out.printf("# a < 0 special points (%s): s in [%d, %d]; a = -1/2 + 2^-54, -1/2 - 2^-53 " +
+                    "(the doubles either side of -1/2)%n", kind, ls, us);
+            }
+            if (neighbour) {
+                out.printf("# Row comment: c = log2(max(|P|, |N|) / |zeta|), P = zeta(s, 1+x), " +
+                    "N = zeta(s, -x) - zeta(s, 1-a), x = a - ceil(a); b = log2|zeta(s, a)| (BigDecimal, " +
+                    "root finder context)%n");
+            } else {
+                out.printf("# Model: b = log2|zeta(s, a)|: %s%n", sweep ? "log zeta(s, n + 3/2)" :
+                    "log2(T1 +/- T2), T1 = d^-s, T2 = (1-d)^-s, d = distance to the nearest integer");
+            }
+            if (bMin != Double.NEGATIVE_INFINITY) {
+                out.printf("# Rejected draws with b < %s: %d (acceptance %.4f)%n", shortFormat(bMin), rejected,
+                    (double) (rows.size() + duplicates) / (rows.size() + duplicates + rejected));
+            }
+            if (excluded.length != 0) {
+                out.printf("# Excluded s (%s): %s%n",
+                    bMin == Double.NEGATIVE_INFINITY ? "not finite" : "not finite or b < bMin",
+                    formatRuns(excluded, step));
+            }
+            out.printf("# Seed %d; runtime %.3fs%n", SEED, time * 1e-9);
+            out.printf("# N = %d%n", rows.size());
+            for (final double[] r : rows) {
+                if (r.length == 4) {
+                    out.printf("# c %s (b %s)%n%d, %s%n", shortFormat(r[3]), shortFormat(r[2]), (int) r[0], r[1]);
+                } else {
+                    out.printf("# b %s%n%d, %s%n", shortFormat(r[2]), (int) r[0], r[1]);
+                }
             }
         }
     }
