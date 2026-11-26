@@ -521,26 +521,57 @@ public final class HurwitzZeta {
 
     /**
      * Computes the value of \( \zeta(s, a) \) over the domain \( s \gt 1 \) and
-     * \( a \gt 0 \); or integer \( s \gt 1 \) and \( a \ne 0, -1, -2, \ldots, -n \).
+     * \( a \gt 0 \); or integer \( s \gt 1 \) and \( a \lt 0 \) not an integer.
      *
      * <p>Negative \( a \) is supported when \( s \) is an integer due to the support
      * for powers of negative real numbers. Note that every double value
      * \( s \ge 2^{52} \) is an integer.
      *
+     * <p>The sign of zero indicates the side of \( a = 0 \): positive zero is the limit of
+     * the domain \( a \gt 0 \); negative zero represents a small negative value that
+     * underflowed and follows the rules for negative \( a \).
+     *
      * <p>Special cases:
      * <ul>
-     * <li>If the argument \( s \) is 1, then the result is positive infinity.</li>
+     * <li>If either argument is nan, then the result is nan.</li>
      * <li>If the argument \( s \lt 1 \), then the result is nan.</li>
+     * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
+     * </ul>
+     *
+     * <p>Positive \( a \) (including positive zero):
+     * <ul>
+     * <li>If the argument \( s \) is 1, then the result is positive infinity.</li>
      * <li>If the argument \( s \) is positive infinity and \( a \lt 1 \) then the result is positive infinity.</li>
      * <li>If the argument \( s \) is positive infinity and \( a = 1 \) then the result is 1.</li>
      * <li>If the argument \( s \) is positive infinity and \( a \gt 1 \) then the result is 0.</li>
-     * <li>If the argument \( a = 0 \), then the result is positive infinity.</li>
-     * <li>If the argument \( a \lt 0 \) and \( s \) is not an integer, then the result is nan.</li>
-     * <li>If the argument \( a \lt 0 \) is an integer and \( s \) is an integer, then the result
-     * is positive infinity.</li>
-     * <li>If the argument \( a \) is negative infinity, then the result is nan.</li>
-     * <li>If either argument is nan, then the result is nan.</li>
+     * <li>If the argument \( a \) is positive zero, then the result is positive infinity.</li>
      * </ul>
+     *
+     * <p>Negative \( a \) (including negative zero):
+     * <ul>
+     * <li>If the argument \( s \) is not an integer (including positive infinity), then the
+     * result is nan.</li>
+     * <li>If the argument \( a \) is negative zero and \( s \) is 1, then the result is nan.</li>
+     * <li>If the argument \( a \) is negative zero and \( s \gt 1 \) is an odd integer, then the
+     * result is negative infinity.</li>
+     * <li>If the argument \( a \) is negative zero and \( s \) is an even integer, then the
+     * result is positive infinity.</li>
+     * <li>If the argument \( a \) is an integer and \( s \) is an odd integer (including 1),
+     * then the result is nan.</li>
+     * <li>If the argument \( a \) is an integer and \( s \) is an even integer, then the
+     * result is positive infinity.</li>
+     * <li>If the argument \( a \) is not an integer and \( s \) is 1, then the result is
+     * positive infinity.</li>
+     * </ul>
+     *
+     * <p>For integer \( s \) the integers \( a = 0, -1, -2, \ldots \) are poles. For even
+     * \( s \) the function tends to positive infinity from either side. For odd \( s \) it
+     * tends to positive infinity from above and negative infinity from below, and the value at
+     * the pole is undefined. At \( a = \pm 0 \) the sign of zero selects the side: the result
+     * for integer \( s \gt 1 \) is that of the leading term \( a^{-s} \) computed using
+     * {@link Math#pow(double, double)}. When \( s = 1 \) the series diverges to positive
+     * infinity; the result is nan when the leading term is negative infinity
+     * (\( a = -0 \)) or undefined (a negative integer).
      *
      * <p>Note: This function is evaluated for \( s \gt 1 \) where the series is convergent.
      * The special case of the Riemann zeta function with \( a = 1 \) may be evaluated for
@@ -559,37 +590,51 @@ public final class HurwitzZeta {
         }
         // s >= 1
         // a > -infinity
-        // Check special cases
+        if (Double.doubleToRawLongBits(a) < 0) {
+            // a <= -0.0: requires integer s.
+            // pow(a + k, -s) is complex for negative a + k when s is non-integer.
+            // This includes a complex infinity when a is a negative integer.
+            // Infinity is not an integer: the parity of the terms is unknown.
+            // Note: Math.floor(inf) == inf.
+            if (s == Double.POSITIVE_INFINITY || Math.floor(s) != s) {
+                return Double.NaN;
+            }
+            if (a == 0) {
+                // a = -0.0. The term (-0)^-s is infinite; all other terms are finite.
+                // The sign of zero selects the side of the pole: an odd-order pole
+                // (odd s) tends to -infinity from below. Math.pow computes this.
+                // s = 1: -infinity + the divergent series (+infinity) is undefined.
+                return s == 1 ? Double.NaN : Math.pow(a, -s);
+            }
+            final double ca = Math.ceil(a);
+            if (ca == a) {
+                // Pole of order s. Even s tends to +infinity from either side.
+                // Odd s tends to +/-infinity from above/below: undefined at the pole
+                // (an integer a has no sign of zero to select the side).
+                // This includes s = 1.
+                return SpecialMath.isOdd(s) ? Double.NaN : Double.POSITIVE_INFINITY;
+            }
+            if (s == 1) {
+                // Finite terms + the divergent series
+                return Double.POSITIVE_INFINITY;
+            }
+            return zetaNegativeImp(s, a, ca);
+        }
+        // a >= +0.0
         if (s == Double.POSITIVE_INFINITY) {
-            // Limit of the largest finite s. All doubles above 2^53 are even integers: for
-            // a < 1 the term (a+k)^-s with |a+k| < 1 (or 0^-s) is positive and infinite.
+            // Limit as s -> infinity: terms (a+k)^-s with a+k < 1 are infinite;
+            // with a+k > 1 are zero.
             if (a == 1) {
                 // Riemman zeta
                 return 1;
             }
             return a < 1 ? Double.POSITIVE_INFINITY : 0;
         }
-        if (s == 1) {
+        if (s == 1 || a == 0) {
+            // Divergent series; or the term (+0)^-s is infinite and all other terms are positive
             return Double.POSITIVE_INFINITY;
         }
-        if (a <= 0) {
-            if (a == 0) {
-                // The term 0^-s is infinity; all other terms are positive
-                return Double.POSITIVE_INFINITY;
-            }
-            // a < 0
-            if (Math.floor(s) != s) {
-                // pow(a + k, -s) is complex for negative a + k when s is non-integer.
-                // This includes a complex infinity when a is a negative integer.
-                return Double.NaN;
-            }
-            final double ca = Math.ceil(a);
-            if (ca == a) {
-                // The term 0^-s is infinity
-                return Double.POSITIVE_INFINITY;
-            }
-            return zetaNegativeImp(s, a, ca);
-        }
+        // a > 0; 1 < s < infinity
         // Use the faster Riemann zeta function if applicable (accuracy is similar).
         // Creates a consistent output between zeta(s, 1) and zeta(s).
         // Done after domain validation, e.g.

@@ -6236,42 +6236,62 @@ class HurwitzZetaTest {
 
     @ParameterizedTest
     @CsvSource({
-        // s = 1 : infinity
-        "1.0, 1.0, Infinity",
-        "1.0, 345.6, Infinity",
-        "1.0, -345.6, Infinity",
         // s < 1 : not convergent so unsupported (nan)
         "0.23, 1.0, NaN",
         "-1.23, 1.0, NaN",
         "-Infinity, 1.0, NaN",
-        // s = infinity; a < 1 : infinity
+        // a >= +0: s = 1 : infinity (divergent)
+        "1.0, 1.0, Infinity",
+        "1.0, 345.6, Infinity",
+        "1.0, 0.0, Infinity",
+        // a >= +0: s = infinity; a < 1 : infinity
         "Infinity, 0.5, Infinity",
-        // s = infinity; a = 1 : 1 (matches Riemann zeta)
+        "Infinity, 0.0, Infinity",
+        // a >= +0: s = infinity; a = 1 : 1 (matches Riemann zeta)
         "Infinity, 1.0, 1.0",
-        // s = infinity; a > 1 : 0
+        // a >= +0: s = infinity; a > 1 : 0
         "Infinity, 1.5, 0.0",
-        // s = infinity; a < 0 : infinity (limit of the largest s: all doubles above 2^53
-        // are even integers)
-        "Infinity, -0.5, Infinity",
-        "Infinity, -1.0, Infinity",
-        // a = 0 : infinity
+        // a = +0 : infinity
         "1.23, 0.0, Infinity",
-        "1.23, -0.0, Infinity",
         "2.0, 0.0, Infinity",
-        // a < 0; s != integer : complex result (nan); also a complex infinity at a negative integer
+        "3.0, 0.0, Infinity",
+        // a <= -0: s != integer : complex result (nan); also a complex infinity at a negative integer;
+        // infinity is not an integer
+        "1.23, -0.0, NaN",
         "1.23, -0.5, NaN",
         "1.23, -1.5, NaN",
         "1.23, -1.0, NaN",
         "1.23, -0x1.0p52, NaN",
         "1.23, -1e300, NaN",
-        // a = negative integer; s = integer : infinity
-        "1.0, -1.0, Infinity",
+        "Infinity, -0.0, NaN",
+        "Infinity, -0.5, NaN",
+        "Infinity, -1.0, NaN",
+        "Infinity, -1e300, NaN",
+        // a = -0 : the side of the pole is below zero (as Math.pow(a, -s)):
+        // -infinity for odd s; infinity for even s
+        "2.0, -0.0, Infinity",
+        "3.0, -0.0, -Infinity",
+        "9007199254740991, -0.0, -Infinity",
+        "9007199254740992, -0.0, Infinity",
+        "1e300, -0.0, Infinity",
+        // a = -0; s = 1 : -infinity + divergent series (infinity) : nan
+        "1.0, -0.0, NaN",
+        // a = negative integer; s = even integer : infinity (from either side)
         "2.0, -1.0, Infinity",
-        "3.0, -1.0, Infinity",
         "2.0, -0x1.0p52, Infinity",
-        "3.0, -0x1.0p52, Infinity",
-        "3.0, -9007199254740990, Infinity",
         "2.0, -1e300, Infinity",
+        "9007199254740992, -1.0, Infinity",
+        "1e300, -1.0, Infinity",
+        // a = negative integer; s = odd integer : undefined (+/-infinity from above/below)
+        "1.0, -1.0, NaN",
+        "3.0, -1.0, NaN",
+        "3.0, -0x1.0p52, NaN",
+        "3.0, -9007199254740990, NaN",
+        "3.0, -1e300, NaN",
+        "9007199254740991, -1.0, NaN",
+        // a < 0 not an integer; s = 1 : infinity (divergent)
+        "1.0, -345.6, Infinity",
+        "1.0, -0.5, Infinity",
         // a < 0; s = large integer (even) : infinity
         "1e300, -0.25, Infinity",
         // a = -infinity : nan
