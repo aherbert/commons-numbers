@@ -5059,6 +5059,24 @@ class HurwitzZetaTest {
     /** Relative threshold for a negligible rest in {@link #zetaNegativeDoubleScaled}. Below
      * the error budget: a dropped rest of 2^-53 of the result can change the rounding. */
     private static final double NEG_REST_NEGLIGIBLE = 0x1.0p-60;
+    /** Joint pass: maximum |z| = s |log1p(delta)| for the expm1 form of a pair difference. */
+    private static final double JOINT_Z = 1;
+    /** Joint pass: maximum |z| for the double-double series form of the leading pair. */
+    private static final double JOINT_Z0 = 0.5;
+    /** Joint pass: maximum number of pairs. */
+    private static final int JOINT_MAX_K = 30;
+    /** Joint pass: maximum number of Euler-Maclaurin correction terms. */
+    private static final int JOINT_M = 16;
+    /** Joint pass: log of the relative threshold for a negligible remainder (2^-60). */
+    private static final double JOINT_LOG_NEGLIGIBLE = -60 * Math.log(2);
+    /** Exit k of the last call to {@link #zetaNegativeJoint} (-1: early exit). Used for testing. */
+    private static int negativeJointK;
+    /** Set if the last call to {@link #zetaNegativeJoint} used the series form for the leading pair. */
+    private static boolean negativeJointExpm1;
+    /** Set if the last call to {@link #zetaNegativeJoint} ended with the remainder bound. */
+    private static boolean negativeJointRemainder;
+    /** Set if the last call to {@link #zetaNegativeJoint} recomputed Z in double-double precision. */
+    private static boolean negativeJointZdd;
     /** Decision of the last call to {@link #zetaNegativeDoubleScaled}. Used for testing. */
     private static int negativeScaled;
 
@@ -5067,7 +5085,7 @@ class HurwitzZetaTest {
      */
     static final class NegativeContext {
         /** Default options. */
-        static final NegativeContext DEFAULT = new NegativeContext(true, 1.2, 16, false, Double.POSITIVE_INFINITY, 0);
+        static final NegativeContext DEFAULT = new NegativeContext(true, 1.2, 16, false, Double.POSITIVE_INFINITY, 0, false);
         /** Hybrid: leading terms in double-double precision and the scaled evaluation with an
          * error budget of 2^-53 of the result (before the final rounding). */
         static final NegativeContext HYBRID = DEFAULT.withLeading(true)
@@ -5093,6 +5111,9 @@ class HurwitzZetaTest {
          * its error (before the final rounding) is at most {@code 2^-bits} of the result
          * ({@link #zetaNegativeDoubleScaled}). Replaces {@link #maxRest}. */
         private final double bits;
+        /** Odd s with the scaled evaluation: use the joint pass over the pairs
+         * {@code (u+k)^-s - (v+k)^-s} ({@link #zetaNegativeJoint}). */
+        private final boolean joint;
 
         /**
          * @param evenDouble Use double precision for even s.
@@ -5101,9 +5122,11 @@ class HurwitzZetaTest {
          * @param leading Compute the largest terms in double-double precision.
          * @param maxRest Maximum magnitude of the double precision parts relative to the result.
          * @param bits Required precision of the scaled evaluation (0 to disable).
+         * @param joint Odd s: use the joint pass.
          */
         NegativeContext(boolean evenDouble, double maxFactor, int maxDirect, boolean leading, double maxRest,
-                        double bits) {
+                        double bits, boolean joint) {
+            this.joint = joint;
             this.bits = bits;
             this.maxRest = maxRest;
             this.leading = leading;
@@ -5117,7 +5140,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withMaxFactor(double f) {
-            return new NegativeContext(evenDouble, f, maxDirect, leading, maxRest, bits);
+            return new NegativeContext(evenDouble, f, maxDirect, leading, maxRest, bits, joint);
         }
 
         /**
@@ -5125,7 +5148,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withMaxDirect(int n) {
-            return new NegativeContext(evenDouble, maxFactor, n, leading, maxRest, bits);
+            return new NegativeContext(evenDouble, maxFactor, n, leading, maxRest, bits, joint);
         }
 
         /**
@@ -5133,7 +5156,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withLeading(boolean use) {
-            return new NegativeContext(evenDouble, maxFactor, maxDirect, use, maxRest, bits);
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, use, maxRest, bits, joint);
         }
 
         /**
@@ -5141,7 +5164,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withMaxRest(double t) {
-            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, t, bits);
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, t, bits, joint);
         }
 
         /**
@@ -5149,14 +5172,22 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withBits(double b) {
-            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, maxRest, b);
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, maxRest, b, joint);
+        }
+
+        /**
+         * @param use Odd s: use the joint pass (with the scaled evaluation).
+         * @return a new instance
+         */
+        NegativeContext withJoint(boolean use) {
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, maxRest, bits, use);
         }
 
         @Override
         public String toString() {
             return (evenDouble ? "even=double" : "even=DD") + " odd F<=" + maxFactor + " direct<=" + maxDirect +
                 (leading ? " leading=DD" : "") +
-                (bits > 0 ? " bits=" + bits : maxRest < Double.POSITIVE_INFINITY ? " rest<=" + maxRest : "");
+                (bits > 0 ? " bits=" + bits + (joint ? " joint" : "") : maxRest < Double.POSITIVE_INFINITY ? " rest<=" + maxRest : "");
         }
     }
 
@@ -5240,6 +5271,8 @@ class HurwitzZetaTest {
             final double r;
             if (!nc.leading) {
                 r = zetaNegativeDouble(s, a, x, ca, odd, nc.maxDirect);
+            } else if (nc.bits > 0 && nc.joint && odd) {
+                r = zetaNegativeJoint(s, a, x, nc.bits);
             } else if (nc.bits > 0) {
                 r = zetaNegativeDoubleScaled(s, a, x, ca, nc.maxDirect, nc.bits);
             } else {
@@ -5540,6 +5573,283 @@ class HurwitzZetaTest {
         }
         negativeScaled = NEG_SCALED_FAIL;
         return Double.NaN;
+    }
+
+    /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} for odd {@code s} when
+     * {@code a} is negative using a joint pass over the pairs of terms either side of zero.
+     *
+     * <p>With {@code x = a - ceil(a)} in {@code (-1, 0)}, {@code u = 1 + x} and {@code v = -x}:
+     *
+     * <pre>
+     * zeta(s, a) = C + Z
+     * C = zeta(s, u) - zeta(s, v) = sum_{k>=0} g(k),  g(k) = (u+k)^-s - (v+k)^-s
+     * Z = zeta(s, 1-a)
+     * </pre>
+     *
+     * <p>All {@code g(k)} have the sign of {@code v - u}: the sum {@code C} has no cancellation.
+     * Each pair is computed without cancellation as
+     * {@code g(k) = (v+k)^-s expm1(-s log1p(delta))} with {@code delta = (u - v) / (v + k)} and
+     * {@code u - v = 1 + 2x} (exact). The form is used if {@code |s log1p(delta)| <= 1}; otherwise
+     * the two powers are subtracted (their ratio exceeds e).
+     *
+     * <ul>
+     * <li>The leading pair {@code g(0)} is computed in double-double precision as a fraction and
+     * exponent (no overflow); the expm1 and log1p functions use series if
+     * {@code |s log1p(delta)| <= 0.5}.
+     * <li>The pairs {@code k >= 1} are summed in double precision until a remainder bound is
+     * negligible, or the Euler-Maclaurin tail of {@code g} at {@code k} converges. The tail
+     * terms are differences of powers using the same form.
+     * <li>{@code Z} is computed in double precision. If the result fails the error budget only
+     * because of the error of {@code Z}, {@code Z} is recomputed in double-double precision
+     * (at {@code 1 - a}, exact as a double-double) and the budget checked again.
+     * </ul>
+     *
+     * <p>The decisions and the error budget follow {@link #zetaNegativeDoubleScaled}; the
+     * remaining cancellation is between {@code C} and {@code Z} (near a root).
+     *
+     * @param s Argument s (odd integer).
+     * @param a Argument a.
+     * @param x Fractional part {@code a - ceil(a)} in (-1, 0); not -0.5.
+     * @param bits Required precision of the result (before the final rounding).
+     * @return zeta(s, a), or NaN if the precision is not achieved
+     */
+    private static double zetaNegativeJoint(int s, double a, double x, double bits) {
+        negativeJointK = -1;
+        negativeJointExpm1 = false;
+        negativeJointRemainder = false;
+        negativeJointZdd = false;
+        final double v = -x;
+        // u - v = 1 + 2x (exact as a double-double)
+        final DD w = DD.ofSum(1, 2 * x);
+        final long[] exp = {0};
+        final DD fv = DD.of(v).pow(-s, exp);
+        final long ev = exp[0];
+        // Leading pair g(0) = u^-s - v^-s = d 2^e
+        final DD delta0 = w.divide(v);
+        final double z0 = -s * Math.log1p(delta0.hi());
+        final int e;
+        final DD d;
+        final double lead;
+        if (Math.abs(z0) <= JOINT_Z0) {
+            negativeJointExpm1 = true;
+            e = (int) ev;
+            d = fv.multiply(expm1Small(log1pSmall(delta0).multiply(-s)));
+            // DD.pow error 16 s eps; the series, products and the quotient a few eps (margin 16 eps)
+            lead = (16.0 * s + 16) * 0x1.0p-106 * Math.abs(d.hi());
+        } else {
+            final DD fu = DD.ofSum(1, x).pow(-s, exp);
+            final long eu = exp[0];
+            e = (int) Math.max(eu, ev);
+            final DD p = fu.scalb((int) (eu - e));
+            final DD n = fv.scalb((int) (ev - e));
+            d = p.subtract(n);
+            final double ap = Math.abs(p.hi());
+            final double an = Math.abs(n.hi());
+            lead = (16.0 * s * (ap + an) + 2 * Math.max(ap, an)) * 0x1.0p-106;
+        }
+        // Exits as zetaNegativeDoubleScaled
+        final double ad = Math.abs(d.hi());
+        final double dist = Math.min(1 + x, v);
+        final double rb = Math.exp(Math.log(4) - s * Math.log1p(dist) + Math.log1p((1 + dist) / (s - 1)) -
+            e * LN2);
+        final double eps = Math.pow(2, -bits);
+        final double lo = ad - rb - lead;
+        if (lo > 0 && Math.scalb(lo * (1 - 0x1.0p-50), e) == Double.POSITIVE_INFINITY) {
+            negativeScaled = NEG_SCALED_OVERFLOW;
+            return d.hi() > 0 ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
+        }
+        if (rb + lead <= NEG_REST_NEGLIGIBLE * lo) {
+            negativeScaled = NEG_SCALED_LEADING;
+            return Math.scalb(d.hi(), e);
+        }
+        if (lead > eps * (ad + rb + lead)) {
+            negativeScaled = NEG_SCALED_DOOMED;
+            return Double.NaN;
+        }
+
+        // Joint pass over the pairs k >= 1 (absolute units).
+        // |C| >= |g(0)|: all pairs have the same sign.
+        final double logC = Math.log(ad) + e * LN2;
+        final double wh = w.hi();
+        final double logW = Math.log(Math.abs(wh));
+        // Convergence threshold for the Euler-Maclaurin terms (may be infinite)
+        final double thr = Math.scalb(ad * 0x1.0p-56, e);
+        DD rest = DD.ZERO;
+        // Error bound of the rest and count of parts (each may be sub-normal)
+        double err = 0;
+        int parts = 0;
+        for (int k = 1;; k++) {
+            if (k > JOINT_MAX_K) {
+                negativeJointK = k;
+                negativeScaled = NEG_SCALED_FAIL;
+                return Double.NaN;
+            }
+            // Remainder bound on sum_{j>=k} |g(j)| with m = min(u, v) + k. Mean value theorem:
+            // |g(j)| = s |u - v| xi^(-s-1), xi >= m + j - k, so the sum <= |u - v| m^-s (s/m + 1).
+            // Also each side: sum <= 2 m^-s (1 + m/(s-1)).
+            final double m = dist + k;
+            final double logRem = -s * Math.log(m) + Math.min(logW + Math.log1p(s / m),
+                                                         LN2 + Math.log1p(m / (s - 1)));
+            if (logRem < logC + JOINT_LOG_NEGLIGIBLE) {
+                negativeJointRemainder = true;
+                negativeJointK = k;
+                err += Math.exp(logRem);
+                break;
+            }
+            // Pair at k: y = v + k, t = u + k (rounded; the powers use the exact sums)
+            final double y = v + k;
+            final double t = (k + 1) + x;
+            final double yp = HurwitzZeta.extPowxpn(v, k, -s);
+            final double sl = s * Math.log1p(wh / y);
+            final double l = sl / s;
+            final boolean useExpm1 = Math.abs(sl) <= JOINT_Z;
+            final double tp = useExpm1 ? 0 : HurwitzZeta.extPowxpn(x, k + 1, -s);
+            final double g = jointDiff(s, l, yp, tp, useExpm1);
+            parts++;
+            // Euler-Maclaurin tail of g at k: I + g(k)/2 + sum_j F_j (s)_(2j-1) D(s+2j-1)
+            // with D(p) = (u+k)^-p - (v+k)^-p and I = D(s-1) / (s-1).
+            final double iy = 1 / y;
+            final double it = 1 / t;
+            final double iy2 = iy * iy;
+            final double it2 = it * it;
+            double ypj = yp * iy;
+            double tpj = tp * it;
+            double q = s;
+            double bsum = 0;
+            double berr = 0;
+            double prev = Double.POSITIVE_INFINITY;
+            double stop = -1;
+            for (int j = 1; j <= JOINT_M + 1; j++) {
+                final int p = s + 2 * j - 1;
+                final double c = F[j - 1] * q * jointDiff(p, l, ypj, tpj, useExpm1);
+                final double ac = Math.abs(c);
+                if (ac <= thr) {
+                    stop = ac;
+                    break;
+                }
+                if (ac >= prev || j > JOINT_M) {
+                    break;
+                }
+                prev = ac;
+                bsum += c;
+                berr += ac * (16 + 8 * j + Math.abs(p * l)) * 0x1.0p-53;
+                ypj *= iy2;
+                tpj *= it2;
+                q *= (double) p * (p + 1);
+            }
+            if (stop >= 0) {
+                // Converged
+                final double di = jointDiff(s - 1, l, yp * y, tp * t, useExpm1) / (s - 1);
+                rest = rest.add(di).add(0.5 * g).add(bsum);
+                err += (Math.abs(di) + 0.5 * Math.abs(g)) * 0x1.0p-48 + berr + 2 * stop +
+                    Math.abs(bsum) * 0x1.0p-52;
+                parts += 2;
+                negativeJointK = k;
+                break;
+            }
+            rest = rest.add(g);
+            err += Math.abs(g) * 0x1.0p-49;
+        }
+        // Z = zeta(s, 1-a); 1 - a may be rounded
+        final double z = HurwitzZeta.zetaImp(s, 1 - a);
+        double errZ = z * 0x1.0p-51;
+        if (DD.ofSum(1, -a).lo() != 0) {
+            errZ += s * 0x1.0p-53 * z;
+        }
+        // Parts: the pairs plus Z
+        err += (parts + 1) * 0x1.0p-1073;
+        // Combine as zetaNegativeDoubleScaled at the scale 2^k
+        final int k = Math.max(0, e - SCALED_D_MAX);
+        final int sc = e - k;
+        final DD dk = d.scalb(sc);
+        final double leadK = Math.scalb(lead, sc);
+        DD restK = rest;
+        double errK = err;
+        if (k != 0) {
+            restK = rest.scalb(-k);
+            errK = Math.scalb(err, -k) + 0x1.0p-1073;
+        }
+        // Sum without Z (exact scaling of the pairs, error terms are bounds)
+        final DD c = dk.add(restK);
+        final double r = c.add(Math.scalb(z, -k)).hi();
+        if (errK + leadK + Math.scalb(errZ, -k) <= eps * Math.abs(r)) {
+            negativeScaled = NEG_SCALED_PASS;
+            return k == 0 ? r : Math.scalb(r, k);
+        }
+        // Z in double-double precision if the error without Z is within the budget.
+        // |r| is not known before Z is recomputed: use the estimate less the error of Z.
+        final double errC = errK + leadK;
+        if (errC <= eps * (Math.abs(r) + Math.scalb(errZ, -k))) {
+            negativeJointZdd = true;
+            final int[] ez = {0};
+            final DD zd = zeta(s, DD.ONE.subtract(a), null, ez, Context.DD_DOUBLE_DOUBLE);
+            // Scaled to 2^k; the DD zeta error is ~2 eps (margin 2^-100 relative)
+            final DD zk = zd.scalb(ez[0] - k);
+            final double r2 = c.add(zk).hi();
+            if (errC + Math.abs(zk.hi()) * 0x1.0p-100 + 0x1.0p-1073 <= eps * Math.abs(r2)) {
+                negativeScaled = NEG_SCALED_PASS;
+                return k == 0 ? r2 : Math.scalb(r2, k);
+            }
+        }
+        negativeScaled = NEG_SCALED_FAIL;
+        return Double.NaN;
+    }
+
+    /**
+     * Compute the difference {@code (u+k)^-p - (v+k)^-p} given {@code l = log1p((u - v) / (v + k))}
+     * and the powers {@code yp = (v+k)^-p} and {@code tp = (u+k)^-p} (unused with expm1).
+     *
+     * @param p Power.
+     * @param l Log of the ratio {@code (u+k) / (v+k)}.
+     * @param yp Power {@code (v+k)^-p}.
+     * @param tp Power {@code (u+k)^-p}.
+     * @param useExpm1 Use {@code yp expm1(-p l)}.
+     * @return the difference
+     */
+    private static double jointDiff(int p, double l, double yp, double tp, boolean useExpm1) {
+        return useExpm1 ? yp * Math.expm1(-p * l) : tp - yp;
+    }
+
+    /**
+     * Compute {@code log(1 + x)} in double-double precision for {@code |x| <= 0.25} using
+     * {@code 2 atanh(x / (2 + x))}.
+     *
+     * @param x Argument.
+     * @return log1p(x)
+     */
+    private static DD log1pSmall(DD x) {
+        final DD w = x.divide(x.add(2));
+        final DD w2 = w.square();
+        DD sum = w;
+        DD t = w;
+        for (int j = 3;; j += 2) {
+            t = t.multiply(w2);
+            final DD c = t.divide(j);
+            sum = sum.add(c);
+            if (Math.abs(c.hi()) <= 0x1.0p-110 * Math.abs(sum.hi())) {
+                return sum.multiply(2);
+            }
+        }
+    }
+
+    /**
+     * Compute {@code exp(x) - 1} in double-double precision for {@code |x| <= 0.5} using the
+     * Taylor series.
+     *
+     * @param x Argument.
+     * @return expm1(x)
+     */
+    private static DD expm1Small(DD x) {
+        DD sum = x;
+        DD t = x;
+        for (int n = 2;; n++) {
+            t = t.multiply(x).divide(n);
+            sum = sum.add(t);
+            if (Math.abs(t.hi()) <= 0x1.0p-110 * Math.abs(sum.hi())) {
+                return sum;
+            }
+        }
     }
 
     /**
