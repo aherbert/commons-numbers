@@ -5041,13 +5041,37 @@ class HurwitzZetaTest {
     /** Estimated cancellation factor of the last call to {@link #zetaNegativeHybrid}
      * (odd s only; NaN otherwise). Used for testing. */
     private static double negativeFactor;
+    /** Scaled evaluation decision: not used. */
+    static final int NEG_SCALED_NONE = 0;
+    /** Scaled evaluation decision: overflow (from the leading pair and the bound on the rest). */
+    static final int NEG_SCALED_OVERFLOW = 1;
+    /** Scaled evaluation decision: the rest is negligible (no zeta evaluations). */
+    static final int NEG_SCALED_LEADING = 2;
+    /** Scaled evaluation decision: the error of the leading pair alone exceeds the budget. */
+    static final int NEG_SCALED_DOOMED = 3;
+    /** Scaled evaluation decision: the result passed the error budget. */
+    static final int NEG_SCALED_PASS = 4;
+    /** Scaled evaluation decision: the result failed the error budget. */
+    static final int NEG_SCALED_FAIL = 5;
+    /** Maximum exponent of the scale for the leading pair when combined with the rest in
+     * {@link #zetaNegativeDoubleScaled}: the pair (magnitude < 2) times 2^1000 cannot overflow. */
+    private static final int SCALED_D_MAX = 1000;
+    /** Relative threshold for a negligible rest in {@link #zetaNegativeDoubleScaled}. Below
+     * the error budget: a dropped rest of 2^-53 of the result can change the rounding. */
+    private static final double NEG_REST_NEGLIGIBLE = 0x1.0p-60;
+    /** Decision of the last call to {@link #zetaNegativeDoubleScaled}. Used for testing. */
+    private static int negativeScaled;
 
     /**
      * Options for the hybrid negative zeta implementation.
      */
     static final class NegativeContext {
         /** Default options. */
-        static final NegativeContext DEFAULT = new NegativeContext(true, 1.2, 16, false, Double.POSITIVE_INFINITY);
+        static final NegativeContext DEFAULT = new NegativeContext(true, 1.2, 16, false, Double.POSITIVE_INFINITY, 0);
+        /** Hybrid: leading terms in double-double precision and the scaled evaluation with an
+         * error budget of 2^-53 of the result (before the final rounding). */
+        static final NegativeContext HYBRID = DEFAULT.withLeading(true)
+            .withMaxFactor(Double.POSITIVE_INFINITY).withBits(53);
 
         /** Set to true to use double precision for even s. */
         private final boolean evenDouble;
@@ -5064,6 +5088,11 @@ class HurwitzZetaTest {
          * result if the magnitude of the parts computed in double precision is at most this
          * multiple of the result (infinity to always accept). */
         private final double maxRest;
+        /** With the leading terms in double-double precision: if positive, use the scaled
+         * evaluation with an error budget: accept the double precision result if the bound on
+         * its error (before the final rounding) is at most {@code 2^-bits} of the result
+         * ({@link #zetaNegativeDoubleScaled}). Replaces {@link #maxRest}. */
+        private final double bits;
 
         /**
          * @param evenDouble Use double precision for even s.
@@ -5071,8 +5100,11 @@ class HurwitzZetaTest {
          * @param maxDirect Maximum number of negative terms to sum directly.
          * @param leading Compute the largest terms in double-double precision.
          * @param maxRest Maximum magnitude of the double precision parts relative to the result.
+         * @param bits Required precision of the scaled evaluation (0 to disable).
          */
-        NegativeContext(boolean evenDouble, double maxFactor, int maxDirect, boolean leading, double maxRest) {
+        NegativeContext(boolean evenDouble, double maxFactor, int maxDirect, boolean leading, double maxRest,
+                        double bits) {
+            this.bits = bits;
             this.maxRest = maxRest;
             this.leading = leading;
             this.evenDouble = evenDouble;
@@ -5085,7 +5117,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withMaxFactor(double f) {
-            return new NegativeContext(evenDouble, f, maxDirect, leading, maxRest);
+            return new NegativeContext(evenDouble, f, maxDirect, leading, maxRest, bits);
         }
 
         /**
@@ -5093,7 +5125,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withMaxDirect(int n) {
-            return new NegativeContext(evenDouble, maxFactor, n, leading, maxRest);
+            return new NegativeContext(evenDouble, maxFactor, n, leading, maxRest, bits);
         }
 
         /**
@@ -5101,7 +5133,7 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withLeading(boolean use) {
-            return new NegativeContext(evenDouble, maxFactor, maxDirect, use, maxRest);
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, use, maxRest, bits);
         }
 
         /**
@@ -5109,13 +5141,22 @@ class HurwitzZetaTest {
          * @return a new instance
          */
         NegativeContext withMaxRest(double t) {
-            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, t);
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, t, bits);
+        }
+
+        /**
+         * @param b Required precision of the scaled evaluation (0 to disable).
+         * @return a new instance
+         */
+        NegativeContext withBits(double b) {
+            return new NegativeContext(evenDouble, maxFactor, maxDirect, leading, maxRest, b);
         }
 
         @Override
         public String toString() {
             return (evenDouble ? "even=double" : "even=DD") + " odd F<=" + maxFactor + " direct<=" + maxDirect +
-                (leading ? " leading=DD" : "") + (maxRest < Double.POSITIVE_INFINITY ? " rest<=" + maxRest : "");
+                (leading ? " leading=DD" : "") +
+                (bits > 0 ? " bits=" + bits : maxRest < Double.POSITIVE_INFINITY ? " rest<=" + maxRest : "");
         }
     }
 
@@ -5148,6 +5189,7 @@ class HurwitzZetaTest {
     static double zetaNegativeHybrid(int s, double a, NegativeContext nc) {
         negativePath = NEG_PATH_SPECIAL;
         negativeFactor = Double.NaN;
+        negativeScaled = NEG_SCALED_NONE;
         final double ca = Math.ceil(a);
         if (ca == a) {
             // The term 0^-s is infinity
@@ -5195,9 +5237,14 @@ class HurwitzZetaTest {
             useDouble = nc.evenDouble;
         }
         if (useDouble) {
-            final double r = nc.leading ?
-                zetaNegativeDoubleLeading(s, a, x, ca, odd, nc.maxDirect, nc.maxRest) :
-                zetaNegativeDouble(s, a, x, ca, odd, nc.maxDirect);
+            final double r;
+            if (!nc.leading) {
+                r = zetaNegativeDouble(s, a, x, ca, odd, nc.maxDirect);
+            } else if (nc.bits > 0) {
+                r = zetaNegativeDoubleScaled(s, a, x, ca, nc.maxDirect, nc.bits);
+            } else {
+                r = zetaNegativeDoubleLeading(s, a, x, ca, odd, nc.maxDirect, nc.maxRest);
+            }
             // NaN when infinite terms cancel
             if (!Double.isNaN(r)) {
                 negativePath = NEG_PATH_DOUBLE;
@@ -5337,6 +5384,165 @@ class HurwitzZetaTest {
     }
 
     /**
+     * Compute the value of the Hurwitz zeta function {@code zeta(s, a)} when {@code a} is
+     * negative using double precision with the largest term each side of zero in
+     * double-double precision, with an error budget.
+     *
+     * <p>With {@code x = a - ceil(a)} in {@code (-1, 0)} the result is {@code r = D + R} with
+     * the leading pair {@code D = (1+x)^-s + x^-s} and the rest {@code R}: the remaining
+     * positive terms {@code zeta(s, 2+x)} and the remaining negative terms (a direct sum, or
+     * {@code (-1)^s [zeta(s, 1-x) - zeta(s, 1-a)]}).
+     *
+     * <p>The leading terms are computed as fractions and exponents ({@link DD#pow(int, long[])})
+     * and combined at a common scale {@code 2^e}: there is no overflow. The rest is computed
+     * in absolute units ({@code |R| < 8}). The bound on the absolute error is:
+     *
+     * <ul>
+     * <li>leading pair (lead, units of {@code 2^e}): {@code 16 s eps} of each term (the
+     * documented bound of {@link DD#pow(int, long[])}, eps = {@code 2^-106}) and
+     * {@code 2 eps} of the larger term for the addition;
+     * <li>each part computed in double precision: {@code 2^-51} (less than 2 ulp) of its
+     * magnitude plus {@code 2^-1073} (a sub-normal part); {@code zeta(s, 1-a)} with
+     * {@code 1-a} rounded: also {@code s 2^-53}.
+     * </ul>
+     *
+     * <p>{@code D} and {@code R} are added at the scale {@code 2^k}, {@code k = max(0, e - 1000)}:
+     * usually {@code k = 0} and only {@code D} is scaled; for {@code k > 0} the scaling of
+     * {@code R} adds {@code 2^-1073} (units of {@code 2^k}).
+     *
+     * <p>The magnitude of the rest is bounded before any zeta evaluation using the distance
+     * {@code d = min(1+x, -x)} to the nearest integer: each side is at most
+     * {@code (1+d)^-s (1 + (1+d)/(s-1))} and the zeta difference has two such parts, so
+     * {@code |R| <= Rb = 4 (1+d)^-s (1 + (1+d)/(s-1))}. Decisions:
+     *
+     * <ol>
+     * <li>Overflow: {@code |D| - Rb - lead >= 2^1024}: infinity with the sign of {@code D}.
+     * <li>Negligible rest: {@code Rb + lead <= 2^-60 (|D| - Rb - lead)}: return {@code D}
+     * (no zeta evaluations).
+     * <li>Doomed: {@code lead > 2^-bits (|D| + Rb + lead)}: return NaN (use double-double).
+     * <li>Otherwise compute the rest and accept the result if the error bound is at most
+     * {@code 2^-bits |r|}; else return NaN.
+     * </ol>
+     *
+     * <p>The decision is recorded in {@link #negativeScaled}.
+     *
+     * @param s Argument s (integer).
+     * @param a Argument a.
+     * @param x Fractional part {@code a - ceil(a)} in (-1, 0).
+     * @param ca Ceiling of a.
+     * @param maxDirect Maximum number of negative terms to sum directly.
+     * @param bits Required precision of the result (before the final rounding).
+     * @return zeta(s, a), or NaN if the precision is not achieved
+     */
+    private static double zetaNegativeDoubleScaled(int s, double a, double x, double ca,
+                                                   int maxDirect, double bits) {
+        // Largest terms each side of zero: (1+x)^-s = fp 2^ep and x^-s = fn 2^en.
+        // 1 + x is exact as a double-double.
+        final long[] exp = {0};
+        final DD fp = DD.ofSum(1, x).pow(-s, exp);
+        final long ep = exp[0];
+        final DD fn = DD.of(x).pow(-s, exp);
+        final long en = exp[0];
+        // Common scale 2^e. Both terms have a magnitude above 1 (|1+x|, |x| < 1) so e >= 1.
+        final int e = (int) Math.max(ep, en);
+        final DD p = fp.scalb((int) (ep - e));
+        final DD n = fn.scalb((int) (en - e));
+        final DD d = p.add(n);
+        final double ap = Math.abs(p.hi());
+        final double an = Math.abs(n.hi());
+        // Error of the leading pair (units of 2^e)
+        final double lead = (16.0 * s * (ap + an) + 2 * Math.max(ap, an)) * 0x1.0p-106;
+        // Bound on the magnitude of the rest (units of 2^e). Computed in logs (no underflow
+        // to a misleading value; exp underflows to 0 when negligible).
+        final double dist = Math.min(1 + x, -x);
+        final double rb = Math.exp(Math.log(4) - s * Math.log1p(dist) + Math.log1p((1 + dist) / (s - 1)) -
+            e * LN2);
+        final double eps = Math.pow(2, -bits);
+        final double ad = Math.abs(d.hi());
+        // Lower bound on |r| / 2^e
+        final double lo = ad - rb - lead;
+        // 1. Overflow: the result rounds to infinity if |r| >= 2^1024 (1 - 2^-54).
+        // Margin 2^-50 for the rounding of lo.
+        if (lo > 0 && Math.scalb(lo * (1 - 0x1.0p-50), e) == Double.POSITIVE_INFINITY) {
+            negativeScaled = NEG_SCALED_OVERFLOW;
+            return d.hi() > 0 ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
+        }
+        // 2. Negligible rest
+        if (rb + lead <= NEG_REST_NEGLIGIBLE * lo) {
+            negativeScaled = NEG_SCALED_LEADING;
+            return Math.scalb(d.hi(), e);
+        }
+        // 3. Doomed: the leading pair alone cannot achieve the precision
+        if (lead > eps * (ad + rb + lead)) {
+            negativeScaled = NEG_SCALED_DOOMED;
+            return Double.NaN;
+        }
+        // 4. Compute the rest R in absolute units (|R| < 8: no overflow; parts may be
+        // sub-normal or zero, covered by an absolute error term).
+        // Remaining positive side: zeta(s, 2+x). 2 + x is exact unless a in (-1, 0)
+        // has bits below 2^-52. First order correction for the round-off e2:
+        // zeta(s, b + e2) = zeta(s, b) - s e2 zeta(s+1, b) + O(e2^2).
+        final double b = 2 + x;
+        final double z2 = HurwitzZeta.zetaImp(s, b);
+        DD rest = DD.of(z2);
+        // Magnitude of the parts computed in double precision, and their count
+        double mag = z2;
+        int parts = 1;
+        final double e2 = DD.ofSum(2, x).lo();
+        if (e2 != 0) {
+            final double c = -s * e2 * HurwitzZeta.zetaImp(s + 1, b);
+            rest = rest.add(c);
+            mag += Math.abs(c);
+            parts++;
+        }
+        double zbMag = 0;
+        // Remaining negative side: (a+k)^-s for k in [0, -ca), i.e. excluding x.
+        if (-ca <= maxDirect) {
+            for (double t = a; t < x; t += 1) {
+                final double q = Math.pow(t, -s);
+                rest = rest.add(q);
+                mag += Math.abs(q);
+                parts++;
+            }
+        } else {
+            // (-1)^s [zeta(s, 1-x) - zeta(s, 1-a)]. 1 - x is exact for |a| >= 1.
+            double za = HurwitzZeta.zetaImp(s, 1 - x);
+            double zb = HurwitzZeta.zetaImp(s, 1 - a);
+            if ((s & 1) == 1) {
+                za = -za;
+            } else {
+                zb = -zb;
+            }
+            rest = rest.add(za).add(zb);
+            mag += Math.abs(za) + Math.abs(zb);
+            zbMag = Math.abs(zb);
+            parts += 2;
+        }
+        // Error of the parts (absolute units): relative bound plus 2^-1073 (2 ulp of a
+        // sub-normal) per part.
+        double err = mag * 0x1.0p-51 + zbMag * s * 0x1.0p-53 + parts * 0x1.0p-1073;
+        // Combine D 2^e and R at the scale 2^k, k = max(0, e - SCALED_D_MAX):
+        // D 2^(e-k) <= 2^(SCALED_D_MAX+1) cannot overflow. Usually k = 0 (no scaling of R).
+        // For k > 0 scaling R down adds at most 2 ulp of a sub-normal (hi and lo parts).
+        final int k = Math.max(0, e - SCALED_D_MAX);
+        final int sc = e - k;
+        if (k != 0) {
+            rest = rest.scalb(-k);
+            err = Math.scalb(err, -k) + 0x1.0p-1073;
+        }
+        final double r = d.scalb(sc).add(rest).hi();
+        err += Math.scalb(lead, sc);
+        if (err <= eps * Math.abs(r)) {
+            negativeScaled = NEG_SCALED_PASS;
+            // Exact scaling for k > 0: the result is not sub-normal (a is not a
+            // half-integer). Overflow rounds to infinity.
+            return k == 0 ? r : Math.scalb(r, k);
+        }
+        negativeScaled = NEG_SCALED_FAIL;
+        return Double.NaN;
+    }
+
+    /**
      * Compute {@code x^n} in double-double precision.
      *
      * @param x Base.
@@ -5392,11 +5598,12 @@ class HurwitzZetaTest {
             NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.5),
             NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(1),
             NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY),
+            NegativeContext.HYBRID,
         };
         final int nc = contexts.length;
         // Always double without and with the leading terms in double-double
         final int iAll = 7;
-        final int iLead = nc - 1;
+        final int iLead = nc - 2;
         final TestUtils.ErrorStatistics[] all = new TestUtils.ErrorStatistics[nc];
         final long[] doublePath = new long[nc];
         final String[] worst = new String[nc];
@@ -9055,7 +9262,7 @@ class HurwitzZetaTest {
         final SplittableRandom rng = new SplittableRandom(SEED);
         final Context context = Context.BD_DOUBLE_DOUBLE;
         final MathContext mc = context.getMathContext();
-        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true).withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        final NegativeContext nc = NegativeContext.HYBRID;
         final double ln2 = Math.log(2);
         final int ns = (us - ls) / step + 1;
         // |a| uniform in bits in [minA, maxA)
@@ -9456,8 +9663,7 @@ class HurwitzZetaTest {
 
         final double logLo = Math.log(ls);
         final double logHi = Math.log(us + 1.0);
-        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true)
-            .withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        final NegativeContext nc = NegativeContext.HYBRID;
         // Rows: {s, a, b, target}
         final double[][] rows = new double[samples][];
         // Production results: infinite, zero, sub-normal; hybrid DD fallback
@@ -9739,8 +9945,7 @@ class HurwitzZetaTest {
             }
         }
         // Hybrid implementation: results and DD fallback
-        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true)
-            .withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        final NegativeContext nc = NegativeContext.HYBRID;
         final int[] counts = new int[4];
         for (final double[] r : rows) {
             final double z = zetaNegativeHybrid((int) r[0], r[1], nc);
@@ -10155,8 +10360,7 @@ class HurwitzZetaTest {
         Arrays.sort(rows, Comparator.<double[]>comparingDouble(r -> -r[1]).thenComparingDouble(r -> r[0]));
 
         // Summary by binade of s: production infinite / zero results; hybrid DD fallback
-        final NegativeContext nc = NegativeContext.DEFAULT.withLeading(true)
-            .withMaxFactor(Double.POSITIVE_INFINITY).withMaxRest(0.25);
+        final NegativeContext nc = NegativeContext.HYBRID;
         final int bins = 11;
         final long[][] stats = new long[bins][4];
         for (final double[] r : rows) {
