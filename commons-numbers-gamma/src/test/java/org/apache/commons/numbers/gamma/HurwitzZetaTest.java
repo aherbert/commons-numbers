@@ -150,6 +150,9 @@ class HurwitzZetaTest {
     /** Counts of the DD zeta remainder exit (index 0) and tail exits (index 1) by k.
      * Used for testing. */
     private static final long[][] DD_EXIT_K = new long[2][32];
+    /** Counts of the BigDecimal zeta exits: remainder, tail converged, tail forced.
+     * Used for testing. */
+    private static final long[] BD_EXIT_COUNT = new long[3];
     /** ln(2). */
     private static final double LN2 = Math.log(2);
     /** One half. */
@@ -969,8 +972,15 @@ class HurwitzZetaTest {
         /** Context for double-double precision using the DD zeta implementation.
          * Uses DDMath only for the most important terms. Note that using
          * DDMath for the series, or using accurate add do not improve the error
-         * around the roots, or on the negative a test data. */
-        static final Context DD_DOUBLE_DOUBLE = Context.of(15, 30)
+         * around the roots, or on the negative a test data.
+         *
+         * <p>N and M from the tail convergence model ({@code testTailConvergenceModel}) on the
+         * integer s domain between the 2^108 and 2^-1075 contours at 2^-109: M=40 requires
+         * N=12 (n=11.82); M=30 requires N=13 (n=12.07). Confirmed on the integer s data
+         * ({@code testPrecisonDD}): no forced exits from N=12 with M=40. A larger M lowers the
+         * error: the tail converges at a smaller k so fewer forward terms use DD pow (error
+         * ~2s eps): max 11 eps with M=40 vs 23 eps with M=30. */
+        static final Context DD_DOUBLE_DOUBLE = Context.of(12, 40)
             .withEpsilon(0x1p-109).withOptions(EXT_POW_TERMS);
 
         // BigDecimal implementation is very robust to different N.
@@ -4145,6 +4155,7 @@ class HurwitzZetaTest {
                 if (logRem <= logEps + log2(estimate) * LN2) {
                     lastN = k;
                     lastRemainderExit = true;
+                    BD_EXIT_COUNT[0]++;
                     // Sum in ascending order of magnitude: terms k-1 .. 0
                     BigDecimal sum = terms[k - 1];
                     for (int i = k - 2; i >= 0; i--) {
@@ -4203,6 +4214,7 @@ class HurwitzZetaTest {
                 // Used to histogram convergence when testing
                 M[j]++;
                 lastN = k;
+                BD_EXIT_COUNT[converged ? 1 : 2]++;
                 // Sum in ascending order of magnitude: T, x^-s / 2, terms k-1 .. 1
                 BigDecimal sum = tsum.add(th, mc);
                 for (int i = k - 1; i > 0; i--) {
@@ -6456,52 +6468,64 @@ class HurwitzZetaTest {
     /**
      * Test the precision of the BigDecimal implementation of the zeta function.
      *
-     * <p>Note convergence requires:
-     * <pre>
-     * M   N
-     * 106 24
-     * 53  25
-     * </pre>
-     * <p>Smaller M can prevent tail convergence before the last term and error
-     * can increase.
+     * <p>N and M from the tail convergence model ({@code testTailConvergenceModel}) on the
+     * integer s domain between the 2^108 and 2^-1075 contours: see the rows. The BigDecimal
+     * zeta is dynamic: N is a cap (forced exit). The forced exit count must be zero from the
+     * model N upwards and the results unchanged for larger N. With {@link #testPrecisonDD}
+     * this cross validates the model. Smaller M can prevent tail convergence before the last
+     * term and error can increase.
      *
-     * @see #testTailConvergenceDD(int, boolean, int, int, int, int)
+     * @see #testTailConvergenceModel
      */
     @ParameterizedTest
     @CsvSource({
+        // ln, un, m, b (tail stop 2^b), digits, options, scale
+        // Model (testTailConvergenceModel), integer s domain:
+        // b=108: M=25 N=13 (n=12.64), M=30 N=12 (n=11.93), M=40 N=12 (n=11.71);
+        // b=116 (BD_DOUBLE_DOUBLE): M=30 N=14 (n=13.07), M=40 N=13 (n=12.59).
+        // Measured (16,836 rows): forced exits are zero from b=108 M=25 N=13, M=30 N=13
+        // (model 11.93: the implementation stops up to 1 bit later, ~0.14 in n), M=40 N=12;
+        // b=116 M=30 N=14, M=40 N=13. Results are unchanged for larger N. The error does not
+        // depend on M (max 0.12 at 2^-105, 0.0008 at b=116): no power error, unlike the DD zeta.
+        "11, 20, 30, -108, 36, 0, 105",
+        "12, 20, 25, -108, 36, 0, 105",
+        "11, 20, 40, -108, 36, 0, 105",
+        "13, 20, 30, -116, 36, 0, 105",
+        "12, 20, 40, -116, 36, 0, 105",
+
         // Full double-double precision (~34 digits)
-        // Requires N=13. Larger N uses smaller M.
-        "13, 30, 34, 0, 105",
+        // Tail stop: the target precision with a 3-bit margin
+        "13, 30, 106, -108, 34, 0, 105",
         // Use pow in the tail series (no difference)
-        "13, 30, 34, 16, 105",
+        "13, 30, 106, -108, 34, 16, 105",
         // If the computation is limited to fewer bits it cannot achieve double-double precision.
         // This has implications for the DD version because DD arithmetic is typically
         // performed to a few eps of 2^-106.
-        "13, 30, 33, 0, 105",
+        "13, 30, 106, -108, 33, 0, 105",
         // Not enough
-        "13, 30, 32, 0, 105",
+        "13, 30, 106, -108, 32, 0, 105",
         // Full double precision (~17 digits)
         // Requires N=7. Larger N uses smaller M.
-        "7, 15, 18, 0, 52",
-        "7, 15, 17, 0, 52",
+        "7, 15, 106, -55, 18, 0, 52",
+        "7, 15, 106, -55, 17, 0, 52",
         // Not enough
-        "7, 15, 16, 0, 52",
+        "7, 15, 106, -55, 16, 0, 52",
         // Quad double precision. Requires test resources to have more than 68 digits of precision
-        "30, 40, 70, 0, 211",
+        "30, 40, 106, -214, 70, 0, 211",
         // Not enough
-        "35, 40, 65, 0, 211",
+        "35, 40, 106, -214, 65, 0, 211",
     })
     @Disabled("TODO: re-enable with reporting off to exercise the code")
-    void testPrecisionBigDecimal(int ln, int un, int digits, int options, int scale)
+    void testPrecisionBigDecimal(int ln, int un, int m, int b, int digits, int options, int scale)
         throws IOException {
         for (int n = ln; n <= un; n++) {
             // Reset M
             Arrays.fill(M, 0);
+            Arrays.fill(BD_EXIT_COUNT, 0);
 
-            final Context c = Context.of(n, FBD.length)
+            final Context c = Context.of(n, Math.min(m, FBD.length))
                 .withMathContext(new MathContext(digits))
-                // Tail stop: the target precision with a 3-bit margin
-                .withEpsilon(Math.scalb(1.0, -(scale + 3)))
+                .withEpsilon(Math.scalb(1.0, b))
                 .withOptions(options);
             final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
                 @Override
@@ -6539,6 +6563,8 @@ class HurwitzZetaTest {
                 }
             };
             assertFunction(test, 0, true);
+            report("  N=%d M=%d 2^%d: exits remainder %d, tail %d, forced %d%n",
+                n, m, b, BD_EXIT_COUNT[0], BD_EXIT_COUNT[1], BD_EXIT_COUNT[2]);
             // When not reporting cut the test short
             if (!doReporting()) {
                 break;
@@ -6549,14 +6575,10 @@ class HurwitzZetaTest {
     /**
      * Test the precision of the DD implementation of the zeta function.
      *
-     * <p>Note convergence requires:
-     * <pre>
-     * M   N
-     * 106 12
-     * 26  13
-     * </pre>
-     * <p>Smaller M can prevent tail convergence before the last term and error
-     * can increase.
+     * <p>N and M from the tail convergence model ({@code testTailConvergenceModel}) on the
+     * integer s domain between the 2^108 and 2^-1075 contours: see the rows. The DD zeta is
+     * dynamic: N is a cap (forced exit). Smaller M can prevent tail convergence before the
+     * last term and error can increase.
      *
      * <p>Differences between some options may only be observed when using a sub-set of
      * the {@link #EXT_INT_TEST_RESOURCES}. The current resources include data for zeta(s, a)
@@ -6579,63 +6601,79 @@ class HurwitzZetaTest {
      * (a+N)^-s the running sum must be compared with the known term a^-s. When it approaches
      * overlap then switch to DDMath pow for remaining terms.
      *
-     * @see #testTailConvergenceDD(int, boolean, int, int, int, int)
+     * @see #testTailConvergenceModel
      */
     @ParameterizedTest
     @CsvSource({
+        // N and M from the tail convergence model (testTailConvergenceModel) on the integer s
+        // domain (2^108 to 2^-1075): b=106: M=25 N=13 (n=12.30), M=30 N=12 (n=11.66);
+        // b=109: M=25 N=13 (n=12.81), M=30 N=13 (n=12.07), M=40 N=12 (n=11.82).
+        // The DD zeta is dynamic: N is a cap (forced exit). The forced exit count must be
+        // zero from the model N upwards and the results unchanged for larger N.
+        // Measured (16,836 rows): forced exits are zero from M=30 N=13, M=40 N=12, M=25 N=14
+        // (model 12.81: the implementation stops up to 1 bit later), and 2^-106 M=30 N=12.
+        // Integer s data (hzeta_is*, 103,672 rows) agrees. Max error (2^-106 relative): M=40 11
+        // eps, M=30 and M=25 23 eps (forward terms using DD pow; fewer with a larger M).
+        "12, 20, 30, -109, 1, 105, 0",
+        "12, 20, 25, -109, 1, 105, 0",
+        "12, 20, 40, -109, 1, 105, 0",
+        "11, 20, 30, -106, 1, 105, 0",
+
         // Extended precision (ulp ~ 2^-105)
         // DD.pow
-        "13, 30, -106, 0, 105, 0",
+        "13, 30, 106, -106, 0, 105, 0",
         // DD.pow and DDMath pow are similar accuracy when s = 2 and a < 1.
         // When s is larger and a > 1 the DDMath pow gains a few bits in the result
         // but the max is ~105 bits
-        "13, 30, -106, 3, 105, 0",
+        "13, 30, 106, -106, 3, 105, 0",
         // DDMath.pow with DD.pow in the sum of the series.
         // This is worse than DDMath when a is above 1, i.e. DD.pow cannot
         // be selectively used for the *same* precision. However zeta evaluations
         // with a above 1 are only used: (1) as a term added to a much larger
         // zeta evaluation and precision does not require all the bits; (2)
         // in the total cancellation path which requires double precision
-        "13, 30, -106, 1, 105, 0",
+        "13, 30, 106, -106, 1, 105, 0",
         // Ignore below MIN_VALUE = 2^-1074
         // Has precision to ~100 bits.
-        "15, 20, -106, 1, 105, -1074",
+        "15, 20, 106, -106, 1, 105, -1074",
 
         // Maximum precision. Accurate add and DDMath.pow.
         // Max ulp is ~1.
         // Note: Cancellation in the negative zeta implementation has not been observed
         // above 55-bits. This level of precision may only gain ~ 1 ulp around the roots.
-        "15, 20, -106, 195, 105, 0", // 3 vs 3 + 64 + 128
+        "15, 20, 106, -106, 195, 105, 0", // 3 vs 3 + 64 + 128
 
         // Use accurate add for all addition. Does not change accuracy when
         // the power term may have several bits of error.
-        "15, 20, -106, 193, 105, 0", // 1 vs 1 + 64 + 128
+        "15, 20, 106, -106, 193, 105, 0", // 1 vs 1 + 64 + 128
 
         // Use pow in the tail series (no difference)
-        "13, 30, -106, 19, 105, 0", // 3 vs 3 + 16
+        "13, 30, 106, -106, 19, 105, 0", // 3 vs 3 + 16
 
         // Higher tail convergence.
         // No difference to max error. RMS is lower. Higher M.
-        // "13, 20, -108, 3, 105, 0",
-        // "13, 20, -110, 3, 105, 0",
+        // "13, 20, 106, -108, 3, 105, 0",
+        // "13, 20, 106, -110, 3, 105, 0",
 
         // Double precision (ulp ~ 2^-52)
         // Ignore below MIN_VALUE = 2^-1074
-        "7, 15, -53, 0, 52, -1074",
+        "7, 15, 106, -53, 0, 52, -1074",
         // Extra tail terms lower error in double precision
-        "7, 15, -58, 0, 52, -1074",
+        "7, 15, 106, -58, 0, 52, -1074",
         // Not enough
-        "7, 15, -48, 0, 52, -1074",
+        "7, 15, 106, -48, 0, 52, -1074",
     })
     @Disabled("TODO: re-enable with reporting off to exercise the code")
-    void testPrecisonDD(int ln, int un, int b, int options, int scale, int ignoreB)
+    void testPrecisonDD(int ln, int un, int m, int b, int options, int scale, int ignoreB)
         throws IOException {
         final double eps = Math.scalb(1.0, b);
         for (int n = ln; n <= un; n++) {
             // Reset M
             Arrays.fill(M, 0);
 
-            final Context c = Context.of(n, FDD.length)
+            Arrays.fill(DD_EXIT_COUNT, 0);
+            Arrays.stream(DD_EXIT_K).forEach(x -> Arrays.fill(x, 0));
+            final Context c = Context.of(n, m)
                 .withEpsilon(eps)
                 .withOptions(options);
             final ExtendedPrecisionTestCase test = new ExtendedPrecisionTestCase() {
@@ -6674,6 +6712,15 @@ class HurwitzZetaTest {
                 }
             };
             assertFunction(test, ignoreB, true);
+            // Tail exits forced at the cap N
+            int maxK = 0;
+            for (int k = 0; k < DD_EXIT_K[1].length; k++) {
+                if (DD_EXIT_K[1][k] != 0) {
+                    maxK = k;
+                }
+            }
+            report("  N=%d M=%d 2^%d: exits single %d, remainder %d, tail %d, forced %d; max tail k %d%n",
+                n, m, b, DD_EXIT_COUNT[0], DD_EXIT_COUNT[1], DD_EXIT_COUNT[2], DD_EXIT_COUNT[3], maxK);
             // When not reporting cut the test short
             if (!doReporting()) {
                 break;
